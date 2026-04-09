@@ -1,7 +1,7 @@
 ---
 description: High-level planning using Claude Sonnet via GitHub Copilot
 mode: subagent
-model: copilot/claude-sonnet-4-20250514
+model: copilot/claude-sonnet-4.6
 temperature: 0.3
 permission:
   edit: deny
