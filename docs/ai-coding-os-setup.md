@@ -182,7 +182,7 @@ There are two layers:
 | What you type | Model used | Why |
 |---|---|---|
 | Normal prompt (default) | `ollama/qwen2.5-coder:7b` | Fast, local, free -- covers all routine edits |
-| `@planner <task>` | `copilot/claude-sonnet-4-20250514` | Strong reasoning for architecture and planning |
+| `@planner <task>` | `copilot/claude-sonnet-4.6` | Strong reasoning for architecture and planning |
 | `@debugger <bug>` | `ollama/deepseek-coder-v2` | Deep code analysis for root-cause diagnosis |
 
 **Later (automatic, via orchestrator -- planned)**
@@ -220,10 +220,10 @@ models available under your subscription:
 ```bash
 /models
 # Look for entries starting with "copilot/"
-# e.g. copilot/claude-sonnet-4-20250514
+# e.g. copilot/claude-sonnet-4.6
 ```
 
-If the model ID shown differs from `claude-sonnet-4-20250514`, update the
+If the model ID shown differs from `claude-sonnet-4.6`, update the
 `model:` field in `.opencode/agents/planner.md` to match exactly.
 
 ### Custom agent profiles
