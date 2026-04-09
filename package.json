@@ -1,0 +1,21 @@
+{
+  "name": "ai-coding",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "bunx tsc --noEmit",
+    "build": "bunx tsc",
+    "lint": "bunx biome check .",
+    "lint:fix": "bunx biome check --write .",
+    "format": "bunx biome format .",
+    "format:fix": "bunx biome format --write .",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "typescript": "^5.7.0",
+    "@types/bun": "^1.2.0"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@ai-coding/shared": ["ai-system/shared/event-types.ts"]
+    },
+    "types": ["bun"]
+  },
+  "include": ["ai-system/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
