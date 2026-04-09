@@ -155,18 +155,6 @@ Manager can symlink this into place, or it can be committed directly:
 This registers both local models under an `ollama` provider and sets
 `qwen2.5-coder:7b` as the default.
 
-### Connect a cloud provider (for planning)
-
-For the `claude-sonnet` planning model, connect Anthropic (or use GitHub
-Copilot, OpenRouter, etc.):
-
-```bash
-opencode
-# Inside the TUI:
-/connect
-# Select Anthropic, paste your API key
-```
-
 ### Initialize the project
 
 ```bash
@@ -180,7 +168,104 @@ This analyzes your project and may update the `AGENTS.md` file.
 
 ---
 
-## Step 2: Verify the Setup
+## Step 2: Set Up Model Routing
+
+With Ollama running and the default model set, you now configure the two
+specialist subagents and connect GitHub Copilot for cloud-powered planning.
+
+### How routing works in practice
+
+There are two layers:
+
+**Today (manual, via subagents)**
+
+| What you type | Model used | Why |
+|---|---|---|
+| Normal prompt (default) | `ollama/qwen2.5-coder:7b` | Fast, local, free -- covers all routine edits |
+| `@planner <task>` | `copilot/claude-sonnet-4-20250514` | Strong reasoning for architecture and planning |
+| `@debugger <bug>` | `ollama/deepseek-coder-v2` | Deep code analysis for root-cause diagnosis |
+
+**Later (automatic, via orchestrator -- planned)**
+
+Once the `mode-router` and `orchestrator` are built, routing happens
+automatically based on the request source and action:
+
+| Source | Resolved mode | Action | Model |
+|---|---|---|---|
+| `nvim` | `editor` | any | `qwen2.5-coder:7b` |
+| `cli` / `agent` | `agentic` | `plan` | `claude-sonnet` |
+| `cli` / `agent` | `agentic` | `debug` | `deepseek-coder-v2` |
+| `cli` / `agent` | `agentic` | other | `qwen2.5-coder:7b` |
+
+The `source: "nvim"` field in `AIRequestEvent` is what the mode-router will
+use to detect editor context and lock the model to qwen regardless of action.
+
+### Connect GitHub Copilot
+
+GitHub Copilot is a built-in provider -- no `opencode.json` changes needed.
+Just authenticate once:
+
+```bash
+opencode
+# Inside the TUI:
+/connect
+# Search for "GitHub Copilot", select it
+# Navigate to https://github.com/login/device and enter the device code shown
+# Authorize in the browser, then return to the TUI
+```
+
+The token is stored in `~/.local/share/opencode/auth.json`. To confirm the
+models available under your subscription:
+
+```bash
+/models
+# Look for entries starting with "copilot/"
+# e.g. copilot/claude-sonnet-4-20250514
+```
+
+If the model ID shown differs from `claude-sonnet-4-20250514`, update the
+`model:` field in `.opencode/agents/planner.md` to match exactly.
+
+### Custom agent profiles
+
+Two subagent profiles are defined in `.opencode/agents/`:
+
+```
+.opencode/
+  agents/
+    planner.md    -- Claude Sonnet via Copilot; read-only; invoke with @planner
+    debugger.md   -- DeepSeek Coder V2 via Ollama; read-only; invoke with @debugger
+```
+
+Both agents have `edit: deny` and `write: deny` -- they diagnose and plan but
+never touch files. The primary agent (qwen by default) does the actual work.
+
+**Usage examples:**
+
+```
+# Plan a new feature before building it
+@planner I want to add a mode-router that detects whether a request comes
+from Neovim or the CLI. How should it work?
+
+# Debug a failing test
+@debugger The selectModel test for "debug" action is returning qwen instead
+of deepseek. Here is the error: ...
+```
+
+### Daily workflow with routing
+
+1. **Neovim (editor mode)** -- qwen handles everything automatically via the
+   Neovim plugin or LSP integration. Fast, local, no API costs.
+2. **Terminal planning** -- run `opencode`, use `@planner` to think through
+   the approach before writing code.
+3. **Terminal building** -- default agent (qwen) implements the plan. Switch to
+   a cloud model temporarily with `/models` if you need stronger code generation.
+4. **Debugging** -- use `@debugger` to diagnose; let the default agent apply
+   the fix once the root cause is identified.
+
+---
+
+## Step 3: Verify the Setup
 
 ```bash
 # Start OpenCode in the project
