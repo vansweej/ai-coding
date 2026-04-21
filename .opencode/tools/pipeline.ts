@@ -31,11 +31,8 @@ const BUN_CANDIDATES = [
 
 async function resolveBun(): Promise<string> {
   for (const candidate of BUN_CANDIDATES) {
-    try {
-      await Bun.file(candidate).exists() && (await Bun.$`test -x ${candidate}`.quiet());
+    if (await Bun.file(candidate).exists()) {
       return candidate;
-    } catch {
-      // not found or not executable -- try next
     }
   }
   return "bun";
