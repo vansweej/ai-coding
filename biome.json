@@ -26,6 +26,6 @@
     }
   },
   "files": {
-    "ignore": ["node_modules", "dist", "bun.lockb"]
+    "ignore": ["node_modules", "dist", "bun.lockb", ".opencode"]
   }
 }
