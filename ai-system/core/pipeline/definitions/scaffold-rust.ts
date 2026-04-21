@@ -7,18 +7,33 @@ import { createOrchestratorStep } from "../steps/orchestrator-step";
 
 const GENERATE_FLAKE_PROMPT = `Generate a Nix flake for a Rust development environment.
 
-The flake must:
-- Use nixpkgs as the input
-- Expose a devShell that includes: rustc, cargo, clippy, rustfmt, and cargo-tarpaulin
-- Target x86_64-linux and aarch64-linux systems
-
-Output ONLY the flake.nix file using this exact fenced code block format:
+Use EXACTLY this structure (you may adjust the package list but NOT the schema):
 
 \`\`\`nix flake.nix
-<content here>
+{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+  outputs = { self, nixpkgs }:
+    let
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+      forEachSystem = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.\${system});
+    in {
+      devShells = forEachSystem (pkgs: {
+        default = pkgs.mkShell {
+          packages = with pkgs; [
+            rustc
+            cargo
+            clippy
+            rustfmt
+            cargo-tarpaulin
+          ];
+        };
+      });
+    };
+}
 \`\`\`
 
-Do not include any explanation or prose outside the code block.`;
+Output ONLY the file shown above. Do not include any explanation or prose outside the code block.`;
 
 /**
  * Creates the Rust scaffold pipeline: init → generate-flake → write-files.

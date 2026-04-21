@@ -7,27 +7,54 @@ import { createOrchestratorStep } from "../steps/orchestrator-step";
 
 const DEFAULT_BUILD_DIR = "build";
 
-const GENERATE_PROMPT = `Generate a minimal C++ project scaffold with the following files:
+const GENERATE_PROMPT = `Generate a minimal C++ project scaffold with exactly these three files.
 
-1. CMakeLists.txt -- C++20, an executable target named "app" from src/main.cpp, CTest enabled
-2. src/main.cpp -- a hello-world main that prints "Hello, world!" and returns 0
-3. flake.nix -- a Nix flake with a devShell containing cmake, gcc, and pkg-config
-
-Output ONLY the three files using this exact fenced code block format for each:
+Use EXACTLY this structure for each file (do NOT change the schema):
 
 \`\`\`cmake CMakeLists.txt
-<content>
+cmake_minimum_required(VERSION 3.20)
+project(app LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_executable(app src/main.cpp)
+
+enable_testing()
 \`\`\`
 
 \`\`\`cpp src/main.cpp
-<content>
+#include <iostream>
+
+int main() {
+  std::cout << "Hello, world!" << std::endl;
+  return 0;
+}
 \`\`\`
 
 \`\`\`nix flake.nix
-<content>
+{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+  outputs = { self, nixpkgs }:
+    let
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+      forEachSystem = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.\${system});
+    in {
+      devShells = forEachSystem (pkgs: {
+        default = pkgs.mkShell {
+          packages = with pkgs; [
+            cmake
+            gcc
+            pkg-config
+          ];
+        };
+      });
+    };
+}
 \`\`\`
 
-Do not include any explanation or prose outside the code blocks.`;
+Output ONLY the three files shown above. Do not include any explanation or prose outside the code blocks.`;
 
 /**
  * Creates the C++ scaffold pipeline: generate → write-files → configure.
