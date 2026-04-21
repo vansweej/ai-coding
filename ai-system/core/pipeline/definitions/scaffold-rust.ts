@@ -1,4 +1,4 @@
-import { createFileWriterStep, createNixShellStep } from "@ai-coding/pipeline";
+import { createFileWriterStep, createShellStep } from "@ai-coding/pipeline";
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
@@ -39,7 +39,9 @@ Output ONLY the file shown above. Do not include any explanation or prose outsid
  * Creates the Rust scaffold pipeline: init → generate-flake → write-files.
  *
  * Steps:
- *   1. init           - cargo init <workspace> (creates Cargo.toml and src/main.rs).
+ *   1. init           - Bootstraps a new Cargo project via `nix shell nixpkgs#cargo --command
+ *                       cargo init <workspace>`. Uses nix shell so cargo does not need to be
+ *                       on PATH -- the flake does not exist yet at this point.
  *   2. generate-flake - LLM generates a flake.nix for the Rust dev environment.
  *   3. write-files    - Parses LLM output and writes flake.nix to the workspace.
  *
@@ -56,7 +58,16 @@ export function createRustScaffoldPipeline(
   workspace: string,
 ): readonly PipelineStep<AIRequestEvent>[] {
   return [
-    createNixShellStep<AIRequestEvent>("init", ["cargo", "init", workspace]),
+    createShellStep<AIRequestEvent>("init", [
+      "nix",
+      "shell",
+      "nixpkgs#cargo",
+      "nixpkgs#rustc",
+      "--command",
+      "cargo",
+      "init",
+      workspace,
+    ]),
 
     createOrchestratorStep("generate-flake", "task", config, () => GENERATE_FLAKE_PROMPT),
 
