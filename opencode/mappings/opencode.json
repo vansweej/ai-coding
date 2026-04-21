@@ -9,10 +9,14 @@
       },
       "models": {
         "qwen3:8b": {
-          "name": "Qwen 3 8B (local)",
-          "options": {
-            "think": false
-          },
+          "name": "Qwen 3 8B (local, thinking enabled)",
+          "limit": {
+            "context": 40960,
+            "output": 8192
+          }
+        },
+        "qwen3:8b-fast": {
+          "name": "Qwen 3 8B Fast (local, no thinking)",
           "limit": {
             "context": 40960,
             "output": 8192
@@ -21,5 +25,5 @@
       }
     }
   },
-  "model": "ollama/qwen3:8b"
+  "model": "ollama/qwen3:8b-fast"
 }

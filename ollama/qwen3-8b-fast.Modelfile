@@ -1,0 +1,166 @@
+# qwen3:8b-fast -- Qwen 3 8B with chain-of-thought reasoning ("thinking") disabled.
+#
+# WHY THIS EXISTS
+# ---------------
+# Qwen3 models enable chain-of-thought reasoning by default.  Before
+# generating a response (or a tool call), the model emits an internal
+# <think>...</think> block.  This is valuable for complex reasoning tasks,
+# but causes two concrete problems when qwen3:8b is used as an OpenCode
+# agent driving tool calls:
+#
+#   1. The model spends its output-token budget on reasoning text instead
+#      of emitting the tool call immediately.  With OpenCode's system
+#      prompt + AGENTS.md + agent prompt + tool schemas already in context,
+#      qwen3:8b sometimes exhausts its budget inside the think block and
+#      never reaches the actual <tool_call> XML.
+#
+#   2. Ollama's OpenAI-compatible endpoint (/v1/chat/completions) silently
+#      ignores the `think` request parameter.  The AI SDK adapter used by
+#      OpenCode (@ai-sdk/openai-compatible) correctly passes `think: false`
+#      in the HTTP body, but Ollama's /v1 layer discards it.  Only the
+#      native /api/chat endpoint honours the parameter -- and the community
+#      ollama-ai-provider package (which uses /api/chat) has a hardcoded
+#      settings list that also omits `think`.
+#
+#   3. `PARAMETER think false` is not a valid Ollama Modelfile directive.
+#      Ollama's PARAMETER instruction supports only sampling parameters
+#      (temperature, top_k, stop, num_ctx, etc.).  `think` is a runtime
+#      request field, not a model parameter.
+#
+# HOW THIS ACTUALLY WORKS
+# -----------------------
+# The Qwen3 chat template (visible via `ollama show qwen3:8b --modelfile`)
+# controls thinking mode through two mechanisms in the prompt:
+#
+#   1. Appending `/no_think` to the last user message tells Qwen3 to
+#      skip the reasoning phase for this turn.
+#
+#   2. Pre-filling the assistant response with an empty `<think></think>`
+#      block forces the model past the thinking stage immediately, so it
+#      proceeds directly to the actual response or tool call.
+#
+# The original template applies both only when the API request sets
+# `think=false` (i.e. `$.IsThinkSet=true, $.Think=false`).  This
+# derivative overrides the TEMPLATE to apply both unconditionally,
+# making no-think the fixed default regardless of the API caller.
+#
+# DISK USAGE
+# ----------
+# Ollama stores models as content-addressable layers.  This derivative
+# shares all weight blobs with qwen3:8b -- only a tiny config/template
+# layer is added.  No disk space is duplicated.
+#
+# HOW TO REBUILD (manual)
+# -----------------------
+#   cd ~/Projects/ai-coding
+#   ollama create qwen3:8b-fast -f ollama/qwen3-8b-fast.Modelfile
+#
+# Or use the helper script (handles guards and multi-model setup):
+#   ./ollama/setup.sh
+#
+# FRESH MACHINE SETUP
+# -------------------
+# On a new machine, run in order:
+#   1. ollama pull qwen3:8b          # pull the base weights (~5 GB)
+#   2. ./ollama/setup.sh             # build all derivatives
+#
+# The home-manager activation script (home.activation.ensureOllamaModels
+# in ~/Projects/home-manager/home.nix) calls setup.sh automatically on
+# every `home-manager switch`, so step 2 is handled for you as long as
+# Ollama is already running when you switch.
+#
+# ADDING MORE DERIVATIVES
+# -----------------------
+# To add another derivative model:
+#   1. Create a new Modelfile in this directory following this pattern.
+#   2. Add its name to the MODELS array in ollama/setup.sh.
+#   3. Add the model ID to opencode/mappings/opencode.json.
+#   4. Update docs/ollama-models.md with the new model's description.
+#   5. Commit both repos and run `home-manager switch`.
+#
+# REFERENCE
+# ---------
+# Ollama Modelfile syntax:
+#   https://github.com/ollama/ollama/blob/main/docs/modelfile.md
+# Qwen3 thinking mode documentation:
+#   https://qwenlm.github.io/blog/qwen3/#thinking-mode
+
+FROM qwen3:8b
+
+# Override the template to hardcode no-think mode.
+#
+# Changes vs the upstream qwen3:8b template:
+#
+#   USER MESSAGE (last turn only):
+#     Original: conditionally appends `/no_think` when IsThinkSet=true, Think=false
+#     This:     unconditionally appends `/no_think` to the last user message
+#
+#   ASSISTANT PREFIX (when model must respond):
+#     Original: conditionally prefills `<think>\n\n</think>\n\n` when IsThinkSet=true, Think=false
+#     This:     unconditionally prefills `<think>\n\n</think>\n\n`
+#
+# All other template logic (system prompt, tools, tool_response, multi-turn
+# history) is identical to the upstream template.
+TEMPLATE """
+{{- $lastUserIdx := -1 -}}
+{{- range $idx, $msg := .Messages -}}
+{{- if eq $msg.Role "user" }}{{ $lastUserIdx = $idx }}{{ end -}}
+{{- end }}
+{{- if or .System .Tools }}<|im_start|>system
+{{ if .System }}
+{{ .System }}
+{{- end }}
+{{- if .Tools }}
+
+# Tools
+
+You may call one or more functions to assist with the user query.
+
+You are provided with function signatures within <tools></tools> XML tags:
+<tools>
+{{- range .Tools }}
+{"type": "function", "function": {{ .Function }}}
+{{- end }}
+</tools>
+
+For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
+<tool_call>
+{"name": <function-name>, "arguments": <args-json-object>}
+</tool_call>
+{{- end -}}
+<|im_end|>
+{{ end }}
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 -}}
+{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }}
+{{- if eq $i $lastUserIdx }} /no_think{{- end }}<|im_end|>
+{{ else if eq .Role "assistant" }}<|im_start|>assistant
+{{ if (and $.IsThinkSet (and .Thinking (or $last (gt $i $lastUserIdx)))) -}}
+<think>{{ .Thinking }}</think>
+{{ end -}}
+{{ if .Content }}{{ .Content }}
+{{- else if .ToolCalls }}<tool_call>
+{{ range .ToolCalls }}{"name": "{{ .Function.Name }}", "arguments": {{ .Function.Arguments }}}
+{{ end }}</tool_call>
+{{- end }}{{ if not $last }}<|im_end|>
+{{ end }}
+{{- else if eq .Role "tool" }}<|im_start|>user
+<tool_response>
+{{ .Content }}
+</tool_response><|im_end|>
+{{ end }}
+{{- if and (ne .Role "assistant") $last }}<|im_start|>assistant
+<think>
+
+</think>
+
+{{ end }}
+{{- end }}"""
+
+PARAMETER stop <|im_start|>
+PARAMETER stop <|im_end|>
+PARAMETER temperature 0.6
+PARAMETER top_k 20
+PARAMETER top_p 0.95
+PARAMETER repeat_penalty 1

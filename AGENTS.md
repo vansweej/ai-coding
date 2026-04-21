@@ -238,9 +238,24 @@ This project routes AI requests to different models:
 
 | Action  | Mode    | Model               | Where        |
 |---------|---------|---------------------|--------------|
-| plan    | agentic | `claude-sonnet`     | Cloud API    |
+| plan    | agentic | `claude-sonnet-4.6` | Cloud API    |
 | debug   | agentic | `deepseek-coder-v2` | Local/Ollama |
-| *other* | agentic | `qwen3:8b`  | Local/Ollama |
-| *any*   | editor  | `qwen3:8b`  | Local/Ollama |
+| *other* | agentic | `qwen3:8b`          | Local/Ollama |
+| *any*   | editor  | `qwen3:8b`          | Local/Ollama |
 
 Local models are served via **Ollama** at `http://localhost:11434`.
+
+### OpenCode agent model
+
+OpenCode agents (defined in `.opencode/agents/` and `~/.config/opencode/agents/`)
+use **`qwen3:8b-fast`** instead of the base `qwen3:8b`. This is a derivative
+model built from `ollama/qwen3-8b-fast.Modelfile` that disables Qwen3's
+chain-of-thought reasoning mode, which would otherwise consume the entire
+output-token budget before the tool call is emitted.
+
+The model-router (`ai-system/core/model-router/`) is a separate layer used by
+the internal pipeline orchestrator and still references `qwen3:8b` as the model
+ID string -- the orchestrator talks to Ollama directly and passes `think: false`
+via the native `/api/chat` endpoint where it works correctly.
+
+See `docs/ollama-models.md` for setup instructions and full design rationale.

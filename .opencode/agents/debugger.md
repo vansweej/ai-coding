@@ -1,9 +1,8 @@
 ---
 description: Deep code debugging using Qwen3 8B (local)
 mode: subagent
-model: ollama/qwen3:8b
+model: ollama/qwen3:8b-fast
 temperature: 0.1
-think: false
 permission:
   edit: deny
   write: deny
