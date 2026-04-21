@@ -87,7 +87,10 @@ export function createCppScaffoldPipeline(
   buildDir: string = DEFAULT_BUILD_DIR,
 ): readonly PipelineStep<AIRequestEvent>[] {
   return [
-    createOrchestratorStep("generate", "task", config, () => GENERATE_PROMPT, SCAFFOLD_LLM_OPTIONS),
+    // Use "plan" action so the orchestrator routes to claude-sonnet.
+    // Structured template generation requires a capable model -- qwen3:8b (8B)
+    // is unreliable for exact schema reproduction.
+    createOrchestratorStep("generate", "plan", config, () => GENERATE_PROMPT, SCAFFOLD_LLM_OPTIONS),
 
     createFileWriterStep<AIRequestEvent>("write-files", {
       readFrom: "generate",
