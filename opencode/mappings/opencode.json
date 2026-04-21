@@ -8,14 +8,15 @@
         "baseURL": "http://localhost:11434/v1"
       },
       "models": {
-        "deepseek-coder-v2": {
-          "name": "DeepSeek Coder V2 (local)"
-        },
-        "qwen2.5-coder:7b": {
-          "name": "Qwen 2.5 Coder 7B (local)"
+        "qwen3:8b": {
+          "name": "Qwen 3 8B (local)",
+          "limit": {
+            "context": 40960,
+            "output": 8192
+          }
         }
       }
     }
   },
-  "model": "ollama/qwen2.5-coder:7b"
+  "model": "ollama/qwen3:8b"
 }
