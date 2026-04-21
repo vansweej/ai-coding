@@ -1,4 +1,6 @@
 import { tool } from "@opencode-ai/plugin";
+import { homedir } from "os";
+import { join } from "path";
 
 /**
  * Custom tool that runs an ai-coding pipeline from within OpenCode.
@@ -13,7 +15,32 @@ import { tool } from "@opencode-ai/plugin";
  *
  * The tool shells out to `bun run pipeline` in the monorepo root and returns
  * the full pipeline output for the LLM to summarise.
+ *
+ * Bun is resolved by probing known Nix and system locations so the tool
+ * works even when OpenCode does not inherit the full login PATH.
  */
+
+/** Candidate locations for the bun binary, in priority order. */
+const BUN_CANDIDATES = [
+  join(homedir(), ".nix-profile", "bin", "bun"),
+  "/nix/var/nix/profiles/default/bin/bun",
+  "/usr/local/bin/bun",
+  "/usr/bin/bun",
+  "bun", // fallback: rely on PATH
+];
+
+async function resolveBun(): Promise<string> {
+  for (const candidate of BUN_CANDIDATES) {
+    try {
+      await Bun.file(candidate).exists() && (await Bun.$`test -x ${candidate}`.quiet());
+      return candidate;
+    } catch {
+      // not found or not executable -- try next
+    }
+  }
+  return "bun";
+}
+
 export default tool({
   description:
     "Run an ai-coding pipeline (scaffold-rust, scaffold-cpp, dev-cycle, rust-dev-cycle, cmake-dev-cycle). " +
@@ -47,14 +74,15 @@ export default tool({
       );
     }
 
+    const bunBin = await resolveBun();
     const argv = ["run", "pipeline", args.name, args.workspace];
     if (args.input) {
       argv.push("--input", args.input);
     }
-    const cmd = `bun ${argv.join(" ")}`;
+    const cmd = `${bunBin} ${argv.join(" ")}`;
 
     try {
-      const output = await Bun.$`bun ${argv}`.cwd(monorepoRoot).text();
+      const output = await Bun.$`${bunBin} ${argv}`.cwd(monorepoRoot).text();
       return output.trim() || "Pipeline completed with no output.";
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
