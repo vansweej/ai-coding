@@ -1,4 +1,4 @@
-import { createFileWriterStep, createShellStep } from "@ai-coding/pipeline";
+import { createFileWriterStep, createNixShellStep, createShellStep } from "@ai-coding/pipeline";
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
@@ -36,14 +36,17 @@ Use EXACTLY this structure (you may adjust the package list but NOT the schema):
 Output ONLY the file shown above. Do not include any explanation or prose outside the code block.`;
 
 /**
- * Creates the Rust scaffold pipeline: init → generate-flake → write-files.
+ * Creates the Rust scaffold pipeline: generate-flake → write-files → git-init → init.
+ *
+ * The flake is generated and written first so that `cargo init` runs inside
+ * the project's own dev shell -- the flake is the single source of truth for
+ * tooling. git-init tracks flake.nix so that `nix develop` can see it.
  *
  * Steps:
- *   1. init           - Bootstraps a new Cargo project via `nix shell nixpkgs#cargo --command
- *                       cargo init <workspace>`. Uses nix shell so cargo does not need to be
- *                       on PATH -- the flake does not exist yet at this point.
- *   2. generate-flake - LLM generates a flake.nix for the Rust dev environment.
- *   3. write-files    - Parses LLM output and writes flake.nix to the workspace.
+ *   1. generate-flake - LLM generates a flake.nix for the Rust dev environment.
+ *   2. write-files    - Parses LLM output and writes flake.nix to the workspace.
+ *   3. git-init       - `git init && git add flake.nix` so nix develop can read the flake.
+ *   4. init           - `nix develop --command cargo init .` inside the workspace.
  *
  * After this pipeline completes, the workspace contains a fully scaffolded
  * Rust project with a Nix flake. Run `nix develop` to enter the dev shell,
@@ -58,22 +61,17 @@ export function createRustScaffoldPipeline(
   workspace: string,
 ): readonly PipelineStep<AIRequestEvent>[] {
   return [
-    createShellStep<AIRequestEvent>("init", [
-      "nix",
-      "shell",
-      "nixpkgs#cargo",
-      "nixpkgs#rustc",
-      "--command",
-      "cargo",
-      "init",
-      workspace,
-    ]),
-
     createOrchestratorStep("generate-flake", "task", config, () => GENERATE_FLAKE_PROMPT),
 
     createFileWriterStep<AIRequestEvent>("write-files", {
       readFrom: "generate-flake",
       baseDir: workspace,
     }),
+
+    createShellStep<AIRequestEvent>("git-init", ["sh", "-c", "git init && git add flake.nix"], {
+      cwd: workspace,
+    }),
+
+    createNixShellStep<AIRequestEvent>("init", ["cargo", "init", "."], { cwd: workspace }),
   ];
 }
