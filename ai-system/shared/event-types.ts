@@ -39,6 +39,12 @@ export interface AIResponse {
 export interface DispatchRequest {
   readonly model: string;
   readonly prompt: string;
+  /** Optional system prompt prepended before the user message. */
+  readonly system?: string;
+  /** Sampling temperature (0.0–1.0). Provider default is used when omitted. */
+  readonly temperature?: number;
+  /** Maximum number of tokens to generate. Provider default is used when omitted. */
+  readonly maxTokens?: number;
   readonly context?: Record<string, unknown>;
 }
 

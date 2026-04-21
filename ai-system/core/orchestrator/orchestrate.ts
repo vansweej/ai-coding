@@ -1,4 +1,10 @@
-import type { AIRequestEvent, AIResponse, ModelDispatcher, Result } from "@ai-coding/shared";
+import type {
+  AIRequestEvent,
+  AIResponse,
+  DispatchRequest,
+  ModelDispatcher,
+  Result,
+} from "@ai-coding/shared";
 
 import { resolveMode } from "../mode-router/resolve-mode";
 import { selectModel } from "../model-router/select-model";
@@ -6,6 +12,16 @@ import { selectModel } from "../model-router/select-model";
 /** Configuration for the orchestrator, mapping model names to dispatchers. */
 export interface OrchestratorConfig {
   readonly dispatchers: Record<string, ModelDispatcher>;
+}
+
+/** Optional LLM-level parameters forwarded to the dispatcher. */
+export interface LLMOptions {
+  /** System prompt prepended before the user message. */
+  readonly system?: string;
+  /** Sampling temperature (0.0–1.0). Provider default is used when omitted. */
+  readonly temperature?: number;
+  /** Maximum number of tokens to generate. Provider default is used when omitted. */
+  readonly maxTokens?: number;
 }
 
 /**
@@ -18,6 +34,7 @@ export interface OrchestratorConfig {
 export async function orchestrate(
   event: AIRequestEvent,
   config: OrchestratorConfig,
+  llmOptions?: LLMOptions,
 ): Promise<Result<AIResponse>> {
   const startedAt = Date.now();
 
@@ -33,7 +50,15 @@ export async function orchestrate(
   }
 
   const prompt = event.payload.input ?? "";
-  const result = await dispatcher.dispatch({ model, prompt, context: event.context });
+  const dispatchRequest: DispatchRequest = {
+    model,
+    prompt,
+    system: llmOptions?.system,
+    temperature: llmOptions?.temperature,
+    maxTokens: llmOptions?.maxTokens,
+    context: event.context,
+  };
+  const result = await dispatcher.dispatch(dispatchRequest);
 
   if (!result.ok) {
     return result;

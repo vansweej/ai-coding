@@ -22,6 +22,24 @@ export class CopilotDispatcher implements ModelDispatcher {
 
   async dispatch(request: DispatchRequest): Promise<Result<string>> {
     try {
+      type Message = { role: string; content: string };
+      const messages: Message[] = [];
+
+      if (request.system !== undefined) {
+        messages.push({ role: "system", content: request.system });
+      }
+
+      messages.push({ role: "user", content: request.prompt });
+
+      const body: Record<string, unknown> = {
+        model: request.model,
+        messages,
+        stream: false,
+      };
+
+      if (request.temperature !== undefined) body.temperature = request.temperature;
+      if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
+
       const response = await fetch(this.endpoint, {
         method: "POST",
         headers: {
@@ -29,11 +47,7 @@ export class CopilotDispatcher implements ModelDispatcher {
           Authorization: `Bearer ${this.token}`,
           "Copilot-Integration-Id": "ai-coding-os",
         },
-        body: JSON.stringify({
-          model: request.model,
-          messages: [{ role: "user", content: request.prompt }],
-          stream: false,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {

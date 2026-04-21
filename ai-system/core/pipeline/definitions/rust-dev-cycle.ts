@@ -2,10 +2,18 @@ import { createCoverageGateStep, createNixShellStep } from "@ai-coding/pipeline"
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
-import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
+import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { createOrchestratorStep } from "../steps/orchestrator-step";
 
 const DEFAULT_COVERAGE_THRESHOLD = 90;
+
+/** LLM options for implementation steps targeting qwen3:8b. */
+const IMPLEMENT_LLM_OPTIONS: LLMOptions = {
+  system:
+    "You are a Rust coding assistant. Output only the implementation code in the requested files. " +
+    "Follow Rust idioms: use Result/Option, avoid unwrap in production code, prefer ownership over cloning.",
+  temperature: 0.4,
+};
 
 /**
  * Creates the Rust dev-cycle pipeline: plan → implement → fmt → clippy → test → tarpaulin → coverage gate.
@@ -34,11 +42,17 @@ export function createRustDevCyclePipeline(
   return [
     createOrchestratorStep("plan", "plan", config),
 
-    createOrchestratorStep("implement", "edit", config, (ctx) => {
-      const plan = ctx.results.get("plan")?.output ?? "";
-      const original = ctx.event.payload.input ?? "";
-      return `Implement the following plan in Rust:\n\n${plan}\n\nOriginal request: ${original}`;
-    }),
+    createOrchestratorStep(
+      "implement",
+      "edit",
+      config,
+      (ctx) => {
+        const plan = ctx.results.get("plan")?.output ?? "";
+        const original = ctx.event.payload.input ?? "";
+        return `Implement the following plan in Rust:\n\n${plan}\n\nOriginal request: ${original}`;
+      },
+      IMPLEMENT_LLM_OPTIONS,
+    ),
 
     createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt", "--check"], { cwd: workspace }),
 

@@ -16,14 +16,27 @@ export class OllamaDispatcher implements ModelDispatcher {
 
   async dispatch(request: DispatchRequest): Promise<Result<string>> {
     try {
+      const body: Record<string, unknown> = {
+        model: request.model,
+        prompt: request.prompt,
+        stream: false,
+      };
+
+      if (request.system !== undefined) {
+        body.system = request.system;
+      }
+
+      if (request.temperature !== undefined || request.maxTokens !== undefined) {
+        const options: Record<string, unknown> = {};
+        if (request.temperature !== undefined) options.temperature = request.temperature;
+        if (request.maxTokens !== undefined) options.num_predict = request.maxTokens;
+        body.options = options;
+      }
+
       const response = await fetch(`${this.baseUrl}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: request.model,
-          prompt: request.prompt,
-          stream: false,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {

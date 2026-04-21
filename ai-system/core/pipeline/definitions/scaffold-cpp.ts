@@ -2,7 +2,7 @@ import { createFileWriterStep, createNixShellStep } from "@ai-coding/pipeline";
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
-import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
+import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { createOrchestratorStep } from "../steps/orchestrator-step";
 
 const DEFAULT_BUILD_DIR = "build";
@@ -56,6 +56,14 @@ int main() {
 
 Output ONLY the three files shown above. Do not include any explanation or prose outside the code blocks.`;
 
+/** LLM options for scaffold generation steps: tighter temperature for deterministic output. */
+const SCAFFOLD_LLM_OPTIONS: LLMOptions = {
+  system:
+    "You are a code generator. Output only the requested code blocks exactly as shown. " +
+    "Do not include any prose or explanation outside the code blocks.",
+  temperature: 0.3,
+};
+
 /**
  * Creates the C++ scaffold pipeline: generate → write-files → configure.
  *
@@ -79,7 +87,7 @@ export function createCppScaffoldPipeline(
   buildDir: string = DEFAULT_BUILD_DIR,
 ): readonly PipelineStep<AIRequestEvent>[] {
   return [
-    createOrchestratorStep("generate", "task", config, () => GENERATE_PROMPT),
+    createOrchestratorStep("generate", "task", config, () => GENERATE_PROMPT, SCAFFOLD_LLM_OPTIONS),
 
     createFileWriterStep<AIRequestEvent>("write-files", {
       readFrom: "generate",

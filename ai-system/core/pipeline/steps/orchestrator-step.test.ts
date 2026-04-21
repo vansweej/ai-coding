@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import type { PipelineContext } from "@ai-coding/pipeline";
 import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
 
-import type { OrchestratorConfig } from "../../../core/orchestrator/orchestrate";
+import type { LLMOptions, OrchestratorConfig } from "../../../core/orchestrator/orchestrate";
 import { createOrchestratorStep } from "./orchestrator-step";
 
 /** Creates a mock dispatcher that returns a fixed response string. */
@@ -192,5 +192,30 @@ describe("createOrchestratorStep", () => {
     if (!result.ok) return;
     expect(result.value.stepName).toBe("named-step");
     expect(result.value.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("forwards llmOptions to the dispatcher via orchestrate", async () => {
+    let capturedRequest: DispatchRequest | undefined;
+    const capturingDispatcher: ModelDispatcher = {
+      dispatch: async (req: DispatchRequest): Promise<Result<string>> => {
+        capturedRequest = req;
+        return { ok: true, value: "ok" };
+      },
+    };
+
+    const config = makeConfig({ "qwen3:8b": capturingDispatcher });
+    const llmOptions: LLMOptions = {
+      system: "You are a code generator.",
+      temperature: 0.3,
+      maxTokens: 256,
+    };
+    const step = createOrchestratorStep("edit-step", "edit", config, undefined, llmOptions);
+    const ctx = makeCtx(makeEvent({ source: "cli", action: "plan" }));
+
+    await step.execute(ctx);
+
+    expect(capturedRequest?.system).toBe("You are a code generator.");
+    expect(capturedRequest?.temperature).toBe(0.3);
+    expect(capturedRequest?.maxTokens).toBe(256);
   });
 });

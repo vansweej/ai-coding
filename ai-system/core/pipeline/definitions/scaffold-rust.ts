@@ -2,7 +2,7 @@ import { createFileWriterStep, createNixShellStep, createShellStep } from "@ai-c
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
-import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
+import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { createOrchestratorStep } from "../steps/orchestrator-step";
 
 const GENERATE_FLAKE_PROMPT = `Generate a Nix flake for a Rust development environment.
@@ -35,6 +35,14 @@ Use EXACTLY this structure (you may adjust the package list but NOT the schema):
 
 Output ONLY the file shown above. Do not include any explanation or prose outside the code block.`;
 
+/** LLM options for scaffold generation steps: tighter temperature for deterministic output. */
+const SCAFFOLD_LLM_OPTIONS: LLMOptions = {
+  system:
+    "You are a code generator. Output only the requested code blocks exactly as shown. " +
+    "Do not include any prose or explanation outside the code blocks.",
+  temperature: 0.3,
+};
+
 /**
  * Creates the Rust scaffold pipeline: generate-flake → write-files → git-init → init.
  *
@@ -61,7 +69,13 @@ export function createRustScaffoldPipeline(
   workspace: string,
 ): readonly PipelineStep<AIRequestEvent>[] {
   return [
-    createOrchestratorStep("generate-flake", "task", config, () => GENERATE_FLAKE_PROMPT),
+    createOrchestratorStep(
+      "generate-flake",
+      "task",
+      config,
+      () => GENERATE_FLAKE_PROMPT,
+      SCAFFOLD_LLM_OPTIONS,
+    ),
 
     createFileWriterStep<AIRequestEvent>("write-files", {
       readFrom: "generate-flake",

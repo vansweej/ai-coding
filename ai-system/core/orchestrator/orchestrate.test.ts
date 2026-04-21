@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
 
-import type { OrchestratorConfig } from "./orchestrate";
+import type { LLMOptions, OrchestratorConfig } from "./orchestrate";
 import { orchestrate } from "./orchestrate";
 
 /** Creates a mock dispatcher that returns a fixed response. */
@@ -139,5 +139,49 @@ describe("orchestrate", () => {
     });
 
     expect(capturedPrompt).toBe("");
+  });
+
+  it("forwards llmOptions system, temperature and maxTokens to dispatcher", async () => {
+    let capturedRequest: DispatchRequest | undefined;
+    const capturingDispatcher: ModelDispatcher = {
+      dispatch: async (req: DispatchRequest): Promise<Result<string>> => {
+        capturedRequest = req;
+        return { ok: true, value: "ok" };
+      },
+    };
+
+    const llmOptions: LLMOptions = {
+      system: "You are a code generator.",
+      temperature: 0.3,
+      maxTokens: 512,
+    };
+
+    await orchestrate(
+      makeEvent({ source: "nvim", action: "edit", payload: { input: "write code" } }),
+      { dispatchers: { "qwen3:8b": capturingDispatcher } },
+      llmOptions,
+    );
+
+    expect(capturedRequest?.system).toBe("You are a code generator.");
+    expect(capturedRequest?.temperature).toBe(0.3);
+    expect(capturedRequest?.maxTokens).toBe(512);
+  });
+
+  it("passes undefined llm fields when no llmOptions given", async () => {
+    let capturedRequest: DispatchRequest | undefined;
+    const capturingDispatcher: ModelDispatcher = {
+      dispatch: async (req: DispatchRequest): Promise<Result<string>> => {
+        capturedRequest = req;
+        return { ok: true, value: "ok" };
+      },
+    };
+
+    await orchestrate(makeEvent({ source: "nvim", action: "edit" }), {
+      dispatchers: { "qwen3:8b": capturingDispatcher },
+    });
+
+    expect(capturedRequest?.system).toBeUndefined();
+    expect(capturedRequest?.temperature).toBeUndefined();
+    expect(capturedRequest?.maxTokens).toBeUndefined();
   });
 });

@@ -1,7 +1,7 @@
 import type { PipelineContext, PipelineStep, Result, StepResult } from "@ai-coding/pipeline";
 import type { AIAction, AIRequestEvent } from "@ai-coding/shared";
 
-import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
+import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { orchestrate } from "../../orchestrator/orchestrate";
 
 /**
@@ -17,12 +17,14 @@ import { orchestrate } from "../../orchestrator/orchestrate";
  * @param action      - The AI action this step performs (determines model selection).
  * @param config      - Orchestrator config mapping model names to dispatchers.
  * @param buildPrompt - Optional callback to build the prompt from context.
+ * @param llmOptions  - Optional LLM parameters (system prompt, temperature, maxTokens).
  */
 export function createOrchestratorStep(
   name: string,
   action: AIAction,
   config: OrchestratorConfig,
   buildPrompt?: (ctx: PipelineContext<AIRequestEvent>) => string,
+  llmOptions?: LLMOptions,
 ): PipelineStep<AIRequestEvent> {
   return {
     name,
@@ -37,7 +39,7 @@ export function createOrchestratorStep(
         payload: { ...ctx.event.payload, input: prompt },
       };
 
-      const result = await orchestrate(modifiedEvent, config);
+      const result = await orchestrate(modifiedEvent, config, llmOptions);
 
       if (!result.ok) {
         return result;
