@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin";
 import { homedir } from "os";
-import { join } from "path";
+import { join, resolve } from "path";
 
 /**
  * Custom tool that runs an ai-coding pipeline from within OpenCode.
@@ -54,7 +54,7 @@ export default tool({
       .describe("Pipeline to run"),
     workspace: tool.schema
       .string()
-      .describe("Absolute path to the project directory"),
+      .describe("Path to the project directory (absolute or relative; use '.' for current directory)"),
     input: tool.schema
       .string()
       .optional()
@@ -72,7 +72,8 @@ export default tool({
     }
 
     const bunBin = await resolveBun();
-    const argv = ["run", "pipeline", args.name, args.workspace];
+    const workspace = resolve(args.workspace);
+    const argv = ["run", "pipeline", args.name, workspace];
     if (args.input) {
       argv.push("--input", args.input);
     }
