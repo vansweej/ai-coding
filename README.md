@@ -110,7 +110,54 @@ wrapped in `nix develop --command`.
 
 ---
 
-## Development
+## OpenCode integration
+
+Pipelines can be invoked directly from the OpenCode TUI in two ways.
+
+### Slash commands (explicit)
+
+Type a slash command in the TUI to run a pipeline. The pipeline output is fed
+back to the LLM, which summarises what happened.
+
+| Command | What it does |
+|---------|-------------|
+| `/scaffold-rust <path>` | Scaffold a Rust project with Nix flake |
+| `/scaffold-cpp <path>` | Scaffold a C++ project with CMakeLists.txt and Nix flake |
+| `/pipeline <name> <path> [--input "..."]` | Run any pipeline by name |
+
+Examples:
+
+```
+/scaffold-rust /tmp/my-rust-project
+/scaffold-cpp /tmp/my-cpp-project
+/pipeline rust-dev-cycle ./my-project --input "Add a config module"
+```
+
+Command files live in `.opencode/commands/`. Add new ones there to expose
+additional pipelines as slash commands.
+
+---
+
+### Custom tool (conversational)
+
+A custom tool registered at `.opencode/tools/pipeline.ts` lets the LLM call
+pipelines autonomously during a conversation. Instead of typing a slash command,
+describe your intent naturally:
+
+```
+Scaffold me a new Rust project at /tmp/my-rust-project
+```
+
+OpenCode will call the `pipeline` tool with `name="scaffold-rust"` and
+`workspace="/tmp/my-rust-project"` and report the result.
+
+The tool accepts all five pipeline names (`scaffold-rust`, `scaffold-cpp`,
+`dev-cycle`, `rust-dev-cycle`, `cmake-dev-cycle`) and an optional `input`
+argument for dev-cycle pipelines.
+
+---
+
+
 
 ```bash
 # Install dependencies
