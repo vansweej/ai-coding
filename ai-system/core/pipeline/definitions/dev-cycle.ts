@@ -2,8 +2,16 @@ import { createNixShellStep } from "@ai-coding/pipeline";
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
-import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
+import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { createOrchestratorStep } from "../steps/orchestrator-step";
+
+/** LLM options for implementation steps targeting qwen3:8b. */
+const IMPLEMENT_LLM_OPTIONS: LLMOptions = {
+  system:
+    "You are a coding assistant. Output only the implementation code in the requested files. " +
+    "Keep responses focused and concise.",
+  temperature: 0.4,
+};
 
 /**
  * Creates the TypeScript dev-cycle pipeline: plan → implement → test.
@@ -28,11 +36,17 @@ export function createDevCyclePipeline(
   return [
     createOrchestratorStep("plan", "plan", config),
 
-    createOrchestratorStep("implement", "edit", config, (ctx) => {
-      const plan = ctx.results.get("plan")?.output ?? "";
-      const original = ctx.event.payload.input ?? "";
-      return `Implement the following plan:\n\n${plan}\n\nOriginal request: ${original}`;
-    }),
+    createOrchestratorStep(
+      "implement",
+      "edit",
+      config,
+      (ctx) => {
+        const plan = ctx.results.get("plan")?.output ?? "";
+        const original = ctx.event.payload.input ?? "";
+        return `Implement the following plan:\n\n${plan}\n\nOriginal request: ${original}`;
+      },
+      IMPLEMENT_LLM_OPTIONS,
+    ),
 
     createNixShellStep<AIRequestEvent>("test", ["bun", "test"], { cwd: workspace }),
   ];
