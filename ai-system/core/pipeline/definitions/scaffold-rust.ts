@@ -69,9 +69,12 @@ export function createRustScaffoldPipeline(
   workspace: string,
 ): readonly PipelineStep<AIRequestEvent>[] {
   return [
+    // Use "plan" action so the orchestrator routes to claude-sonnet.
+    // Structured template generation requires a capable model -- qwen3:8b (8B)
+    // is unreliable for exact schema reproduction.
     createOrchestratorStep(
       "generate-flake",
-      "task",
+      "plan",
       config,
       () => GENERATE_FLAKE_PROMPT,
       SCAFFOLD_LLM_OPTIONS,

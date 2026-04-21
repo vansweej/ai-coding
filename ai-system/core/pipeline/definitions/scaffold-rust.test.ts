@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
+
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { createRustScaffoldPipeline } from "./scaffold-rust";
 
@@ -21,5 +23,36 @@ describe("createRustScaffoldPipeline", () => {
     const a = createRustScaffoldPipeline(STUB_CONFIG, "/tmp/a");
     const b = createRustScaffoldPipeline(STUB_CONFIG, "/tmp/b");
     expect(a).not.toBe(b);
+  });
+
+  it("generate-flake step routes to claude-sonnet (plan action)", async () => {
+    let capturedModel = "";
+    const capturingDispatcher: ModelDispatcher = {
+      dispatch: async (req: DispatchRequest): Promise<Result<string>> => {
+        capturedModel = req.model;
+        // Return a minimal valid flake.nix code block so the step succeeds.
+        return {
+          ok: true,
+          value: "```nix flake.nix\n{ outputs = {}; }\n```",
+        };
+      },
+    };
+
+    const config: OrchestratorConfig = {
+      dispatchers: { "claude-sonnet": capturingDispatcher },
+    };
+
+    const steps = createRustScaffoldPipeline(config, "/tmp/test-rust");
+    const event: AIRequestEvent = {
+      id: "t",
+      timestamp: Date.now(),
+      source: "cli",
+      action: "task",
+      payload: {},
+    };
+
+    await steps[0].execute({ event, results: new Map() });
+
+    expect(capturedModel).toBe("claude-sonnet");
   });
 });
