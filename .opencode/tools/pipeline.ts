@@ -54,7 +54,7 @@ export default tool({
       .describe("Pipeline to run"),
     workspace: tool.schema
       .string()
-      .describe("Path to the project directory (absolute or relative; use '.' for current directory)"),
+      .describe("Absolute path to an existing local directory. Use '.' for the current project directory. Never invent or guess a path."),
     input: tool.schema
       .string()
       .optional()
