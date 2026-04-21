@@ -10,6 +10,9 @@
       "models": {
         "qwen3:8b": {
           "name": "Qwen 3 8B (local)",
+          "options": {
+            "think": false
+          },
           "limit": {
             "context": 40960,
             "output": 8192

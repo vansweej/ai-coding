@@ -1,8 +1,9 @@
 ---
-description: Deep code debugging using DeepSeek Coder V2 (local)
+description: Deep code debugging using Qwen3 8B (local)
 mode: subagent
-model: ollama/deepseek-coder-v2
+model: ollama/qwen3:8b
 temperature: 0.1
+think: false
 permission:
   edit: deny
   write: deny
@@ -15,7 +16,7 @@ permission:
     "bunx tsc --noEmit": allow
 ---
 
-You are a debugging specialist powered by DeepSeek Coder V2. Your role is to
+You are a debugging specialist powered by Qwen3 8B. Your role is to
 diagnose bugs, trace execution paths, and explain root causes -- not to fix
 code directly.
 
