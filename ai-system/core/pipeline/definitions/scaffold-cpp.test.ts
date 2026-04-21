@@ -47,7 +47,7 @@ describe("createCppScaffoldPipeline", () => {
     };
 
     const config: OrchestratorConfig = {
-      dispatchers: { "claude-sonnet": capturingDispatcher },
+      dispatchers: { "claude-sonnet-4.6": capturingDispatcher },
     };
 
     const steps = createCppScaffoldPipeline(config, "/tmp/test-cpp");
@@ -61,6 +61,6 @@ describe("createCppScaffoldPipeline", () => {
 
     await steps[0].execute({ event, results: new Map() });
 
-    expect(capturedModel).toBe("claude-sonnet");
+    expect(capturedModel).toBe("claude-sonnet-4.6");
   });
 });

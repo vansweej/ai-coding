@@ -55,7 +55,7 @@ describe("createCMakeDevCyclePipeline", () => {
   it("buildPrompt includes plan output and original request in implement step", async () => {
     const dispatcher = capturingDispatcher();
     const config: OrchestratorConfig = {
-      dispatchers: { "claude-sonnet": dispatcher, "qwen3:8b": dispatcher },
+      dispatchers: { "claude-sonnet-4.6": dispatcher, "qwen3:8b": dispatcher },
     };
     const steps = createCMakeDevCyclePipeline(config, "/tmp/ws");
     const implementStep = steps[1];

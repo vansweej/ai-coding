@@ -86,7 +86,7 @@ export function loadConfig(openCodeAuthPath?: string): Result<OrchestratorConfig
     ok: true,
     value: {
       dispatchers: {
-        "claude-sonnet": copilot,
+        "claude-sonnet-4.6": copilot,
         "deepseek-coder-v2": ollama,
         "qwen3:8b": ollama,
       },

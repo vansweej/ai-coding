@@ -20,7 +20,7 @@ describe("selectModel", () => {
     const mode: AIMode = "agentic";
 
     it("returns claude-sonnet for plan action", () => {
-      expect(selectModel(makeEvent("plan"), mode)).toBe("claude-sonnet");
+      expect(selectModel(makeEvent("plan"), mode)).toBe("claude-sonnet-4.6");
     });
 
     it("returns deepseek-coder-v2 for debug action", () => {

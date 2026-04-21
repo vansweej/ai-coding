@@ -7,7 +7,7 @@ import { CopilotDispatcher } from "./copilot-dispatcher";
 /** Build a minimal DispatchRequest. */
 function makeRequest(overrides: Partial<DispatchRequest> = {}): DispatchRequest {
   return {
-    model: "claude-sonnet",
+    model: "claude-sonnet-4.6",
     prompt: "Write a hello world function",
     ...overrides,
   };

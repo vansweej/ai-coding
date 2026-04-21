@@ -39,7 +39,7 @@ describe("createRustScaffoldPipeline", () => {
     };
 
     const config: OrchestratorConfig = {
-      dispatchers: { "claude-sonnet": capturingDispatcher },
+      dispatchers: { "claude-sonnet-4.6": capturingDispatcher },
     };
 
     const steps = createRustScaffoldPipeline(config, "/tmp/test-rust");
@@ -53,6 +53,6 @@ describe("createRustScaffoldPipeline", () => {
 
     await steps[0].execute({ event, results: new Map() });
 
-    expect(capturedModel).toBe("claude-sonnet");
+    expect(capturedModel).toBe("claude-sonnet-4.6");
   });
 });

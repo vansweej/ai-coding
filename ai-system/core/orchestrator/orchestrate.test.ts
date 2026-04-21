@@ -41,7 +41,7 @@ function makeEvent(
 function makeConfig(overrides?: Partial<OrchestratorConfig["dispatchers"]>): OrchestratorConfig {
   return {
     dispatchers: {
-      "claude-sonnet": mockDispatcher("plan-response"),
+      "claude-sonnet-4.6": mockDispatcher("plan-response"),
       "deepseek-coder-v2": mockDispatcher("debug-response"),
       "qwen3:8b": mockDispatcher("default-response"),
       ...overrides,
@@ -58,7 +58,7 @@ describe("orchestrate", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.model).toBe("claude-sonnet");
+    expect(result.value.model).toBe("claude-sonnet-4.6");
     expect(result.value.mode).toBe("agentic");
     expect(result.value.action).toBe("plan");
     expect(result.value.response).toBe("plan-response");
@@ -102,7 +102,7 @@ describe("orchestrate", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.message).toContain("No dispatcher configured");
-    expect(result.error.message).toContain("claude-sonnet");
+    expect(result.error.message).toContain("claude-sonnet-4.6");
   });
 
   it("propagates dispatcher failure", async () => {

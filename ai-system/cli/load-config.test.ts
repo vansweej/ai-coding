@@ -105,7 +105,7 @@ describe("loadConfig", () => {
     const result = loadConfig("/nonexistent/auth.json");
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.dispatchers["claude-sonnet"]).toBeDefined();
+      expect(result.value.dispatchers["claude-sonnet-4.6"]).toBeDefined();
       expect(result.value.dispatchers["qwen3:8b"]).toBeDefined();
       expect(result.value.dispatchers["deepseek-coder-v2"]).toBeDefined();
     }
