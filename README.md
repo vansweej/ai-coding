@@ -155,9 +155,50 @@ The tool accepts all five pipeline names (`scaffold-rust`, `scaffold-cpp`,
 `dev-cycle`, `rust-dev-cycle`, `cmake-dev-cycle`) and an optional `input`
 argument for dev-cycle pipelines.
 
+### Using a file as pipeline input
+
+Instead of typing a request inline, you can point the pipeline at a file
+containing the plan or instructions. Three approaches work today -- no code
+changes required.
+
+**1. `@` file reference (simplest)**
+
+OpenCode automatically injects the contents of any `@`-referenced file into
+the prompt. Works in both slash commands and conversational messages:
+
+```
+/pipeline scaffold-rust /tmp/my-project --input "@docs/my-plan.md"
+```
+
+```
+Scaffold a Rust project at /tmp/my-project, using the plan described in @docs/my-plan.md
+```
+
+**2. Shell substitution in a slash command**
+
+Use the `!`command`` syntax to inject file contents at invocation time, before
+the LLM sees the prompt:
+
+```
+/pipeline scaffold-rust /tmp/my-project --input "!`cat docs/my-plan.md`"
+```
+
+**3. Conversational -- ask the LLM to read first (most natural)**
+
+Just describe intent. OpenCode's built-in `read` tool handles the file, and the
+LLM passes the content to the `pipeline` tool automatically:
+
+```
+Read the instructions in docs/scaffold-plan.md and scaffold a Rust project
+at /tmp/my-project following those instructions.
+```
+
+> **Which to use:** Option 3 is the most natural for general use. Options 1 and
+> 2 give more direct control over exactly what text reaches the `--input` flag.
+
 ---
 
-
+## Development
 
 ```bash
 # Install dependencies
