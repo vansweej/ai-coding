@@ -45,7 +45,9 @@ export class CopilotDispatcher implements ModelDispatcher {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.token}`,
-          "Copilot-Integration-Id": "ai-coding-os",
+          "User-Agent": "ai-coding-os/1.0.0",
+          "Openai-Intent": "conversation-edits",
+          "x-initiator": "user",
         },
         body: JSON.stringify(body),
       });
