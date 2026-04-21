@@ -73,6 +73,27 @@ export OLLAMA_URL=http://my-ollama-host:11434
 
 ---
 
+### Monorepo path (required for global OpenCode integration)
+
+When invoking pipelines from a different project directory via OpenCode's slash
+commands or the custom tool, the pipeline CLI needs to know where the
+`ai-coding` monorepo lives.
+
+Set `AI_CODING_MONOREPO` to the absolute path of this repo:
+
+```bash
+export AI_CODING_MONOREPO=/home/vansweej/Projects/ai-coding
+```
+
+If you use **Home Manager**, this is set globally in `home.nix`
+`home.sessionVariables` and is available in all sessions automatically. See
+`~/Projects/home-manager/home.nix` for details.
+
+If the variable is not set, the slash commands will silently fail and the
+custom tool will return an explicit error message.
+
+---
+
 ## Running pipelines
 
 ```bash

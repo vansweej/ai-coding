@@ -4,7 +4,7 @@ description: Run any pipeline by name. Usage: /pipeline <name> <workspace> [--in
 Run the pipeline with these arguments: $ARGUMENTS
 
 Execute:
-!`bun run --cwd /home/vansweej/Projects/ai-coding pipeline $ARGUMENTS 2>&1`
+!`bun run --cwd $AI_CODING_MONOREPO pipeline $ARGUMENTS 2>&1`
 
 Report each step's outcome. If the pipeline failed, explain which step failed and why.
 
