@@ -1,5 +1,4 @@
-import type { Result } from "@ai-coding/shared";
-
+import type { Result } from "../pipeline-types";
 import type { PipelineContext, PipelineStep, StepResult } from "../pipeline-types";
 
 /** Options for configuring a ShellStep. */
@@ -18,25 +17,25 @@ export interface ShellStepOptions {
 /**
  * Creates a pipeline step that runs a shell command via Bun.spawn.
  * Commands are passed as an array (never interpolated through a shell) to
- * prevent injection. The step does not interpret pipeline context -- it runs
- * a fixed command every time.
+ * prevent injection. The step does not read or write pipeline context -- it
+ * runs the same fixed command on every invocation.
  *
  * @param name    - Unique step name, used as the key in PipelineContext.results.
  * @param command - Command and arguments as an array, e.g. ["bun", "test"].
  * @param options - Optional cwd, timeout, and failure behaviour.
  */
-export function createShellStep(
+export function createShellStep<TEvent = unknown>(
   name: string,
   command: readonly string[],
   options?: ShellStepOptions,
-): PipelineStep {
+): PipelineStep<TEvent> {
   const failOnNonZero = options?.failOnNonZero ?? true;
   const timeoutMs = options?.timeoutMs ?? 60_000;
   const cwd = options?.cwd;
 
   return {
     name,
-    execute: async (_ctx: PipelineContext): Promise<Result<StepResult>> => {
+    execute: async (_ctx: PipelineContext<TEvent>): Promise<Result<StepResult>> => {
       const startedAt = Date.now();
 
       const proc = Bun.spawn(command as string[], {

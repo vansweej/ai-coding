@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
+import type { PipelineContext } from "@ai-coding/pipeline";
 import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
 
 import type { OrchestratorConfig } from "../../../core/orchestrator/orchestrate";
-import type { PipelineContext } from "../pipeline-types";
 import { createOrchestratorStep } from "./orchestrator-step";
 
 /** Creates a mock dispatcher that returns a fixed response string. */
@@ -51,7 +51,7 @@ function makeEvent(
 }
 
 /** Builds a minimal PipelineContext with empty results. */
-function makeCtx(event: AIRequestEvent): PipelineContext {
+function makeCtx(event: AIRequestEvent): PipelineContext<AIRequestEvent> {
   return { event, results: new Map() };
 }
 

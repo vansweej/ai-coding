@@ -1,15 +1,18 @@
 import { describe, expect, it } from "bun:test";
 
-import type { AIRequestEvent, Result } from "@ai-coding/shared";
-
-import type { PipelineContext, PipelineStep, StepResult } from "./pipeline-types";
+import type { PipelineContext, PipelineStep, Result, StepResult } from "./pipeline-types";
 import { runPipeline } from "./run-pipeline";
 
+/** Minimal test event type -- no dependency on AIRequestEvent. */
+interface TestEvent {
+  readonly message: string;
+}
+
 /** Creates a mock step that returns a fixed output string. */
-function mockStep(name: string, output: string): PipelineStep {
+function mockStep(name: string, output: string): PipelineStep<TestEvent> {
   return {
     name,
-    execute: async (ctx: PipelineContext): Promise<Result<StepResult>> => {
+    execute: async (_ctx: PipelineContext<TestEvent>): Promise<Result<StepResult>> => {
       const startedAt = Date.now();
       return {
         ok: true,
@@ -20,10 +23,10 @@ function mockStep(name: string, output: string): PipelineStep {
 }
 
 /** Creates a mock step that always fails with the given message. */
-function failingStep(name: string, message: string): PipelineStep {
+function failingStep(name: string, message: string): PipelineStep<TestEvent> {
   return {
     name,
-    execute: async (_ctx: PipelineContext): Promise<Result<StepResult>> => ({
+    execute: async (_ctx: PipelineContext<TestEvent>): Promise<Result<StepResult>> => ({
       ok: false,
       error: new Error(message),
     }),
@@ -32,12 +35,12 @@ function failingStep(name: string, message: string): PipelineStep {
 
 /**
  * Creates a step that reads a previous step's output from context and appends
- * its own label to it -- used to verify context threading.
+ * its own label -- used to verify context threading.
  */
-function contextReadingStep(name: string, readFrom: string): PipelineStep {
+function contextReadingStep(name: string, readFrom: string): PipelineStep<TestEvent> {
   return {
     name,
-    execute: async (ctx: PipelineContext): Promise<Result<StepResult>> => {
+    execute: async (ctx: PipelineContext<TestEvent>): Promise<Result<StepResult>> => {
       const prior = ctx.results.get(readFrom)?.output ?? "(missing)";
       const output = `${prior} -> ${name}`;
       return { ok: true, value: { stepName: name, output, durationMs: 0 } };
@@ -45,22 +48,12 @@ function contextReadingStep(name: string, readFrom: string): PipelineStep {
   };
 }
 
-/** Builds a minimal AIRequestEvent for testing. */
-function makeEvent(
-  overrides: Partial<AIRequestEvent> & Pick<AIRequestEvent, "action" | "source">,
-): AIRequestEvent {
-  return {
-    id: "test-1",
-    timestamp: Date.now(),
-    payload: {},
-    ...overrides,
-  };
-}
+const testEvent: TestEvent = { message: "test" };
 
 describe("runPipeline", () => {
   it("runs all steps in sequence and returns outcome", async () => {
     const steps = [mockStep("a", "out-a"), mockStep("b", "out-b"), mockStep("c", "out-c")];
-    const result = await runPipeline(steps, makeEvent({ source: "cli", action: "plan" }));
+    const result = await runPipeline(steps, testEvent);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -72,7 +65,7 @@ describe("runPipeline", () => {
 
   it("passes context between steps so each can read prior outputs", async () => {
     const steps = [mockStep("first", "hello"), contextReadingStep("second", "first")];
-    const result = await runPipeline(steps, makeEvent({ source: "cli", action: "edit" }));
+    const result = await runPipeline(steps, testEvent);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -81,7 +74,7 @@ describe("runPipeline", () => {
 
   it("stops on the first failing step and returns its error", async () => {
     let thirdExecuted = false;
-    const third: PipelineStep = {
+    const third: PipelineStep<TestEvent> = {
       name: "third",
       execute: async () => {
         thirdExecuted = true;
@@ -90,7 +83,7 @@ describe("runPipeline", () => {
     };
 
     const steps = [mockStep("first", "ok"), failingStep("second", "step two failed"), third];
-    const result = await runPipeline(steps, makeEvent({ source: "cli", action: "plan" }));
+    const result = await runPipeline(steps, testEvent);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -99,7 +92,7 @@ describe("runPipeline", () => {
   });
 
   it("returns error when given an empty steps array", async () => {
-    const result = await runPipeline([], makeEvent({ source: "cli", action: "plan" }));
+    const result = await runPipeline([], testEvent);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -108,7 +101,7 @@ describe("runPipeline", () => {
 
   it("returns error when two steps share the same name", async () => {
     const steps = [mockStep("plan", "out-a"), mockStep("plan", "out-b")];
-    const result = await runPipeline(steps, makeEvent({ source: "cli", action: "plan" }));
+    const result = await runPipeline(steps, testEvent);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -118,7 +111,7 @@ describe("runPipeline", () => {
 
   it("includes total duration in the outcome", async () => {
     const steps = [mockStep("a", "out-a"), mockStep("b", "out-b")];
-    const result = await runPipeline(steps, makeEvent({ source: "cli", action: "edit" }));
+    const result = await runPipeline(steps, testEvent);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -126,12 +119,12 @@ describe("runPipeline", () => {
   });
 
   it("preserves the original event in context throughout all steps", async () => {
-    const event = makeEvent({ source: "agent", action: "task", payload: { input: "do work" } });
-    let capturedEvent: AIRequestEvent | undefined;
+    const event: TestEvent = { message: "original" };
+    let capturedEvent: TestEvent | undefined;
 
-    const capturingStep: PipelineStep = {
+    const capturingStep: PipelineStep<TestEvent> = {
       name: "capture",
-      execute: async (ctx: PipelineContext): Promise<Result<StepResult>> => {
+      execute: async (ctx: PipelineContext<TestEvent>): Promise<Result<StepResult>> => {
         capturedEvent = ctx.event;
         return { ok: true, value: { stepName: "capture", output: "", durationMs: 0 } };
       },
@@ -146,15 +139,15 @@ describe("runPipeline", () => {
     const steps = [mockStep("alpha", "alpha-out"), mockStep("beta", "beta-out")];
     let capturedResults: Map<string, StepResult> | undefined;
 
-    const readingStep: PipelineStep = {
+    const readingStep: PipelineStep<TestEvent> = {
       name: "reader",
-      execute: async (ctx: PipelineContext): Promise<Result<StepResult>> => {
+      execute: async (ctx: PipelineContext<TestEvent>): Promise<Result<StepResult>> => {
         capturedResults = ctx.results;
         return { ok: true, value: { stepName: "reader", output: "", durationMs: 0 } };
       },
     };
 
-    await runPipeline([...steps, readingStep], makeEvent({ source: "cli", action: "edit" }));
+    await runPipeline([...steps, readingStep], testEvent);
 
     expect(capturedResults?.get("alpha")?.output).toBe("alpha-out");
     expect(capturedResults?.get("beta")?.output).toBe("beta-out");

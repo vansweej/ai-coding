@@ -1,8 +1,8 @@
-import type { AIAction, AIRequestEvent, Result } from "@ai-coding/shared";
+import type { PipelineContext, PipelineStep, Result, StepResult } from "@ai-coding/pipeline";
+import type { AIAction, AIRequestEvent } from "@ai-coding/shared";
 
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { orchestrate } from "../../orchestrator/orchestrate";
-import type { PipelineContext, PipelineStep, StepResult } from "../pipeline-types";
 
 /**
  * Creates a pipeline step that delegates to the orchestrator for an LLM call.
@@ -22,11 +22,11 @@ export function createOrchestratorStep(
   name: string,
   action: AIAction,
   config: OrchestratorConfig,
-  buildPrompt?: (ctx: PipelineContext) => string,
-): PipelineStep {
+  buildPrompt?: (ctx: PipelineContext<AIRequestEvent>) => string,
+): PipelineStep<AIRequestEvent> {
   return {
     name,
-    execute: async (ctx: PipelineContext): Promise<Result<StepResult>> => {
+    execute: async (ctx: PipelineContext<AIRequestEvent>): Promise<Result<StepResult>> => {
       const startedAt = Date.now();
 
       const prompt = buildPrompt !== undefined ? buildPrompt(ctx) : (ctx.event.payload.input ?? "");

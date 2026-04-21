@@ -14,10 +14,11 @@
     "rootDir": ".",
     "baseUrl": ".",
     "paths": {
-      "@ai-coding/shared": ["ai-system/shared/event-types.ts"]
+      "@ai-coding/shared": ["ai-system/shared/event-types.ts"],
+      "@ai-coding/pipeline": ["packages/pipeline/src/index.ts"]
     },
     "types": ["bun"]
   },
-  "include": ["ai-system/**/*.ts"],
+  "include": ["ai-system/**/*.ts", "packages/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
