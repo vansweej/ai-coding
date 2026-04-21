@@ -160,9 +160,9 @@ export function selectModel(event: AIRequestEvent, mode: AIModeHint): string {
   if (mode === "agentic") {
     if (event.action === "plan") return "claude-sonnet";
     if (event.action === "debug") return "deepseek-coder-v2";
-    return "qwen2.5-coder:7b";
+    return "qwen3:8b";
   }
-  return "qwen2.5-coder:7b";
+  return "qwen3:8b";
 }
 ```
 
@@ -213,9 +213,9 @@ describe("selectModel", () => {
     expect(selectModel(event, "agentic")).toBe("claude-sonnet");
   });
 
-  it("returns qwen2.5-coder:7b in editor mode regardless of action", () => {
+  it("returns qwen3:8b in editor mode regardless of action", () => {
     const event = { action: "plan" } as AIRequestEvent;
-    expect(selectModel(event, "editor")).toBe("qwen2.5-coder:7b");
+    expect(selectModel(event, "editor")).toBe("qwen3:8b");
   });
 });
 ```
@@ -240,7 +240,7 @@ This project routes AI requests to different models:
 |---------|---------|---------------------|--------------|
 | plan    | agentic | `claude-sonnet`     | Cloud API    |
 | debug   | agentic | `deepseek-coder-v2` | Local/Ollama |
-| *other* | agentic | `qwen2.5-coder:7b`  | Local/Ollama |
-| *any*   | editor  | `qwen2.5-coder:7b`  | Local/Ollama |
+| *other* | agentic | `qwen3:8b`  | Local/Ollama |
+| *any*   | editor  | `qwen3:8b`  | Local/Ollama |
 
 Local models are served via **Ollama** at `http://localhost:11434`.

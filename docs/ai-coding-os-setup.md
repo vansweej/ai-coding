@@ -79,8 +79,8 @@ The current routing strategy:
 |----------|----------|----------------------|-------------|
 | plan     | agentic  | `claude-sonnet`      | Cloud API   |
 | debug    | agentic  | `deepseek-coder-v2`  | Local/Ollama|
-| *other*  | agentic  | `qwen2.5-coder:7b`  | Local/Ollama|
-| *any*    | editor   | `qwen2.5-coder:7b`  | Local/Ollama|
+| *other*  | agentic  | `qwen3:8b`  | Local/Ollama|
+| *any*    | editor   | `qwen3:8b`  | Local/Ollama|
 
 **Why this split?**
 
@@ -103,7 +103,7 @@ The following are managed by Home Manager (NixOS) and assumed to be available:
 - **OpenCode** -- AI coding agent (terminal UI)
 
 Ollama runs as a systemd service via Home Manager. The models
-`deepseek-coder-v2` and `qwen2.5-coder:7b` should already be pulled. Verify
+`deepseek-coder-v2` and `qwen3:8b` should already be pulled. Verify
 with:
 
 ```bash
@@ -113,7 +113,7 @@ opencode --version         # confirm OpenCode is on PATH
 ```
 
 If a model is missing, pull it manually: `ollama pull deepseek-coder-v2` or
-`ollama pull qwen2.5-coder:7b`.
+`ollama pull qwen3:8b`.
 
 This repository is intended to be consumed by Home Manager as well -- the
 `opencode/` directory will contain provider mappings and agent profiles that
@@ -142,18 +142,18 @@ Manager can symlink this into place, or it can be committed directly:
         "deepseek-coder-v2": {
           "name": "DeepSeek Coder V2 (local)"
         },
-        "qwen2.5-coder:7b": {
+        "qwen3:8b": {
           "name": "Qwen 2.5 Coder 7B (local)"
         }
       }
     }
   },
-  "model": "ollama/qwen2.5-coder:7b"
+  "model": "ollama/qwen3:8b"
 }
 ```
 
 This registers both local models under an `ollama` provider and sets
-`qwen2.5-coder:7b` as the default.
+`qwen3:8b` as the default.
 
 ### Initialize the project
 
@@ -181,7 +181,7 @@ There are two layers:
 
 | What you type | Model used | Why |
 |---|---|---|
-| Normal prompt (default) | `ollama/qwen2.5-coder:7b` | Fast, local, free -- covers all routine edits |
+| Normal prompt (default) | `ollama/qwen3:8b` | Fast, local, free -- covers all routine edits |
 | `@planner <task>` | `copilot/claude-sonnet-4.6` | Strong reasoning for architecture and planning |
 | `@debugger <bug>` | `ollama/deepseek-coder-v2` | Deep code analysis for root-cause diagnosis |
 
@@ -192,10 +192,10 @@ automatically based on the request source and action:
 
 | Source | Resolved mode | Action | Model |
 |---|---|---|---|
-| `nvim` | `editor` | any | `qwen2.5-coder:7b` |
+| `nvim` | `editor` | any | `qwen3:8b` |
 | `cli` / `agent` | `agentic` | `plan` | `claude-sonnet` |
 | `cli` / `agent` | `agentic` | `debug` | `deepseek-coder-v2` |
-| `cli` / `agent` | `agentic` | other | `qwen2.5-coder:7b` |
+| `cli` / `agent` | `agentic` | other | `qwen3:8b` |
 
 The `source: "nvim"` field in `AIRequestEvent` is what the mode-router will
 use to detect editor context and lock the model to qwen regardless of action.

@@ -43,7 +43,7 @@ function makeConfig(overrides?: Partial<OrchestratorConfig["dispatchers"]>): Orc
     dispatchers: {
       "claude-sonnet": mockDispatcher("plan-response"),
       "deepseek-coder-v2": mockDispatcher("debug-response"),
-      "qwen2.5-coder:7b": mockDispatcher("default-response"),
+      "qwen3:8b": mockDispatcher("default-response"),
       ...overrides,
     },
   };
@@ -81,7 +81,7 @@ describe("orchestrate", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.model).toBe("qwen2.5-coder:7b");
+    expect(result.value.model).toBe("qwen3:8b");
     expect(result.value.mode).toBe("agentic");
   });
 
@@ -90,7 +90,7 @@ describe("orchestrate", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.model).toBe("qwen2.5-coder:7b");
+    expect(result.value.model).toBe("qwen3:8b");
     expect(result.value.mode).toBe("editor");
   });
 
@@ -135,7 +135,7 @@ describe("orchestrate", () => {
     };
 
     await orchestrate(makeEvent({ source: "nvim", action: "edit" }), {
-      dispatchers: { "qwen2.5-coder:7b": capturingDispatcher },
+      dispatchers: { "qwen3:8b": capturingDispatcher },
     });
 
     expect(capturedPrompt).toBe("");

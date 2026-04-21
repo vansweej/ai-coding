@@ -12,7 +12,7 @@ const DEFAULT_BUILD_DIR = "build";
  *
  * Steps:
  *   1. plan      - High-level planning via claude-sonnet.
- *   2. implement - Code generation via qwen2.5-coder:7b, informed by the plan.
+ *   2. implement - Code generation via qwen3:8b, informed by the plan.
  *   3. configure - cmake -S . -B <buildDir> (CMake configuration).
  *   4. build     - cmake --build <buildDir> (fails on compilation errors).
  *   5. test      - ctest --test-dir <buildDir> (fails on any failing test).

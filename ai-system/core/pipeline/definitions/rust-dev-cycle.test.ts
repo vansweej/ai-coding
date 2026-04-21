@@ -63,7 +63,7 @@ describe("createRustDevCyclePipeline", () => {
   it("buildPrompt includes plan output and original request in implement step", async () => {
     const dispatcher = capturingDispatcher();
     const config: OrchestratorConfig = {
-      dispatchers: { "claude-sonnet": dispatcher, "qwen2.5-coder:7b": dispatcher },
+      dispatchers: { "claude-sonnet": dispatcher, "qwen3:8b": dispatcher },
     };
     const steps = createRustDevCyclePipeline(config, "/tmp/ws");
     const implementStep = steps[1];

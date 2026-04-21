@@ -17,7 +17,7 @@ every command is automatically wrapped in `nix develop --command`.
 flowchart LR
     subgraph LLM["LLM Steps (via Orchestrator)"]
         Plan["1. plan\nclaude-sonnet"]
-        Impl["2. implement\nqwen2.5-coder:7b"]
+        Impl["2. implement\nqwen3:8b"]
     end
 
     subgraph Build["Build and Test (NixShellStep)"]
@@ -73,7 +73,7 @@ implementation plan for the C++ change.
 ### Step 2: implement (OrchestratorStep, action: "edit")
 
 Combines the plan with the original request into a structured prompt for
-`qwen2.5-coder:7b`:
+`qwen3:8b`:
 
 ```typescript
 (ctx) => {
@@ -83,7 +83,7 @@ Combines the plan with the original request into a structured prompt for
 }
 ```
 
-**Model:** `qwen2.5-coder:7b` (local, via Ollama)
+**Model:** `qwen3:8b` (local, via Ollama)
 
 ### Step 3: build (NixShellStep)
 
@@ -158,7 +158,7 @@ const config: OrchestratorConfig = {
   dispatchers: {
     "claude-sonnet":     new CopilotDispatcher(process.env.COPILOT_TOKEN ?? ""),
     "deepseek-coder-v2": new OllamaDispatcher(),
-    "qwen2.5-coder:7b":  new OllamaDispatcher(),
+    "qwen3:8b":  new OllamaDispatcher(),
   },
 };
 

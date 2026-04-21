@@ -6,7 +6,7 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
 ## Architecture
 
 - **Model routing** -- `plan` actions go to `claude-sonnet` (Copilot), `debug` to
-  `deepseek-coder-v2` (Ollama), everything else to `qwen2.5-coder:7b` (Ollama)
+  `deepseek-coder-v2` (Ollama), everything else to `qwen3:8b` (Ollama)
 - **Pipelines** -- linear step runners that chain LLM calls with shell commands (fmt, clippy,
   cmake, tarpaulin, etc.)
 - **Scaffold pipelines** -- generate new Rust and C++ projects including a `flake.nix` dev shell

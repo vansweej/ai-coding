@@ -28,9 +28,9 @@ describe("selectModel", () => {
     });
 
     it.each(["explain", "edit", "refactor", "chat", "task"] satisfies AIAction[])(
-      "returns qwen2.5-coder:7b for %s action",
+      "returns qwen3:8b for %s action",
       (action) => {
-        expect(selectModel(makeEvent(action), mode)).toBe("qwen2.5-coder:7b");
+        expect(selectModel(makeEvent(action), mode)).toBe("qwen3:8b");
       },
     );
   });
@@ -39,9 +39,9 @@ describe("selectModel", () => {
     const mode: AIMode = "editor";
 
     it.each(["plan", "debug", "explain", "edit", "refactor", "chat", "task"] satisfies AIAction[])(
-      "returns qwen2.5-coder:7b for %s action regardless of action",
+      "returns qwen3:8b for %s action regardless of action",
       (action) => {
-        expect(selectModel(makeEvent(action), mode)).toBe("qwen2.5-coder:7b");
+        expect(selectModel(makeEvent(action), mode)).toBe("qwen3:8b");
       },
     );
   });

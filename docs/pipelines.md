@@ -235,7 +235,7 @@ const config: OrchestratorConfig = {
   dispatchers: {
     "claude-sonnet":     new CopilotDispatcher(process.env.COPILOT_TOKEN ?? ""),
     "deepseek-coder-v2": new OllamaDispatcher(),
-    "qwen2.5-coder:7b":  new OllamaDispatcher(),
+    "qwen3:8b":  new OllamaDispatcher(),
   },
 };
 ```

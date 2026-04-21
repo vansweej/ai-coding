@@ -32,7 +32,7 @@ function makeConfig(overrides?: Partial<OrchestratorConfig["dispatchers"]>): Orc
     dispatchers: {
       "claude-sonnet": mockDispatcher("plan-response"),
       "deepseek-coder-v2": mockDispatcher("debug-response"),
-      "qwen2.5-coder:7b": mockDispatcher("default-response"),
+      "qwen3:8b": mockDispatcher("default-response"),
       ...overrides,
     },
   };
@@ -77,7 +77,7 @@ describe("createOrchestratorStep", () => {
       },
     };
 
-    const config = makeConfig({ "qwen2.5-coder:7b": capturingDispatcher });
+    const config = makeConfig({ "qwen3:8b": capturingDispatcher });
     const step = createOrchestratorStep(
       "implement",
       "edit",
@@ -100,7 +100,7 @@ describe("createOrchestratorStep", () => {
       },
     };
 
-    const config = makeConfig({ "qwen2.5-coder:7b": capturingDispatcher });
+    const config = makeConfig({ "qwen3:8b": capturingDispatcher });
     const step = createOrchestratorStep("edit-step", "edit", config);
     const ctx = makeCtx(makeEvent({ source: "cli", action: "plan" }));
 
@@ -118,7 +118,7 @@ describe("createOrchestratorStep", () => {
       },
     };
 
-    const config = makeConfig({ "qwen2.5-coder:7b": capturingDispatcher });
+    const config = makeConfig({ "qwen3:8b": capturingDispatcher });
     const step = createOrchestratorStep("edit-step", "edit", config);
     const event: AIRequestEvent = {
       id: "t",
@@ -146,7 +146,7 @@ describe("createOrchestratorStep", () => {
       },
     };
 
-    const config = makeConfig({ "qwen2.5-coder:7b": capturingDispatcher });
+    const config = makeConfig({ "qwen3:8b": capturingDispatcher });
     const step = createOrchestratorStep(
       "implement",
       "edit",
@@ -171,7 +171,7 @@ describe("createOrchestratorStep", () => {
   });
 
   it("propagates dispatcher failure", async () => {
-    const config = makeConfig({ "qwen2.5-coder:7b": failingDispatcher("timeout") });
+    const config = makeConfig({ "qwen3:8b": failingDispatcher("timeout") });
     const step = createOrchestratorStep("edit-step", "edit", config);
     const ctx = makeCtx(makeEvent({ source: "cli", action: "plan" }));
 

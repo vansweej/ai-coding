@@ -10,13 +10,13 @@ import { createOrchestratorStep } from "../steps/orchestrator-step";
  *
  * Steps:
  *   1. plan       - Sends the original request to claude-sonnet for high-level planning.
- *   2. implement  - Sends the plan + original request to qwen2.5-coder:7b for implementation.
+ *   2. implement  - Sends the plan + original request to qwen3:8b for implementation.
  *   3. test       - Runs `bun test` in the workspace (nix-aware: wraps in nix develop if
  *                   flake.nix is present).
  *
  * Model routing is handled automatically by the orchestrator:
  *   - action "plan"  → agentic mode → claude-sonnet
- *   - action "edit"  → agentic mode → qwen2.5-coder:7b
+ *   - action "edit"  → agentic mode → qwen3:8b
  *
  * @param config    - Orchestrator config mapping model names to dispatchers.
  * @param workspace - Working directory for the test step. Defaults to process.cwd().

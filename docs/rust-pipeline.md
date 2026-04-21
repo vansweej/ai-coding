@@ -17,7 +17,7 @@ every `cargo` command is automatically wrapped in `nix develop --command`.
 flowchart LR
     subgraph LLM["LLM Steps (via Orchestrator)"]
         Plan["1. plan\nclaude-sonnet"]
-        Impl["2. implement\nqwen2.5-coder:7b"]
+        Impl["2. implement\nqwen3:8b"]
     end
 
     subgraph Verify["Verification Steps (NixShellStep)"]
@@ -88,7 +88,7 @@ Produces a high-level implementation plan that step 2 will use.
 ### Step 2: implement (OrchestratorStep, action: "edit")
 
 Combines the plan from step 1 with the original request into a structured
-prompt for `qwen2.5-coder:7b`. This is where `buildPrompt` wires the context:
+prompt for `qwen3:8b`. This is where `buildPrompt` wires the context:
 
 ```typescript
 (ctx) => {
@@ -98,7 +98,7 @@ prompt for `qwen2.5-coder:7b`. This is where `buildPrompt` wires the context:
 }
 ```
 
-**Model:** `qwen2.5-coder:7b` (local, via Ollama)
+**Model:** `qwen3:8b` (local, via Ollama)
 **Input:** plan + original request (composed by buildPrompt)
 **Output:** Code changes / implementation instructions
 
@@ -170,7 +170,7 @@ const config: OrchestratorConfig = {
   dispatchers: {
     "claude-sonnet":     new CopilotDispatcher(process.env.COPILOT_TOKEN ?? ""),
     "deepseek-coder-v2": new OllamaDispatcher(),
-    "qwen2.5-coder:7b":  new OllamaDispatcher(),
+    "qwen3:8b":  new OllamaDispatcher(),
   },
 };
 

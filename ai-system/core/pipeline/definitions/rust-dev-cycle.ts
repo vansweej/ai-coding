@@ -12,7 +12,7 @@ const DEFAULT_COVERAGE_THRESHOLD = 90;
  *
  * Steps:
  *   1. plan          - High-level planning via claude-sonnet.
- *   2. implement     - Code generation via qwen2.5-coder:7b, informed by the plan.
+ *   2. implement     - Code generation via qwen3:8b, informed by the plan.
  *   3. fmt           - cargo fmt --check (fails on formatting violations).
  *   4. clippy        - cargo clippy -- -D warnings (fails on any lint warning).
  *   5. test          - cargo test (fails on any failing test).

@@ -37,7 +37,7 @@ After `home-manager switch`:
 ```
 
 `@planner` and `@debugger` work in any project, Ollama models are always
-registered, `qwen2.5-coder:7b` is always the default model.
+registered, `qwen3:8b` is always the default model.
 
 ---
 

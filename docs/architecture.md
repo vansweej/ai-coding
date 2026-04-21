@@ -177,10 +177,10 @@ Model selection is automatic, driven by the `action` field and resolved `AIMode`
 
 | Source        | Resolved mode | Action   | Model selected       | Backend       |
 |---------------|---------------|----------|----------------------|---------------|
-| `nvim`        | `editor`      | any      | `qwen2.5-coder:7b`   | Ollama        |
+| `nvim`        | `editor`      | any      | `qwen3:8b`   | Ollama        |
 | `cli`/`agent` | `agentic`     | `plan`   | `claude-sonnet`      | Copilot API   |
 | `cli`/`agent` | `agentic`     | `debug`  | `deepseek-coder-v2`  | Ollama        |
-| `cli`/`agent` | `agentic`     | other    | `qwen2.5-coder:7b`   | Ollama        |
+| `cli`/`agent` | `agentic`     | other    | `qwen3:8b`   | Ollama        |
 
 In every pipeline definition, the `plan` step always uses `action: "plan"` and the
 `implement` step uses `action: "edit"`, so model selection is consistent and

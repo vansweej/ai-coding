@@ -57,7 +57,7 @@ function resolveCopilotToken(): Result<string> {
  * Dispatcher configuration:
  *   - claude-sonnet    → CopilotDispatcher (token from env or config file)
  *   - deepseek-coder-v2 → OllamaDispatcher
- *   - qwen2.5-coder:7b → OllamaDispatcher
+ *   - qwen3:8b → OllamaDispatcher
  *
  * Ollama base URL is read from the OLLAMA_URL environment variable,
  * defaulting to http://localhost:11434.
@@ -78,7 +78,7 @@ export function loadConfig(): Result<OrchestratorConfig> {
       dispatchers: {
         "claude-sonnet": copilot,
         "deepseek-coder-v2": ollama,
-        "qwen2.5-coder:7b": ollama,
+        "qwen3:8b": ollama,
       },
     },
   };
