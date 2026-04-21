@@ -133,7 +133,11 @@ describe("createFileWriterStep", () => {
   });
 
   it("writes a new file when overwrite is false and the file does not yet exist", async () => {
-    const step = createFileWriterStep("write", { readFrom: "implement", baseDir, overwrite: false });
+    const step = createFileWriterStep("write", {
+      readFrom: "implement",
+      baseDir,
+      overwrite: false,
+    });
     const ctx = makeCtx("implement", "```rust src/new.rs\nfn new() {}\n```");
     const result = await step.execute(ctx);
     expect(result.ok).toBe(true);

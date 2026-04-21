@@ -12,7 +12,8 @@
     "format": "bunx biome format .",
     "format:fix": "bunx biome format --write .",
     "test": "bun test",
-    "test:coverage": "bun test --coverage"
+    "test:coverage": "bun test --coverage",
+    "pipeline": "bun run ai-system/cli/run-pipeline-cli.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.0",
