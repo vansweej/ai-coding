@@ -1,7 +1,7 @@
 ---
-description: Deep code debugging using Qwen3 8B (local)
+description: Deep code debugging using Claude Sonnet 4.6
 mode: subagent
-model: ollama/qwen3:8b-fast
+model: github-copilot/claude-sonnet-4.6
 temperature: 0.1
 permission:
   edit: deny

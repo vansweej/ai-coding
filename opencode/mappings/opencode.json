@@ -1,29 +1,4 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "ollama": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "Ollama (local)",
-      "options": {
-        "baseURL": "http://localhost:11434/v1"
-      },
-      "models": {
-        "qwen3:8b": {
-          "name": "Qwen 3 8B (local, thinking enabled)",
-          "limit": {
-            "context": 40960,
-            "output": 8192
-          }
-        },
-        "qwen3:8b-fast": {
-          "name": "Qwen 3 8B Fast (local, no thinking)",
-          "limit": {
-            "context": 40960,
-            "output": 8192
-          }
-        }
-      }
-    }
-  },
-  "model": "ollama/qwen3:8b-fast"
+  "model": "github-copilot/claude-sonnet-4.6"
 }
