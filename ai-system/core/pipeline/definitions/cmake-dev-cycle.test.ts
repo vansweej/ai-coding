@@ -43,13 +43,20 @@ function makeCtxWithPlanResult(
 }
 
 describe("createCMakeDevCyclePipeline", () => {
-  it("returns exactly 5 steps", () => {
-    expect(createCMakeDevCyclePipeline(STUB_CONFIG, "/tmp/ws")).toHaveLength(5);
+  it("returns exactly 6 steps", () => {
+    expect(createCMakeDevCyclePipeline(STUB_CONFIG, "/tmp/ws")).toHaveLength(6);
   });
 
-  it("has step names in order: plan, implement, configure, build, test", () => {
+  it("has step names in order: plan, implement, write-files, configure, build, test", () => {
     const steps = createCMakeDevCyclePipeline(STUB_CONFIG, "/tmp/ws");
-    expect(steps.map((s) => s.name)).toEqual(["plan", "implement", "configure", "build", "test"]);
+    expect(steps.map((s) => s.name)).toEqual([
+      "plan",
+      "implement",
+      "write-files",
+      "configure",
+      "build",
+      "test",
+    ]);
   });
 
   it("buildPrompt includes plan output and original request in implement step", async () => {
@@ -73,6 +80,6 @@ describe("createCMakeDevCyclePipeline", () => {
 
   it("uses a custom build directory when provided", () => {
     const steps = createCMakeDevCyclePipeline(STUB_CONFIG, "/tmp/ws", "out");
-    expect(steps).toHaveLength(5);
+    expect(steps).toHaveLength(6);
   });
 });

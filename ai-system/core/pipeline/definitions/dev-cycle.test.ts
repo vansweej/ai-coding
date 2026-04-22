@@ -19,7 +19,7 @@ function capturingDispatcher(): ModelDispatcher & { lastPrompt: string } {
     },
     dispatch: async (req: DispatchRequest): Promise<Result<string>> => {
       state.lastPrompt = req.prompt;
-      return { ok: true, value: "mock response" };
+      return { ok: true, value: "```typescript src/index.ts\nconsole.log('hello');\n```" };
     },
   };
   return dispatcher;
@@ -44,19 +44,19 @@ function makeCtxWithPlanResult(
 }
 
 describe("createDevCyclePipeline", () => {
-  it("returns exactly 3 steps", () => {
-    expect(createDevCyclePipeline(STUB_CONFIG)).toHaveLength(3);
+  it("returns exactly 4 steps", () => {
+    expect(createDevCyclePipeline(STUB_CONFIG)).toHaveLength(4);
   });
 
-  it("has step names in order: plan, implement, test", () => {
+  it("has step names in order: plan, implement, write-files, test", () => {
     const steps = createDevCyclePipeline(STUB_CONFIG);
-    expect(steps.map((s) => s.name)).toEqual(["plan", "implement", "test"]);
+    expect(steps.map((s) => s.name)).toEqual(["plan", "implement", "write-files", "test"]);
   });
 
   it("buildPrompt includes plan output and original request in implement step", async () => {
     const dispatcher = capturingDispatcher();
     const config: OrchestratorConfig = {
-      dispatchers: { "claude-sonnet-4.6": dispatcher, "qwen3:8b": dispatcher },
+      dispatchers: { "qwen3:8b": dispatcher },
     };
     const steps = createDevCyclePipeline(config, "/tmp/ws");
     const implementStep = steps[1];
@@ -69,5 +69,26 @@ describe("createDevCyclePipeline", () => {
 
     expect(dispatcher.lastPrompt).toContain("Step 1: handle errors gracefully");
     expect(dispatcher.lastPrompt).toContain("Add error handling");
+  });
+
+  it("implement step system prompt requires fenced code blocks with file paths", async () => {
+    const captured: { system?: string } = {};
+    const dispatcher: ModelDispatcher = {
+      dispatch: async (req: DispatchRequest): Promise<Result<string>> => {
+        captured.system = req.system;
+        return { ok: true, value: "```typescript src/index.ts\nconsole.log('hello');\n```" };
+      },
+    };
+    const config: OrchestratorConfig = { dispatchers: { "qwen3:8b": dispatcher } };
+    const steps = createDevCyclePipeline(config, "/tmp/ws");
+    const implementStep = steps[1];
+    if (!implementStep) return;
+
+    const event = makeEvent("Add error handling");
+    const ctx = makeCtxWithPlanResult(event, "plan output");
+    await implementStep.execute(ctx);
+
+    expect(captured.system).toContain("fenced code blocks");
+    expect(captured.system).toContain("relative-file-path");
   });
 });

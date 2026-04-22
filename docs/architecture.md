@@ -35,7 +35,6 @@ graph TD
     end
 
     subgraph Dispatchers["Dispatchers (ai-system/core/orchestrator/)"]
-        Ollama["OllamaDispatcher\nlocalhost:11434"]
         Copilot["CopilotDispatcher\napi.githubcopilot.com"]
     end
 
@@ -51,7 +50,6 @@ graph TD
     OrcStep --> Orchestrator
     Orchestrator --> ModeRouter
     Orchestrator --> ModelRouter
-    Orchestrator --> Ollama
     Orchestrator --> Copilot
 ```
 
@@ -95,7 +93,7 @@ sequenceDiagram
     participant Orch as orchestrate()
     participant Mode as resolveMode()
     participant Model as selectModel()
-    participant Disp as Dispatcher (Ollama/Copilot)
+    participant Disp as Dispatcher (CopilotDispatcher)
     participant Nix as NixShellStep
     participant Shell as Bun.spawn
 
@@ -154,16 +152,18 @@ ai-coding/
       model-router/
         select-model.ts              (event, mode) → model string
       orchestrator/
-        orchestrate.ts               Single LLM call lifecycle
-        ollama-dispatcher.ts         HTTP transport for Ollama
+        orchestrate.ts               Single LLM call lifecycle (profile-aware routing)
         copilot-dispatcher.ts        HTTP transport for GitHub Copilot
       pipeline/
         steps/
           orchestrator-step.ts       LLM step wrapping orchestrate()
         definitions/
-          dev-cycle.ts               TypeScript: plan → implement → bun test
-          rust-dev-cycle.ts          Rust: plan → implement → fmt → clippy → test → tarpaulin → gate
-          cmake-dev-cycle.ts         C++: plan → implement → cmake build → ctest
+          dev-cycle.ts               TypeScript: plan → implement → write-files → bun test
+          rust-dev-cycle.ts          Rust: plan → implement → write-files → fmt → clippy → test → tarpaulin → gate
+          cmake-dev-cycle.ts         C++: plan → implement → write-files → cmake build → ctest
+    config/
+      model-profiles.ts              ModelRole, ModelProfile, copilot-default profile
+      pipeline-registry.ts           Single source of truth for pipeline metadata
   opencode/
     mappings/                        OpenCode provider/model configs
   docs/                              Documentation (you are here)
@@ -171,17 +171,36 @@ ai-coding/
 
 ---
 
-## Model Routing Table
+## Model Routing
 
-Model selection is automatic, driven by the `action` field and resolved `AIMode`:
+Model selection uses the **role/profile** system. Each pipeline step declares a
+semantic `ModelRole`; the active `ModelProfile` maps that role to a concrete model
+ID and the dispatcher handles the HTTP transport.
 
-| Source        | Resolved mode | Action   | Model selected       | Backend       |
-|---------------|---------------|----------|----------------------|---------------|
-| `nvim`        | `editor`      | any      | `qwen3:8b`   | Ollama        |
-| `cli`/`agent` | `agentic`     | `plan`   | `claude-sonnet`      | Copilot API   |
-| `cli`/`agent` | `agentic`     | `debug`  | `deepseek-coder-v2`  | Ollama        |
-| `cli`/`agent` | `agentic`     | other    | `qwen3:8b`   | Ollama        |
+### copilot-default profile (default)
 
-In every pipeline definition, the `plan` step always uses `action: "plan"` and the
-`implement` step uses `action: "edit"`, so model selection is consistent and
-predictable without any manual configuration.
+All roles route to `claude-sonnet-4.6` via GitHub Copilot:
+
+| Role          | Model                | Backend       |
+|---------------|----------------------|---------------|
+| `planner`     | `claude-sonnet-4.6`  | Copilot API   |
+| `implementer` | `claude-sonnet-4.6`  | Copilot API   |
+| `debugger`    | `claude-sonnet-4.6`  | Copilot API   |
+| `reviewer`    | `claude-sonnet-4.6`  | Copilot API   |
+| `tester`      | `claude-sonnet-4.6`  | Copilot API   |
+| `scaffolder`  | `claude-sonnet-4.6`  | Copilot API   |
+| `default`     | `claude-sonnet-4.6`  | Copilot API   |
+
+### Profile resolution
+
+```
+AIAction → actionToRole() → ModelRole → resolveModelForRole(role, profile) → model ID → dispatcher
+```
+
+The active profile is set in `OrchestratorConfig.profile`. The CLI resolves it via
+`--profile <name>` flag, `AI_CODING_MODEL_PROFILE` env var, or the built-in default.
+
+### Legacy fallback
+
+When no profile is set, the legacy `selectModel(event, mode)` heuristic is used
+(preserved for backward compatibility). New code should always pass a profile.

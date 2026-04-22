@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import type { Result } from "@ai-coding/pipeline";
 
+import { COPILOT_DEFAULT_PROFILE } from "../config/model-profiles";
 import { CopilotDispatcher } from "../core/orchestrator/copilot-dispatcher";
-import { OllamaDispatcher } from "../core/orchestrator/ollama-dispatcher";
 import type { OrchestratorConfig } from "../core/orchestrator/orchestrate";
 
 interface OpenCodeAuth {
@@ -62,13 +62,10 @@ export function resolveCopilotToken(
 /**
  * Build the OrchestratorConfig by wiring up real dispatchers.
  *
- * Dispatcher configuration:
- *   - claude-sonnet    → CopilotDispatcher (token from env or OpenCode auth file)
- *   - deepseek-coder-v2 → OllamaDispatcher
- *   - qwen3:8b → OllamaDispatcher
+ * Uses the copilot-default profile: all roles route to claude-sonnet-4.6
+ * via the GitHub Copilot provider.
  *
- * Ollama base URL is read from the OLLAMA_URL environment variable,
- * defaulting to http://localhost:11434.
+ * The Copilot token is resolved via resolveCopilotToken().
  */
 /* v8 ignore start */
 export function loadConfig(openCodeAuthPath?: string): Result<OrchestratorConfig> {
@@ -78,17 +75,14 @@ export function loadConfig(openCodeAuthPath?: string): Result<OrchestratorConfig
     return tokenResult;
   }
 
-  const ollamaUrl = process.env.OLLAMA_URL ?? "http://localhost:11434";
   const copilot = new CopilotDispatcher(tokenResult.value);
-  const ollama = new OllamaDispatcher(ollamaUrl);
 
   return {
     ok: true,
     value: {
+      profile: COPILOT_DEFAULT_PROFILE,
       dispatchers: {
         "claude-sonnet-4.6": copilot,
-        "deepseek-coder-v2": ollama,
-        "qwen3:8b": ollama,
       },
     },
   };

@@ -6,12 +6,21 @@ import type {
   Result,
 } from "@ai-coding/shared";
 
+import type { ModelProfile } from "../../config/model-profiles";
+import { resolveModelForRole } from "../../config/model-profiles";
 import { resolveMode } from "../mode-router/resolve-mode";
+import { actionToRole } from "../model-router/action-to-role";
 import { selectModel } from "../model-router/select-model";
 
 /** Configuration for the orchestrator, mapping model names to dispatchers. */
 export interface OrchestratorConfig {
   readonly dispatchers: Record<string, ModelDispatcher>;
+  /**
+   * When set, model selection uses role-based profile routing instead of the
+   * legacy action+mode heuristic. All dispatchers required by the profile must
+   * be present in the `dispatchers` map.
+   */
+  readonly profile?: ModelProfile;
 }
 
 /** Optional LLM-level parameters forwarded to the dispatcher. */
@@ -39,7 +48,9 @@ export async function orchestrate(
   const startedAt = Date.now();
 
   const mode = resolveMode(event.source);
-  const model = selectModel(event, mode);
+  const model = config.profile
+    ? resolveModelForRole(actionToRole(event.action), config.profile)
+    : selectModel(event, mode);
 
   const dispatcher = config.dispatchers[model];
   if (!dispatcher) {

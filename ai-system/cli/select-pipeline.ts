@@ -1,6 +1,7 @@
 import type { PipelineStep, Result } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
+import { PIPELINE_REGISTRY } from "../config/pipeline-registry";
 import type { OrchestratorConfig } from "../core/orchestrator/orchestrate";
 import { createCMakeDevCyclePipeline } from "../core/pipeline/definitions/cmake-dev-cycle";
 import { createDevCyclePipeline } from "../core/pipeline/definitions/dev-cycle";
@@ -15,14 +16,6 @@ export type PipelineName =
   | "cmake-dev-cycle"
   | "scaffold-rust"
   | "scaffold-cpp";
-
-const KNOWN_PIPELINES: readonly PipelineName[] = [
-  "dev-cycle",
-  "rust-dev-cycle",
-  "cmake-dev-cycle",
-  "scaffold-rust",
-  "scaffold-cpp",
-];
 
 /**
  * Select and instantiate a pipeline by name.
@@ -47,12 +40,12 @@ export function selectPipeline(
       return { ok: true, value: createRustScaffoldPipeline(config, workspace) };
     case "scaffold-cpp":
       return { ok: true, value: createCppScaffoldPipeline(config, workspace) };
-    default:
+    default: {
+      const known = PIPELINE_REGISTRY.map((entry) => entry.name).join(", ");
       return {
         ok: false,
-        error: new Error(
-          `Unknown pipeline: "${name}". Known pipelines: ${KNOWN_PIPELINES.join(", ")}`,
-        ),
+        error: new Error(`Unknown pipeline: "${name}". Known pipelines: ${known}`),
       };
+    }
   }
 }

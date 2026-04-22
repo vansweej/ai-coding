@@ -100,14 +100,15 @@ describe("loadConfig", () => {
     env.COPILOT_TOKEN = ORIG_COPILOT_TOKEN;
   });
 
-  it("returns a config with all three dispatchers when token is available", () => {
+  it("returns a config with copilot-default profile and claude-sonnet-4.6 dispatcher", () => {
     process.env.COPILOT_TOKEN = "gho_test_token";
     const result = loadConfig("/nonexistent/auth.json");
     expect(result.ok).toBe(true);
     if (result.ok) {
+      expect(result.value.profile?.name).toBe("copilot-default");
       expect(result.value.dispatchers["claude-sonnet-4.6"]).toBeDefined();
-      expect(result.value.dispatchers["qwen3:8b"]).toBeDefined();
-      expect(result.value.dispatchers["deepseek-coder-v2"]).toBeDefined();
+      expect(result.value.dispatchers["qwen3:8b"]).toBeUndefined();
+      expect(result.value.dispatchers["deepseek-coder-v2"]).toBeUndefined();
     }
   });
 

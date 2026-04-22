@@ -1,6 +1,7 @@
 import { runPipeline } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
+import { findProfile } from "../config/model-profiles";
 import { loadConfig } from "./load-config";
 import { parseArgs } from "./parse-args";
 import { selectPipeline } from "./select-pipeline";
@@ -31,7 +32,7 @@ async function main(): Promise<void> {
     console.error(`Error: ${argsResult.error.message}`);
     process.exit(1);
   }
-  const { pipelineName, workspace, input } = argsResult.value;
+  const { pipelineName, workspace, input, profileName } = argsResult.value;
 
   const configResult = loadConfig();
   if (!configResult.ok) {
@@ -39,7 +40,15 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const pipelineResult = selectPipeline(pipelineName, configResult.value, workspace);
+  const profile = findProfile(profileName);
+  if (!profile) {
+    console.error(`Error: Unknown profile "${profileName}". Available: copilot-default`);
+    process.exit(1);
+  }
+
+  const config = { ...configResult.value, profile };
+
+  const pipelineResult = selectPipeline(pipelineName, config, workspace);
   if (!pipelineResult.ok) {
     console.error(`Error: ${pipelineResult.error.message}`);
     process.exit(1);

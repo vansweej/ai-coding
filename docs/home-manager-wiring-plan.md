@@ -1,10 +1,13 @@
-# Home Manager Wiring Plan
+# Home Manager Wiring Plan (Completed)
+
+> **Status: Implemented.** This document describes the original wiring plan.
+> The home-manager repo now deploys all agents (planner, debugger, reviewer,
+> tester) and the opencode.json config globally via `home.nix`.
 
 ## Goal
 
-Make the `@planner` (Claude Sonnet) and `@debugger` (DeepSeek) agents, and the
-Ollama provider config, available globally in every project -- not just when
-OpenCode is launched from inside `~/Projects/ai-coding/`.
+Make the subagents and OpenCode config available globally in every project --
+not just when OpenCode is launched from inside `~/Projects/ai-coding/`.
 
 ---
 
@@ -31,13 +34,18 @@ After `home-manager switch`:
 ```
 ~/.config/opencode/
 ├── agents/
-│   ├── planner.md    → ~/Projects/ai-coding/opencode/profiles/planner.md
-│   └── debugger.md   → ~/Projects/ai-coding/opencode/profiles/debugger.md
-└── opencode.json     → ~/Projects/ai-coding/opencode/mappings/opencode.json
+│   ├── plan.md       → ~/Projects/home-manager/opencode/agents/plan.md
+│   ├── build.md      → ~/Projects/home-manager/opencode/agents/build.md
+│   ├── local.md      → ~/Projects/home-manager/opencode/agents/local.md
+│   ├── planner.md    → ~/Projects/home-manager/opencode/agents/planner.md
+│   ├── debugger.md   → ~/Projects/home-manager/opencode/agents/debugger.md
+│   ├── reviewer.md   → ~/Projects/home-manager/opencode/agents/reviewer.md
+│   └── tester.md     → ~/Projects/home-manager/opencode/agents/tester.md
+└── opencode.json     ⇝ ~/Projects/ai-coding/opencode/mappings/opencode.json (live symlink)
 ```
 
-`@planner` and `@debugger` work in any project, Ollama models are always
-registered, `qwen3:8b` is always the default model.
+All subagents work in any project. `claude-sonnet-4.6` via GitHub Copilot is
+the default model for all sessions.
 
 ---
 
@@ -117,7 +125,7 @@ Expected output:
 cd ~/Projects/home-manager
 opencode
 # Type: @planner what does this repo do?
-# Expected: Claude Sonnet responds (not qwen)
+# Expected: Claude Sonnet responds via GitHub Copilot
 ```
 
 ---

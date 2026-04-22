@@ -226,16 +226,15 @@ When omitted, the original `event.payload.input` is used unchanged.
 ```typescript
 import { CopilotDispatcher } from
   "ai-system/core/orchestrator/copilot-dispatcher";
-import { OllamaDispatcher } from
-  "ai-system/core/orchestrator/ollama-dispatcher";
+import { COPILOT_DEFAULT_PROFILE } from
+  "ai-system/config/model-profiles";
 import type { OrchestratorConfig } from
   "ai-system/core/orchestrator/orchestrate";
 
 const config: OrchestratorConfig = {
+  profile: COPILOT_DEFAULT_PROFILE,
   dispatchers: {
-    "claude-sonnet":     new CopilotDispatcher(process.env.COPILOT_TOKEN ?? ""),
-    "deepseek-coder-v2": new OllamaDispatcher(),
-    "qwen3:8b":  new OllamaDispatcher(),
+    "claude-sonnet-4.6": new CopilotDispatcher(process.env.COPILOT_TOKEN ?? ""),
   },
 };
 ```

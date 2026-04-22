@@ -18,7 +18,7 @@ function capturingDispatcher(): ModelDispatcher & { lastPrompt: string } {
     },
     dispatch: async (req: DispatchRequest): Promise<Result<string>> => {
       state.lastPrompt = req.prompt;
-      return { ok: true, value: "mock response" };
+      return { ok: true, value: "```rust src/lib.rs\npub fn hello() {}\n```" };
     },
   };
   return dispatcher;
@@ -43,8 +43,8 @@ function makeCtxWithPlanResult(
 }
 
 describe("createRustDevCyclePipeline", () => {
-  it("returns exactly 7 steps", () => {
-    expect(createRustDevCyclePipeline(STUB_CONFIG, "/tmp/ws")).toHaveLength(7);
+  it("returns exactly 8 steps", () => {
+    expect(createRustDevCyclePipeline(STUB_CONFIG, "/tmp/ws")).toHaveLength(8);
   });
 
   it("has step names in order", () => {
@@ -52,6 +52,7 @@ describe("createRustDevCyclePipeline", () => {
     expect(steps.map((s) => s.name)).toEqual([
       "plan",
       "implement",
+      "write-files",
       "fmt",
       "clippy",
       "test",
@@ -63,7 +64,7 @@ describe("createRustDevCyclePipeline", () => {
   it("buildPrompt includes plan output and original request in implement step", async () => {
     const dispatcher = capturingDispatcher();
     const config: OrchestratorConfig = {
-      dispatchers: { "claude-sonnet-4.6": dispatcher, "qwen3:8b": dispatcher },
+      dispatchers: { "qwen3:8b": dispatcher },
     };
     const steps = createRustDevCyclePipeline(config, "/tmp/ws");
     const implementStep = steps[1];
@@ -79,8 +80,29 @@ describe("createRustDevCyclePipeline", () => {
     expect(dispatcher.lastPrompt).toContain("Rust");
   });
 
+  it("implement step system prompt requires fenced code blocks with file paths", async () => {
+    const captured: { system?: string } = {};
+    const dispatcher: ModelDispatcher = {
+      dispatch: async (req: DispatchRequest): Promise<Result<string>> => {
+        captured.system = req.system;
+        return { ok: true, value: "```rust src/lib.rs\npub fn hello() {}\n```" };
+      },
+    };
+    const config: OrchestratorConfig = { dispatchers: { "qwen3:8b": dispatcher } };
+    const steps = createRustDevCyclePipeline(config, "/tmp/ws");
+    const implementStep = steps[1];
+    if (!implementStep) return;
+
+    const event = makeEvent("Add a parser module");
+    const ctx = makeCtxWithPlanResult(event, "plan output");
+    await implementStep.execute(ctx);
+
+    expect(captured.system).toContain("fenced code blocks");
+    expect(captured.system).toContain("relative-file-path");
+  });
+
   it("uses the custom coverage threshold when provided", () => {
     const steps = createRustDevCyclePipeline(STUB_CONFIG, "/tmp/ws", 80);
-    expect(steps).toHaveLength(7);
+    expect(steps).toHaveLength(8);
   });
 });
