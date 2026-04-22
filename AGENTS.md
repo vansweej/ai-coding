@@ -2,35 +2,40 @@
 
 ## Project Overview
 
-TypeScript monorepo for an AI coding OS that routes requests to different LLM
-models based on task type and operating mode. Uses **Bun** as runtime and
-package manager. Local models served via **Ollama**.
+TypeScript monorepo for an AI coding OS that routes requests to LLM models via
+named **model profiles** and runs multi-step agent pipelines. Uses **Bun** as
+runtime and package manager. All LLM calls go through **GitHub Copilot**
+(`claude-sonnet-4.6`) via the `copilot-default` profile.
 
 ### Directory Structure
 
 ```
 ai-coding/
   ai-system/
+    config/
+      model-profiles.ts    - ModelRole, ModelProfile, copilot-default profile
+      pipeline-registry.ts - Single source of truth for pipeline metadata
     core/
-      model-router/    - Selects LLM model based on action + mode
-      mode-router/     - Determines operating mode (editor vs agentic) [planned]
-      orchestrator/    - Coordinates the full request lifecycle [planned]
+      model-router/        - action → ModelRole; role + profile → model ID
+      mode-router/         - source → AIMode ("editor" | "agentic")
+      orchestrator/        - Single LLM call lifecycle; CopilotDispatcher
+      pipeline/
+        steps/             - OrchestratorStep, FileWriterStep, NixShellStep
+        definitions/       - dev-cycle, rust-dev-cycle, cmake-dev-cycle, scaffold-*
+    cli/
+      parse-args.ts        - CLI args (--profile, --input flags)
+      load-config.ts       - Builds OrchestratorConfig with copilot-default profile
+      select-pipeline.ts   - Instantiates pipeline by name
     shared/
-      event-types.ts   - Shared type definitions (AIRequestEvent, AIAction, etc.)
+      event-types.ts       - Shared type definitions (AIRequestEvent, AIAction, etc.)
   opencode/
-    mappings/          - OpenCode model/provider mapping configs [planned]
-    profiles/          - OpenCode agent profiles [planned]
-  docs/                - Project documentation
+    mappings/              - OpenCode provider/model configs (symlinked by Home Manager)
+  .opencode/
+    agents/                - Project-local subagents (planner, debugger, reviewer, tester)
+    commands/              - Pipeline slash commands
+    tools/                 - Custom OpenCode tools
+  docs/                    - Project documentation
 ```
-
-### Bootstrap Status
-
-The following config files do not exist yet and must be created before the
-commands below will work:
-
-- `package.json` — run `bun init` and add the scripts listed below
-- `tsconfig.json` — must have `strict: true` and `@ai-coding/shared` path alias
-- `biome.json` — must enforce the style rules in this file
 
 ---
 
@@ -83,7 +88,7 @@ Target **90% code coverage**. Exclude untestable code with:
 
 ```typescript
 /* v8 ignore start */
-// ... untestable code (e.g., UI callbacks, Ollama connectivity checks) ...
+// ... untestable code (e.g., UI callbacks, network startup paths) ...
 /* v8 ignore stop */
 ```
 
@@ -156,13 +161,8 @@ export default function selectModel(...) { ... }
 
 ```typescript
 // Good — fully typed, named export, early returns
-export function selectModel(event: AIRequestEvent, mode: AIModeHint): string {
-  if (mode === "agentic") {
-    if (event.action === "plan") return "claude-sonnet";
-    if (event.action === "debug") return "deepseek-coder-v2";
-    return "qwen3:8b";
-  }
-  return "qwen3:8b";
+export function resolveModelForRole(role: ModelRole, profile: ModelProfile): string {
+  return profile.roles[role];
 }
 ```
 
@@ -203,19 +203,17 @@ function parseEvent(raw: unknown): Result<AIRequestEvent> {
 ```typescript
 import { describe, expect, it } from "bun:test";
 
-import { AIRequestEvent } from "@ai-coding/shared";
+import { COPILOT_DEFAULT_PROFILE } from "@ai-system/config/model-profiles";
 
-import { selectModel } from "./select-model";
+import { resolveModelForRole } from "./model-profiles";
 
-describe("selectModel", () => {
-  it("returns claude-sonnet for plan action in agentic mode", () => {
-    const event = { action: "plan" } as AIRequestEvent;
-    expect(selectModel(event, "agentic")).toBe("claude-sonnet");
+describe("resolveModelForRole", () => {
+  it("returns claude-sonnet-4.6 for planner in copilot-default", () => {
+    expect(resolveModelForRole("planner", COPILOT_DEFAULT_PROFILE)).toBe("claude-sonnet-4.6");
   });
 
-  it("returns qwen3:8b in editor mode regardless of action", () => {
-    const event = { action: "plan" } as AIRequestEvent;
-    expect(selectModel(event, "editor")).toBe("qwen3:8b");
+  it("returns claude-sonnet-4.6 for implementer in copilot-default", () => {
+    expect(resolveModelForRole("implementer", COPILOT_DEFAULT_PROFILE)).toBe("claude-sonnet-4.6");
   });
 });
 ```
@@ -234,23 +232,22 @@ describe("selectModel", () => {
 
 ## Models and Routing
 
-This project routes AI requests to different models:
+This project routes AI requests to different models via the role/profile system:
 
-| Action  | Mode    | Model               | Where        |
-|---------|---------|---------------------|--------------|
-| plan    | agentic | `claude-sonnet-4.6` | Cloud API    |
-| debug   | agentic | `deepseek-coder-v2` | Local/Ollama |
-| *other* | agentic | `qwen3:8b`          | Local/Ollama |
-| *any*   | editor  | `qwen3:8b`          | Local/Ollama |
+| Action  | Role          | Model               | Where        |
+|---------|---------------|---------------------|--------------|
+| plan    | `planner`     | `claude-sonnet-4.6` | Copilot API  |
+| debug   | `debugger`    | `claude-sonnet-4.6` | Copilot API  |
+| edit    | `implementer` | `claude-sonnet-4.6` | Copilot API  |
+| *other* | `default`     | `claude-sonnet-4.6` | Copilot API  |
 
-Local models are served via **Ollama** at `http://localhost:11434`.
+All roles use `github-copilot/claude-sonnet-4.6` in the `copilot-default` profile.
 
 ### OpenCode agent model
 
 OpenCode agents (defined in `.opencode/agents/` and `~/.config/opencode/agents/`)
 use **`github-copilot/claude-sonnet-4.6`** via the GitHub Copilot provider.
 
-The model-router (`ai-system/core/model-router/`) is a separate layer used by
-the internal pipeline orchestrator and still references `qwen3:8b` as the model
-ID string -- the orchestrator talks to Ollama directly via the native `/api/chat`
-endpoint.
+The model-router (`ai-system/core/model-router/`) maps `AIAction` → `ModelRole`
+via `actionToRole()`, then resolves the model ID via `resolveModelForRole(role, profile)`.
+The active profile is set in `OrchestratorConfig.profile` and defaults to `copilot-default`.

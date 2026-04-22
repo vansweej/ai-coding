@@ -5,20 +5,22 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
 
 ## Architecture
 
-- **Model routing** -- `plan` actions go to `claude-sonnet` (Copilot), `debug` to
-  `deepseek-coder-v2` (Ollama), everything else to `qwen3:8b` (Ollama)
+- **Model profiles** -- named configurations mapping semantic roles (planner, implementer,
+  debugger…) to model IDs. Default: `copilot-default` (all roles → `claude-sonnet-4.6` via
+  GitHub Copilot)
 - **Pipelines** -- linear step runners that chain LLM calls with shell commands (fmt, clippy,
-  cmake, tarpaulin, etc.)
+  cmake, tarpaulin, etc.). All dev-cycle pipelines include a `write-files` step that writes
+  generated code to disk before build/test steps run
 - **Scaffold pipelines** -- generate new Rust and C++ projects including a `flake.nix` dev shell
 
 ---
 
 ## Configuration
 
-### Copilot token (required for plan steps)
+### Copilot token (required)
 
-All dev-cycle and scaffold pipelines include a `plan` step that calls `claude-sonnet` via the
-GitHub Copilot API. This requires a bearer token.
+All pipelines call `claude-sonnet-4.6` via the GitHub Copilot API. A bearer
+token is required.
 
 The token is resolved in this order -- the first match wins:
 
@@ -52,23 +54,7 @@ If no token is found, the CLI exits with:
 
 ```
 Error: No Copilot token found. Set COPILOT_TOKEN or GITHUB_COPILOT_TOKEN,
-or add { "token": "..." } to ~/.config/ai-coding/config.json
-```
-
-> Pipelines that consist entirely of local Ollama steps and no `plan` step do not require
-> a Copilot token. Currently all built-in pipelines include a `plan` step, so the token is
-> always needed in practice.
-
----
-
-### Ollama URL (optional)
-
-Local models are served via [Ollama](https://ollama.com) at `http://localhost:11434` by default.
-
-Override the URL with the `OLLAMA_URL` environment variable:
-
-```bash
-export OLLAMA_URL=http://my-ollama-host:11434
+or authenticate via OpenCode (opencode auth login).
 ```
 
 ---
@@ -97,16 +83,16 @@ custom tool will return an explicit error message.
 ## Running pipelines
 
 ```bash
-bun run pipeline <name> <workspace> [--input "request text"]
+bun run pipeline <name> <workspace> [--input "request text"] [--profile <name>]
 ```
 
-| Pipeline name    | Steps                                                  | Language   |
-|------------------|--------------------------------------------------------|------------|
-| `scaffold-rust`  | cargo init → generate flake.nix → write files          | Rust       |
-| `scaffold-cpp`   | generate files → write files → cmake configure         | C++        |
-| `dev-cycle`      | plan → implement → bun test                            | TypeScript |
-| `rust-dev-cycle` | plan → implement → fmt → clippy → test → coverage gate | Rust       |
-| `cmake-dev-cycle`| plan → implement → configure → build → ctest           | C++        |
+| Pipeline name     | Steps                                                              | Language   |
+|-------------------|--------------------------------------------------------------------|------------|
+| `scaffold-rust`   | cargo init → generate flake.nix → write files                      | Rust       |
+| `scaffold-cpp`    | generate files → write files → cmake configure                     | C++        |
+| `dev-cycle`       | plan → implement → write-files → bun test                          | TypeScript |
+| `rust-dev-cycle`  | plan → implement → write-files → fmt → clippy → test → coverage    | Rust       |
+| `cmake-dev-cycle` | plan → implement → write-files → configure → build → ctest         | C++        |
 
 ### Examples
 

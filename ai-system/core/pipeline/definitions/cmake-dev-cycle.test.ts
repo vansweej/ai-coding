@@ -5,6 +5,7 @@ import type { PipelineContext } from "@ai-coding/pipeline";
 import type { DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
+import { COPILOT_DEFAULT_PROFILE } from "../../../config/model-profiles";
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { createCMakeDevCyclePipeline } from "./cmake-dev-cycle";
 
@@ -62,7 +63,8 @@ describe("createCMakeDevCyclePipeline", () => {
   it("buildPrompt includes plan output and original request in implement step", async () => {
     const dispatcher = capturingDispatcher();
     const config: OrchestratorConfig = {
-      dispatchers: { "claude-sonnet-4.6": dispatcher, "qwen3:8b": dispatcher },
+      profile: COPILOT_DEFAULT_PROFILE,
+      dispatchers: { "claude-sonnet-4.6": dispatcher },
     };
     const steps = createCMakeDevCyclePipeline(config, "/tmp/ws");
     const implementStep = steps[1];

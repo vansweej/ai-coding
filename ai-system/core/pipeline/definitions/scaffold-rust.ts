@@ -69,9 +69,8 @@ export function createRustScaffoldPipeline(
   workspace: string,
 ): readonly PipelineStep<AIRequestEvent>[] {
   return [
-    // Use "plan" action so the orchestrator routes to claude-sonnet.
-    // Structured template generation requires a capable model -- qwen3:8b (8B)
-    // is unreliable for exact schema reproduction.
+    // Use "plan" action so the legacy router routes to claude-sonnet-4.6,
+    // and the copilot-default profile maps the planner role to claude-sonnet-4.6.
     createOrchestratorStep(
       "generate-flake",
       "plan",

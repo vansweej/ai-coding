@@ -11,19 +11,17 @@ not just when OpenCode is launched from inside `~/Projects/ai-coding/`.
 
 ---
 
-## Current State
+## State at Time of Writing (Now Completed)
 
 | What | Where | Status |
 |------|-------|--------|
-| Agent profiles | `.opencode/agents/planner.md` | Works only in `ai-coding/` project |
-| Agent profiles | `.opencode/agents/debugger.md` | Works only in `ai-coding/` project |
-| Profile copies | `opencode/profiles/planner.md` | Source for Home Manager symlink |
-| Profile copies | `opencode/profiles/debugger.md` | Source for Home Manager symlink |
-| Ollama provider config | `opencode/mappings/opencode.json` | Source for Home Manager symlink |
+| Agent profiles | `.opencode/agents/planner.md` | Worked only in `ai-coding/` project |
+| Agent profiles | `.opencode/agents/debugger.md` | Worked only in `ai-coding/` project |
+| OpenCode config | `opencode/mappings/opencode.json` | Source for Home Manager symlink |
 | Home Manager config | `~/Projects/home-manager/home.nix` | No OpenCode entries yet |
 
 The `opencode/` directory was explicitly designed as a Home Manager symlink
-source. The wiring just hasn't been added to `home.nix` yet.
+source. The wiring has since been added to `home.nix`.
 
 ---
 

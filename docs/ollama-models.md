@@ -1,4 +1,20 @@
-# Ollama Models
+# Ollama Models (Legacy)
+
+> **This document is archived.** The AI Coding OS no longer uses Ollama or local
+> models for pipeline steps. All LLM calls now route through GitHub Copilot
+> (`claude-sonnet-4.6`) via the `copilot-default` model profile.
+>
+> The `OllamaDispatcher` is still present in the codebase for backward
+> compatibility but is not wired by `loadConfig`. If you need Ollama-based
+> routing, add your own profile in `ai-system/config/model-profiles.ts` and
+> register an `OllamaDispatcher` in your config.
+
+---
+
+The content below is preserved for historical reference and describes how the
+Ollama-based derivative model setup worked before the switch to GitHub Copilot.
+
+---
 
 This document describes the Ollama models used by this project, why derivative
 models exist, how to set them up on a fresh machine, and how to add new ones.

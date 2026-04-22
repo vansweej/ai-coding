@@ -183,9 +183,9 @@ You can mix nix-aware and non-nix steps in the same pipeline.
 
 ## Home Manager Integration
 
-This project's nix configuration is managed by Home Manager. Ollama runs as a
-systemd service and OpenCode is installed globally. The `flake.nix` in each
-project directory controls the dev environment for that project's build tools.
+This project's nix configuration is managed by Home Manager. OpenCode is
+installed globally. The `flake.nix` in each project directory controls the dev
+environment for that project's build tools (Rust toolchain, CMake, etc.).
 
 The pipeline infrastructure makes no assumptions about how nix is configured --
 it only checks for `flake.nix` and invokes `nix develop --command`. Any valid

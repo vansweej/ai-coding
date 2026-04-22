@@ -5,6 +5,7 @@ import type { PipelineContext } from "@ai-coding/pipeline";
 import type { DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
+import { COPILOT_DEFAULT_PROFILE } from "../../../config/model-profiles";
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { createRustDevCyclePipeline } from "./rust-dev-cycle";
 
@@ -64,7 +65,8 @@ describe("createRustDevCyclePipeline", () => {
   it("buildPrompt includes plan output and original request in implement step", async () => {
     const dispatcher = capturingDispatcher();
     const config: OrchestratorConfig = {
-      dispatchers: { "qwen3:8b": dispatcher },
+      profile: COPILOT_DEFAULT_PROFILE,
+      dispatchers: { "claude-sonnet-4.6": dispatcher },
     };
     const steps = createRustDevCyclePipeline(config, "/tmp/ws");
     const implementStep = steps[1];
@@ -88,7 +90,10 @@ describe("createRustDevCyclePipeline", () => {
         return { ok: true, value: "```rust src/lib.rs\npub fn hello() {}\n```" };
       },
     };
-    const config: OrchestratorConfig = { dispatchers: { "qwen3:8b": dispatcher } };
+    const config: OrchestratorConfig = {
+      profile: COPILOT_DEFAULT_PROFILE,
+      dispatchers: { "claude-sonnet-4.6": dispatcher },
+    };
     const steps = createRustDevCyclePipeline(config, "/tmp/ws");
     const implementStep = steps[1];
     if (!implementStep) return;
