@@ -1,9 +1,36 @@
-import { createFileWriterStep, createNixShellStep } from "@ai-coding/pipeline";
+import { createFileWriterStep, createNixShellStep, createShellStep } from "@ai-coding/pipeline";
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
 import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { createOrchestratorStep } from "../steps/orchestrator-step";
+
+const AGENTS_MD_CONTENT = `# Project Agent Instructions
+
+## Build Commands
+
+\`\`\`bash
+# Enter the development shell
+nix develop
+
+# Configure
+cmake -S . -B build
+
+# Build
+cmake --build build
+
+# Test
+ctest --test-dir build --output-on-failure
+
+# Format
+clang-format -i src/*.cpp include/*.h
+\`\`\`
+
+## Language
+
+This is a C++ project. When using OpenCode skills, load the \`cpp\` skill
+for language-specific coding standards, error handling, and tooling rules.
+`;
 
 const DEFAULT_BUILD_DIR = "build";
 
@@ -99,5 +126,11 @@ export function createCppScaffoldPipeline(
     createNixShellStep<AIRequestEvent>("configure", ["cmake", "-S", ".", "-B", buildDir], {
       cwd: workspace,
     }),
+
+    createShellStep<AIRequestEvent>(
+      "write-agents-md",
+      ["sh", "-c", `printf '%s' ${JSON.stringify(AGENTS_MD_CONTENT)} > AGENTS.md`],
+      { cwd: workspace },
+    ),
   ];
 }

@@ -12,6 +12,7 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
   cmake, tarpaulin, etc.). All dev-cycle pipelines include a `write-files` step that writes
   generated code to disk before build/test steps run
 - **Scaffold pipelines** -- generate new Rust and C++ projects including a `flake.nix` dev shell
+  and a lightweight `AGENTS.md` with build commands and a language-skill reference
 
 ---
 
@@ -88,8 +89,8 @@ bun run pipeline <name> <workspace> [--input "request text"] [--profile <name>]
 
 | Pipeline name     | Steps                                                              | Language   |
 |-------------------|--------------------------------------------------------------------|------------|
-| `scaffold-rust`   | cargo init → generate flake.nix → write files                      | Rust       |
-| `scaffold-cpp`    | generate files → write files → cmake configure                     | C++        |
+| `scaffold-rust`   | cargo init → generate flake.nix → write files → write AGENTS.md               | Rust       |
+| `scaffold-cpp`    | generate files → write files → cmake configure → write AGENTS.md               | C++        |
 | `dev-cycle`       | plan → implement → write-files → bun test                          | TypeScript |
 | `rust-dev-cycle`  | plan → implement → write-files → fmt → clippy → test → coverage    | Rust       |
 | `cmake-dev-cycle` | plan → implement → write-files → configure → build → ctest         | C++        |

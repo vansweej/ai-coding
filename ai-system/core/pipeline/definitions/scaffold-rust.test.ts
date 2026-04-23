@@ -9,14 +9,20 @@ import { createRustScaffoldPipeline } from "./scaffold-rust";
 const STUB_CONFIG: OrchestratorConfig = { dispatchers: {} };
 
 describe("createRustScaffoldPipeline", () => {
-  it("returns exactly 4 steps", () => {
+  it("returns exactly 5 steps", () => {
     const steps = createRustScaffoldPipeline(STUB_CONFIG, "/tmp/test-rust");
-    expect(steps).toHaveLength(4);
+    expect(steps).toHaveLength(5);
   });
 
-  it("has step names in order: generate-flake, write-files, git-init, init", () => {
+  it("has step names in order: generate-flake, write-files, git-init, init, write-agents-md", () => {
     const steps = createRustScaffoldPipeline(STUB_CONFIG, "/tmp/test-rust");
-    expect(steps.map((s) => s.name)).toEqual(["generate-flake", "write-files", "git-init", "init"]);
+    expect(steps.map((s) => s.name)).toEqual([
+      "generate-flake",
+      "write-files",
+      "git-init",
+      "init",
+      "write-agents-md",
+    ]);
   });
 
   it("produces a different pipeline instance on each call", () => {

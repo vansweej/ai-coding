@@ -189,17 +189,39 @@ Four primary agents are available in the TUI (switch with **Tab**):
 
 ---
 
-## Rules System (AGENTS.md)
+## Rules System (AGENTS.md and Skills)
 
-OpenCode reads `AGENTS.md` files for project-specific instructions:
+OpenCode reads `AGENTS.md` files for project-specific instructions, and loads
+**skills** on demand for language-specific guidance. The two mechanisms work
+together at different scopes:
 
-| Location                         | Scope                 |
-|----------------------------------|-----------------------|
-| `./AGENTS.md`                    | This project only     |
-| `~/.config/opencode/AGENTS.md`   | All OpenCode sessions |
+| Source | Scope | Loaded when |
+|--------|-------|-------------|
+| `~/.config/opencode/AGENTS.md` | All sessions | Always — language-agnostic workflow and build rules |
+| `./AGENTS.md` | This project only | Always when present — project build commands and skill pointer |
+| Language skill (`rust`, `cpp`) | On demand | When the agent recognises a language-specific task |
 
-The project `AGENTS.md` contains build commands, code style rules, naming
-conventions, and testing instructions. Every agent session loads it automatically.
+### Global AGENTS.md
+
+Contains only language-agnostic rules: branch strategy, conventional commits,
+coverage targets, and the Nix dev shell requirement. It does **not** contain
+any language-specific coding standards.
+
+### Language Skills
+
+Language-specific coding standards, tooling, error handling, and review
+checklists live in dedicated skills that are loaded on demand:
+
+| Skill | Trigger keywords | Contents |
+|-------|-----------------|----------|
+| `rust` | rust, cargo, crate, Cargo.toml, clippy, tarpaulin | Core principles, error handling, tooling (cargo fmt/clippy/tarpaulin), safety, testing |
+| `cpp` | c++, cpp, cmake, CMakeLists, clang, ctest | Core principles (RAII, smart pointers), error handling, tooling (clang-format/clang-tidy/ctest), testing |
+
+### Project-Local AGENTS.md
+
+Each project can have its own `AGENTS.md` with project-specific build commands
+and a pointer to the relevant language skill. Scaffold pipelines (`scaffold-rust`,
+`scaffold-cpp`) generate this file automatically in new projects.
 
 ---
 

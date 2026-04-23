@@ -5,6 +5,36 @@ import type { AIRequestEvent } from "@ai-coding/shared";
 import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { createOrchestratorStep } from "../steps/orchestrator-step";
 
+const AGENTS_MD_CONTENT = `# Project Agent Instructions
+
+## Build Commands
+
+\`\`\`bash
+# Enter the development shell
+nix develop
+
+# Build
+cargo build
+
+# Test
+cargo test
+
+# Lint
+cargo clippy -- -D warnings
+
+# Format
+cargo fmt
+
+# Coverage
+cargo tarpaulin --out html
+\`\`\`
+
+## Language
+
+This is a Rust project. When using OpenCode skills, load the \`rust\` skill
+for language-specific coding standards, error handling, and tooling rules.
+`;
+
 const GENERATE_FLAKE_PROMPT = `Generate a Nix flake for a Rust development environment.
 
 Use EXACTLY this structure (you may adjust the package list but NOT the schema):
@@ -89,5 +119,11 @@ export function createRustScaffoldPipeline(
     }),
 
     createNixShellStep<AIRequestEvent>("init", ["cargo", "init", "."], { cwd: workspace }),
+
+    createShellStep<AIRequestEvent>(
+      "write-agents-md",
+      ["sh", "-c", `printf '%s' ${JSON.stringify(AGENTS_MD_CONTENT)} > AGENTS.md`],
+      { cwd: workspace },
+    ),
   ];
 }

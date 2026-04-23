@@ -9,19 +9,24 @@ import { createCppScaffoldPipeline } from "./scaffold-cpp";
 const STUB_CONFIG: OrchestratorConfig = { dispatchers: {} };
 
 describe("createCppScaffoldPipeline", () => {
-  it("returns exactly 3 steps", () => {
+  it("returns exactly 4 steps", () => {
     const steps = createCppScaffoldPipeline(STUB_CONFIG, "/tmp/test-cpp");
-    expect(steps).toHaveLength(3);
+    expect(steps).toHaveLength(4);
   });
 
-  it("has step names in order: generate, write-files, configure", () => {
+  it("has step names in order: generate, write-files, configure, write-agents-md", () => {
     const steps = createCppScaffoldPipeline(STUB_CONFIG, "/tmp/test-cpp");
-    expect(steps.map((s) => s.name)).toEqual(["generate", "write-files", "configure"]);
+    expect(steps.map((s) => s.name)).toEqual([
+      "generate",
+      "write-files",
+      "configure",
+      "write-agents-md",
+    ]);
   });
 
   it("uses the default build directory when none is specified", () => {
     const steps = createCppScaffoldPipeline(STUB_CONFIG, "/tmp/test-cpp");
-    expect(steps).toHaveLength(3);
+    expect(steps).toHaveLength(4);
   });
 
   it("produces a different pipeline instance on each call", () => {

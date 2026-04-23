@@ -171,6 +171,53 @@ ai-coding/
 
 ---
 
+## Skill System
+
+OpenCode **skills** provide on-demand, language-specific guidance loaded only
+when the agent is working in a relevant context. They complement the always-loaded
+`AGENTS.md` files by keeping language rules out of the global config.
+
+### Skill types
+
+| Category | Skills | Loaded when |
+|----------|--------|-------------|
+| **Role skills** | `programmer`, `tester`, `reviewer`, `analyst`, `architect`, `documenter`, `explorer` | Agent recognises a role-specific task (implement, review, document, etc.) |
+| **Language skills** | `rust`, `cpp` | Agent recognises language-specific keywords (cargo, cmake, Cargo.toml, etc.) |
+
+### Where skills live
+
+All skills are deployed globally via Home Manager:
+
+```
+~/.config/opencode/skill/
+  programmer/SKILL.md   — coding standards (language-agnostic)
+  tester/SKILL.md       — testing conventions (language-agnostic)
+  reviewer/SKILL.md     — review checklist (language-agnostic)
+  rust/SKILL.md         — Rust-specific: cargo, clippy, tarpaulin, safety
+  cpp/SKILL.md          — C++-specific: cmake, clang-format, clang-tidy, ctest
+  ...
+```
+
+### Language skill dispatch
+
+The role skills (programmer, tester, reviewer) delegate language-specific rules
+to the language skills rather than duplicating them. Each role skill contains a
+`## Language-Specific Rules` section that instructs the agent to load `rust` or
+`cpp` when working in those languages.
+
+### Project-local AGENTS.md
+
+Scaffold pipelines (`scaffold-rust`, `scaffold-cpp`) write a lightweight
+`AGENTS.md` into each new project containing:
+
+- Project-specific build commands
+- An explicit instruction to load the relevant language skill
+
+This ensures the correct language skill is loaded even when trigger keywords
+are not prominent in the conversation.
+
+---
+
 ## Model Routing
 
 Model selection uses the **role/profile** system. Each pipeline step declares a
