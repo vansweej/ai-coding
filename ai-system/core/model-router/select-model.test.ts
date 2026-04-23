@@ -27,7 +27,7 @@ describe("selectModel", () => {
       expect(selectModel(makeEvent("debug"), mode)).toBe("deepseek-coder-v2");
     });
 
-    it.each(["explain", "edit", "refactor", "chat", "task"] satisfies AIAction[])(
+    it.each(["explain", "edit", "refactor", "chat", "task", "explore"] satisfies AIAction[])(
       "returns qwen3:8b for %s action",
       (action) => {
         expect(selectModel(makeEvent(action), mode)).toBe("qwen3:8b");
@@ -38,11 +38,17 @@ describe("selectModel", () => {
   describe("editor mode", () => {
     const mode: AIMode = "editor";
 
-    it.each(["plan", "debug", "explain", "edit", "refactor", "chat", "task"] satisfies AIAction[])(
-      "returns qwen3:8b for %s action regardless of action",
-      (action) => {
-        expect(selectModel(makeEvent(action), mode)).toBe("qwen3:8b");
-      },
-    );
+    it.each([
+      "plan",
+      "debug",
+      "explain",
+      "edit",
+      "refactor",
+      "chat",
+      "task",
+      "explore",
+    ] satisfies AIAction[])("returns qwen3:8b for %s action regardless of action", (action) => {
+      expect(selectModel(makeEvent(action), mode)).toBe("qwen3:8b");
+    });
   });
 });

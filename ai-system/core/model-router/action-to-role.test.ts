@@ -33,8 +33,21 @@ describe("actionToRole", () => {
     expect(actionToRole("chat")).toBe("default");
   });
 
+  it("maps explore to explorer", () => {
+    expect(actionToRole("explore")).toBe("explorer");
+  });
+
   it("covers all AIAction values", () => {
-    const allActions: AIAction[] = ["plan", "debug", "edit", "refactor", "task", "explain", "chat"];
+    const allActions: AIAction[] = [
+      "plan",
+      "debug",
+      "edit",
+      "refactor",
+      "task",
+      "explain",
+      "chat",
+      "explore",
+    ];
     for (const action of allActions) {
       expect(actionToRole(action)).toBeDefined();
     }

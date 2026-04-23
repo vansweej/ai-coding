@@ -239,6 +239,7 @@ This project routes AI requests to different models via the role/profile system:
 | plan    | `planner`     | `claude-sonnet-4.6` | Copilot API  |
 | debug   | `debugger`    | `claude-sonnet-4.6` | Copilot API  |
 | edit    | `implementer` | `claude-sonnet-4.6` | Copilot API  |
+| explore | `explorer`    | `claude-sonnet-4.6` | Copilot API  |
 | *other* | `default`     | `claude-sonnet-4.6` | Copilot API  |
 
 All roles use `github-copilot/claude-sonnet-4.6` in the `copilot-default` profile.

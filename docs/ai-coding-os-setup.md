@@ -67,6 +67,7 @@ All roles route to `claude-sonnet-4.6` via GitHub Copilot:
 | `reviewer`    | `claude-sonnet-4.6` | Copilot API |
 | `tester`      | `claude-sonnet-4.6` | Copilot API |
 | `scaffolder`  | `claude-sonnet-4.6` | Copilot API |
+| `explorer`    | `claude-sonnet-4.6` | Copilot API |
 
 ### Profile selection
 
@@ -177,13 +178,14 @@ via Home Manager). Invoke them by prefixing a message with `@<name>`:
 
 ## OpenCode Primary Agents
 
-Three primary agents are available in the TUI (switch with **Tab**):
+Four primary agents are available in the TUI (switch with **Tab**):
 
-| Agent    | Model                  | Use when…                           |
-|----------|------------------------|-------------------------------------|
-| `build`  | claude-sonnet-4.6      | Default — full access, write files  |
-| `plan`   | claude-opus-4.6        | Architecture decisions, deep analysis |
-| `local`  | claude-sonnet-4.6      | Experimentation, general-purpose    |
+| Agent     | Model                  | Use when…                                        |
+|-----------|------------------------|--------------------------------------------------|
+| `build`   | claude-sonnet-4.6      | Default — full access, write files               |
+| `plan`    | claude-opus-4.6        | Architecture decisions, deep analysis            |
+| `local`   | claude-sonnet-4.6      | Experimentation, general-purpose                 |
+| `explore` | claude-sonnet-4.6      | Read-only codebase exploration and Q&A           |
 
 ---
 
@@ -204,8 +206,9 @@ conventions, and testing instructions. Every agent session loads it automaticall
 ## Daily Workflow
 
 1. **Open OpenCode** — `cd my-project && opencode` (or just `opencode` from anywhere)
-2. **Plan first** — switch to the `plan` agent (Tab), describe the change
-3. **Implement** — switch to `build`, tell it to follow the plan
-4. **Run a pipeline** — for self-contained tasks: `/pipeline dev-cycle . "Add error handling"`
-5. **Review** — `@reviewer` checks the diff before committing
-6. **Commit** — the `build` agent commits with conventional commit messages
+2. **Explore first** — switch to the `explore` agent (Tab), ask questions about unfamiliar code
+3. **Plan** — switch to the `plan` agent, describe the change
+4. **Implement** — switch to `build`, tell it to follow the plan
+5. **Run a pipeline** — for self-contained tasks: `/pipeline dev-cycle . "Add error handling"`
+6. **Review** — `@reviewer` checks the diff before committing
+7. **Commit** — the `build` agent commits with conventional commit messages

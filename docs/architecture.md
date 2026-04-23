@@ -189,6 +189,7 @@ All roles route to `claude-sonnet-4.6` via GitHub Copilot:
 | `reviewer`    | `claude-sonnet-4.6`  | Copilot API   |
 | `tester`      | `claude-sonnet-4.6`  | Copilot API   |
 | `scaffolder`  | `claude-sonnet-4.6`  | Copilot API   |
+| `explorer`    | `claude-sonnet-4.6`  | Copilot API   |
 | `default`     | `claude-sonnet-4.6`  | Copilot API   |
 
 ### Profile resolution

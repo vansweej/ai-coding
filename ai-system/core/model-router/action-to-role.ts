@@ -22,6 +22,8 @@ export function actionToRole(action: AIAction): ModelRole {
     case "refactor":
     case "task":
       return "implementer";
+    case "explore":
+      return "explorer";
     case "explain":
     case "chat":
       return "default";

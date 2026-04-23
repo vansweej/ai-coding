@@ -2,7 +2,15 @@ export type AISource = "nvim" | "cli" | "agent" | "api";
 
 export type AIModeHint = "editor" | "agentic" | "auto";
 
-export type AIAction = "explain" | "edit" | "refactor" | "plan" | "debug" | "chat" | "task";
+export type AIAction =
+  | "explain"
+  | "edit"
+  | "refactor"
+  | "plan"
+  | "debug"
+  | "chat"
+  | "task"
+  | "explore";
 
 export interface AIRequestEvent {
   readonly id: string;

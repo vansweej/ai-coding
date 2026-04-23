@@ -16,6 +16,7 @@ export type ModelRole =
   | "reviewer"
   | "tester"
   | "scaffolder"
+  | "explorer"
   | "default";
 
 /** Named profile: maps every role to a concrete model ID. */
@@ -35,6 +36,7 @@ export const COPILOT_DEFAULT_PROFILE: ModelProfile = {
     reviewer: "claude-sonnet-4.6",
     tester: "claude-sonnet-4.6",
     scaffolder: "claude-sonnet-4.6",
+    explorer: "claude-sonnet-4.6",
     default: "claude-sonnet-4.6",
   },
 };
