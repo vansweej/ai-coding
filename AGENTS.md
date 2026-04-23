@@ -106,6 +106,16 @@ Target **90% code coverage**. Exclude untestable code with:
 4. **Never leave `TODO` comments** — either implement the thing or open a
    tracked issue.
 5. **Never leave commented-out code** in the codebase.
+6. **Keep the Home Manager repo in sync** — when adding or modifying any
+   **agent** (`.md` in `agents/`), **skill** (`SKILL.md` in `skill/`), or
+   **command** (`.md` in `commands/`), also update the source file in
+   `~/Projects/home-manager/opencode/` and, if the file is new, add a
+   `.source` entry in `home.nix`. After changes, delete any conflicting plain
+   files under `~/.config/opencode/` and run:
+   ```bash
+   home-manager switch --flake ~/Projects/home-manager#oryp6
+   ```
+   to activate. Verify the target file is a Nix store symlink afterwards.
 
 ---
 
