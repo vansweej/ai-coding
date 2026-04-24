@@ -258,9 +258,9 @@ the OpenCode server over HTTP.
 | Keymap | Action | Type |
 |--------|--------|------|
 | `<leader>os → explain` | Explain selected code | Fast (no tools) |
-| `<leader>os → document` | Add doc comments to selection | Fast (no tools) |
-| `<leader>os → optimize` | Optimize selection for performance | Fast (no tools) |
 | `<leader>os → diagnostics` | Explain LSP diagnostics | Fast (no tools) |
+| `<leader>os → document` | Add doc comments to selection (loads documenter skill) | Full (tool-aware) |
+| `<leader>os → optimize` | Optimize selection for performance (loads programmer skill) | Full (tool-aware) |
 | `<leader>os → review` | Review selection (loads reviewer skill) | Full (tool-aware) |
 | `<leader>os → implement` | Implement selection (loads programmer skill) | Full (tool-aware) |
 | `<leader>os → test` | Write tests for selection (loads tester skill) | Full (tool-aware) |
@@ -271,8 +271,8 @@ the OpenCode server over HTTP.
 no skill loading. Use these for quick, self-contained questions about visible code.
 
 **Full prompts** load the matching skill and use tools to read related files,
-run tests, and gather context before responding. They are slower but produce
-richer, more accurate results. Write-capable prompts (`implement`, `fix`, `test`)
+run tests, and gather context before responding. They apply changes **directly
+to the source file** rather than displaying them in chat. All full prompts
 require the `build` or `local` agent to be active.
 
 ### Known issue: multiple OpenCode instances
