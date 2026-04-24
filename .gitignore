@@ -1,7 +1,10 @@
 node_modules/
 dist/
 
-
 # Added by cargo
 
 /target
+
+# Spar Decision Briefs -- ephemeral working artifacts, not project history
+.spar/
+

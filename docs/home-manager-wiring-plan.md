@@ -47,6 +47,7 @@ After `home-manager switch`:
 │   ├── build.md      → ~/Projects/home-manager/opencode/agents/build.md
 │   ├── local.md      → ~/Projects/home-manager/opencode/agents/local.md
 │   ├── explore.md    → ~/Projects/home-manager/opencode/agents/explore.md
+│   ├── spar.md       → ~/Projects/home-manager/opencode/agents/spar.md
 │   ├── planner.md    → ~/Projects/home-manager/opencode/agents/planner.md
 │   ├── debugger.md   → ~/Projects/home-manager/opencode/agents/debugger.md
 │   ├── reviewer.md   → ~/Projects/home-manager/opencode/agents/reviewer.md

@@ -162,6 +162,8 @@ via Home Manager). Invoke them by prefixing a message with `@<name>`:
 | `@reviewer` | claude-sonnet-4.6   | Code review (quality/security)    | read + bun test + git |
 | `@tester`   | claude-sonnet-4.6   | Test writing and coverage         | read + bun test + git |
 
+See [docs/agents.md](./agents.md) for full agent documentation.
+
 **Examples:**
 
 ```
@@ -178,14 +180,18 @@ via Home Manager). Invoke them by prefixing a message with `@<name>`:
 
 ## OpenCode Primary Agents
 
-Four primary agents are available in the TUI (switch with **Tab**):
+Five primary agents are available in the TUI (switch with **Tab**):
 
-| Agent     | Model                  | Use when…                                        |
-|-----------|------------------------|--------------------------------------------------|
-| `build`   | claude-sonnet-4.6      | Default — full access, write files               |
-| `plan`    | claude-opus-4.6        | Architecture decisions, deep analysis            |
-| `local`   | claude-sonnet-4.6      | Experimentation, general-purpose                 |
-| `explore` | claude-sonnet-4.6      | Read-only codebase exploration and Q&A           |
+| Agent     | Model                  | Use when…                                                    |
+|-----------|------------------------|--------------------------------------------------------------|
+| `build`   | claude-sonnet-4.6      | Default — full access, write files                           |
+| `plan`    | claude-opus-4.6        | Architecture decisions, deep analysis                        |
+| `local`   | claude-sonnet-4.6      | Experimentation, general-purpose                             |
+| `explore` | claude-sonnet-4.6      | Read-only codebase exploration and Q&A                       |
+| `spar`    | claude-opus-4.6        | Challenging a feature idea before investing in a plan        |
+
+See [docs/agents.md](./agents.md) for full agent documentation, design
+principles, and the optional spar → plan handoff workflow.
 
 ---
 
@@ -227,6 +233,8 @@ and a pointer to the relevant language skill. Scaffold pipelines (`scaffold-rust
 
 ## Daily Workflow
 
+### Quick path (most common)
+
 1. **Open OpenCode** — `cd my-project && opencode` (or just `opencode` from anywhere)
 2. **Explore first** — switch to the `explore` agent (Tab), ask questions about unfamiliar code
 3. **Plan** — switch to the `plan` agent, describe the change
@@ -234,3 +242,17 @@ and a pointer to the relevant language skill. Scaffold pipelines (`scaffold-rust
 5. **Run a pipeline** — for self-contained tasks: `/pipeline dev-cycle . "Add error handling"`
 6. **Review** — `@reviewer` checks the diff before committing
 7. **Commit** — the `build` agent commits with conventional commit messages
+
+### Deep-dive path (complex or risky features)
+
+Use this when the feature has unclear scope, touches multiple modules, or you
+want your assumptions challenged before investing in a plan:
+
+1. **Open OpenCode** — `cd my-project && opencode`
+2. **Explore first** — switch to `explore`, understand the relevant code
+3. **Spar** — switch to `spar`, pitch the feature idea and let it challenge your thinking
+4. **Save the brief** — ask `spar` for a Decision Brief; confirm writing it to `.spar/brief.md`
+5. **Plan** — switch to `plan`; it reads `.spar/brief.md` automatically and incorporates the context
+6. **Implement** — switch to `build`, follow the plan
+7. **Review** — `@reviewer` checks the diff before committing
+8. **Commit** — the `build` agent commits with conventional commit messages
