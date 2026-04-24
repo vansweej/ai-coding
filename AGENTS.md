@@ -270,7 +270,7 @@ All roles use `github-copilot/claude-sonnet-4.6` in the `copilot-default` profil
 ### OpenCode agent model
 
 OpenCode agents (defined in `.opencode/agents/` and `~/.config/opencode/agents/`)
-use either **`github-copilot/claude-opus-4.6`** (plan, spar, teach) or
+use either **`github-copilot/claude-opus-4.6`** (plan, spar, teach, brainstorm) or
 **`github-copilot/claude-sonnet-4.6`** (build, local, explore, and all subagents)
 via the GitHub Copilot provider.
 

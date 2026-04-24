@@ -30,6 +30,7 @@ under `~/.config/opencode/agents/`.
 | `explore` | Sonnet 4.6 | 0.3 | deny | allow | Read-only codebase exploration and Q&A |
 | `spar` | Opus 4.6 | 0.5 | ask | allow | Socratic sparring partner for feature discussions |
 | `teach` | Opus 4.6 | 0.5 | deny | allow | Adaptive tutor — teaches from project context and broad knowledge |
+| `brainstorm` | Opus 4.6 | 0.6 | ask | allow | Generative brainstorming — explores new ideas, presents choices, researches prior art |
 
 ### plan
 
@@ -177,6 +178,149 @@ teach: Exactly. And what else? Think about the test suite -- how would you
        test selectModel() if the model name is hardcoded?
 ```
 
+### brainstorm
+
+Powered by Claude Opus 4.6. A generative brainstorming partner for exploring
+new ideas **before** you know what you want to build. It thinks divergently,
+presents concrete choices, researches prior art via web, and produces an Idea
+Brief when you are ready to move forward.
+
+Works inside or outside a project. When a project is present, it reads the
+codebase to ground ideas in what already exists — but never modifies it.
+
+**What it does:**
+- Generates 2-4 concrete directions with tradeoffs for each, always including
+  at least one the user has not considered
+- Researches prior art, comparable tools, and emerging trends via web; cites
+  URLs inline
+- Reads the codebase (when available) to anchor ideas in existing code and
+  constraints; cites exact file paths and line numbers
+- Riffs on variations, mashups, and "what if" scenarios
+- Converges into a structured Idea Brief when the user is ready to move forward
+
+**What it does not do:**
+- Does not challenge or stress-test ideas (that is `spar`)
+- Does not produce implementation plans (that is `plan`)
+- Does not modify project files under any circumstances
+- Does not pick a direction for you — always presents choices
+
+**Idea Brief handoff:**
+When you signal you are ready to move forward, `brainstorm` produces a
+structured Idea Brief (see [The Brainstorm → Spar Handoff](#the-brainstorm--spar-handoff-optional)
+below) and offers to write it to `.brainstorm/brief.md`. You confirm the write.
+The `spar` agent reads this file automatically on its next session start.
+
+**When to use `brainstorm`:**
+- You have a vague sense that you want to build something but no concrete idea
+- You want to explore a problem space before committing to a direction
+- You want to see what's already out there before designing something new
+- You want options presented to you rather than arriving with a fixed idea
+
+**Example exchange:**
+
+```
+You:  I want to add some kind of observability to the pipeline system but
+      I'm not sure what form it should take.
+
+brainstorm: Interesting space. Let me look at the pipeline runner first to
+            understand what events are already visible.
+            [reads run-pipeline.ts, pipeline-types.ts]
+
+            The runner emits StepResult objects but nothing is currently
+            persisted or streamed. Here are four directions worth considering:
+
+            1. **Structured event log** — emit JSON events (step start, step
+               end, LLM call, shell output) to a file or stdout. Simple to
+               implement, composable with existing tools (jq, grep).
+               Trade-off: pull-based; you query the log after the fact.
+
+            2. **OpenTelemetry traces** — instrument each step as a span.
+               Integrates with Jaeger, Grafana, etc.
+               Trade-off: significant setup cost; overkill for a single-user
+               tool.
+
+            3. **Live TUI dashboard** — a terminal UI that shows step progress
+               in real time, similar to how cargo shows build progress.
+               Trade-off: fun to build, but adds a UI dependency.
+
+            4. **Webhook / SSE stream** — push events to an HTTP endpoint so
+               external tools can react in real time.
+               Trade-off: requires a receiver; more useful if you want to
+               integrate with other systems.
+
+            Which direction feels closest to what you had in mind?
+```
+
+---
+
+## The Brainstorm → Spar Handoff (Optional)
+
+`brainstorm` is **not** a prerequisite for `spar`. Most sparring sessions start
+directly with a concrete idea. Use the handoff when you want the ideas and
+context from a brainstorming session to carry forward automatically.
+
+### How it works
+
+```
+brainstorm session
+    │
+    ▼
+Idea Brief (displayed in chat)
+    │
+    ├─── written to .brainstorm/brief.md  ◄── you confirm the write
+    │
+    ▼
+spar session start
+    │
+    ├─── .brainstorm/brief.md present? ──yes──► read and challenge the chosen idea
+    │
+    └─── .brainstorm/brief.md absent? ──────► proceed normally, no change in behaviour
+    │
+    ▼
+Decision Brief → .spar/brief.md
+    │
+    ▼
+plan session start → reads .spar/brief.md
+```
+
+### Idea Brief format
+
+```markdown
+## Idea
+One-line description of the chosen idea.
+
+## Context
+What prompted this brainstorm -- the domain, problem space, or inspiration.
+
+## Explored directions
+Brief list of ideas that were considered, with a one-line summary of each.
+
+## Chosen direction
+Which idea the user wants to pursue, and why it won over the alternatives.
+
+## Key characteristics
+What makes this idea interesting -- unique aspects, technical challenges,
+potential impact.
+
+## Open questions
+What still needs answering -- feasibility, design, scope, etc.
+
+## Prior art
+Links and references discovered during research.
+
+## Recommended next steps
+What spar should challenge first; what plan should focus on.
+```
+
+### Notes
+
+- `.brainstorm/brief.md` is **overwritten** on each new brief -- it reflects the
+  most recent brainstorming session only.
+- `.brainstorm/` should be gitignored -- briefs are ephemeral working artifacts,
+  not project history.
+- `brainstorm` uses `write: ask` permission -- you are always prompted before the
+  file is written.
+
 ---
 
 ## Subagents
@@ -299,6 +443,21 @@ explore → spar → plan → build → @reviewer → commit
 - You have a strong opinion and want it challenged before investing in a plan
 - The feature has significant backwards-compatibility or security implications
 
+### Discovery path (no idea yet)
+
+For situations where you don't yet have a concrete feature idea — you know the
+problem space but not the solution:
+
+```
+brainstorm → spar → plan → build → @reviewer → commit
+```
+
+**Use the discovery path when:**
+- You have a vague sense of what you want to build but no concrete direction
+- You want to explore a problem space and see what options exist
+- You want prior art and comparable tools surfaced before designing anything
+- You want choices presented to you rather than arriving with a fixed idea
+
 ### Learning path (understanding before doing)
 
 For situations where you need to understand a concept or pattern before
@@ -322,12 +481,13 @@ teach → explore → plan → build → @reviewer → commit
 - **Clear, non-overlapping purpose** -- each agent does one thing well; if two
   agents feel interchangeable, one of them needs a sharper definition
 - **Minimal permissions** -- agents get only the access they need; read-only
-  agents never have write/edit permissions (spar is the sole exception, with
-  `write: ask` for the single handoff file)
+  agents never have write/edit permissions (spar and brainstorm are the sole
+  exceptions, with `write: ask` for their single handoff files)
 - **Temperature guidelines:**
   - 0.1–0.2: diagnostic (debugger) -- deterministic, precise
   - 0.2–0.3: analytical (planner, reviewer, tester, plan, explore) -- structured
   - 0.5: generative (build, spar, teach) -- creative thinking, implementation, and teaching
+  - 0.6: divergent (brainstorm) -- maximum creative exploration of the possibility space
 - **Subagents mirror primary agents** -- `@planner` is the delegation-target
   version of `plan`; same capability, short-lived context
 
@@ -372,6 +532,7 @@ teach → explore → plan → build → @reviewer → commit
     explore.md
     spar.md
     teach.md
+    brainstorm.md
     planner.md       ← source of truth for global subagents
     debugger.md
     reviewer.md
@@ -379,16 +540,17 @@ teach → explore → plan → build → @reviewer → commit
   home.nix           ← registers each agent as a Nix store symlink
 
 ~/.config/opencode/agents/
-    plan.md          → /nix/store/.../plan.md      (symlink)
-    build.md         → /nix/store/.../build.md     (symlink)
-    local.md         → /nix/store/.../local.md     (symlink)
-    explore.md       → /nix/store/.../explore.md   (symlink)
-    spar.md          → /nix/store/.../spar.md      (symlink)
-    teach.md         → /nix/store/.../teach.md     (symlink)
-    planner.md       → /nix/store/.../planner.md   (symlink)
-    debugger.md      → /nix/store/.../debugger.md  (symlink)
-    reviewer.md      → /nix/store/.../reviewer.md  (symlink)
-    tester.md        → /nix/store/.../tester.md    (symlink)
+    plan.md          → /nix/store/.../plan.md          (symlink)
+    build.md         → /nix/store/.../build.md         (symlink)
+    local.md         → /nix/store/.../local.md         (symlink)
+    explore.md       → /nix/store/.../explore.md       (symlink)
+    spar.md          → /nix/store/.../spar.md          (symlink)
+    teach.md         → /nix/store/.../teach.md         (symlink)
+    brainstorm.md    → /nix/store/.../brainstorm.md    (symlink)
+    planner.md       → /nix/store/.../planner.md       (symlink)
+    debugger.md      → /nix/store/.../debugger.md      (symlink)
+    reviewer.md      → /nix/store/.../reviewer.md      (symlink)
+    tester.md        → /nix/store/.../tester.md        (symlink)
 
 ~/Projects/ai-coding/.opencode/agents/
     planner.md       ← project-local copy (kept in sync with home-manager)

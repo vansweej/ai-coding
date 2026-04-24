@@ -180,19 +180,20 @@ See [docs/agents.md](./agents.md) for full agent documentation.
 
 ## OpenCode Primary Agents
 
-Six primary agents are available in the TUI (switch with **Tab**):
+Seven primary agents are available in the TUI (switch with **Tab**):
 
-| Agent     | Model                  | Use when…                                                    |
-|-----------|------------------------|--------------------------------------------------------------|
-| `build`   | claude-sonnet-4.6      | Default — full access, write files                           |
-| `plan`    | claude-opus-4.6        | Architecture decisions, deep analysis                        |
-| `local`   | claude-sonnet-4.6      | Experimentation, general-purpose                             |
-| `explore` | claude-sonnet-4.6      | Read-only codebase exploration and Q&A                       |
-| `spar`    | claude-opus-4.6        | Challenging a feature idea before investing in a plan        |
-| `teach`   | claude-opus-4.6        | Learning — adaptive tutor grounded in project context        |
+| Agent         | Model                  | Use when…                                                    |
+|---------------|------------------------|--------------------------------------------------------------|
+| `build`       | claude-sonnet-4.6      | Default — full access, write files                           |
+| `plan`        | claude-opus-4.6        | Architecture decisions, deep analysis                        |
+| `local`       | claude-sonnet-4.6      | Experimentation, general-purpose                             |
+| `explore`     | claude-sonnet-4.6      | Read-only codebase exploration and Q&A                       |
+| `spar`        | claude-opus-4.6        | Challenging a feature idea before investing in a plan        |
+| `teach`       | claude-opus-4.6        | Learning — adaptive tutor grounded in project context        |
+| `brainstorm`  | claude-opus-4.6        | Exploring new ideas — presents choices, researches prior art |
 
 See [docs/agents.md](./agents.md) for full agent documentation, design
-principles, and the optional spar → plan handoff workflow.
+principles, and the brainstorm → spar → plan handoff workflow.
 
 ---
 
