@@ -29,6 +29,7 @@ under `~/.config/opencode/agents/`.
 | `local` | Sonnet 4.6 | 0.3 | allow | — | General-purpose experimentation |
 | `explore` | Sonnet 4.6 | 0.3 | deny | allow | Read-only codebase exploration and Q&A |
 | `spar` | Opus 4.6 | 0.5 | ask | allow | Socratic sparring partner for feature discussions |
+| `teach` | Opus 4.6 | 0.5 | deny | allow | Adaptive tutor — teaches from project context and broad knowledge |
 
 ### plan
 
@@ -109,6 +110,71 @@ spar: Got it. Looking at copilot-dispatcher.ts line 34 -- the dispatcher
       it transparent to callers, but means you can't distinguish "retried and
       succeeded" from "succeeded first try" in your pipeline metrics. Does
       that distinction matter to you?
+```
+
+### teach
+
+Powered by Claude Opus 4.6. An adaptive tutor that helps you deeply understand
+concepts -- not just get answers. It reads the current project for concrete
+teaching material and can fetch external documentation, specs, and tutorials.
+
+**What it does:**
+- Assesses your knowledge level from your questions and adapts its depth
+  continuously -- starts explanatory, shifts to Socratic as you demonstrate
+  understanding
+- Reads the codebase to ground explanations in real code you are working with;
+  cites exact file paths and line numbers
+- Fetches external documentation, language specs, RFCs, and tutorials via web;
+  always cites the source URL
+- Checks your understanding by asking you to explain back, predict behavior,
+  or spot errors in a snippet
+- Bridges project-specific patterns to general CS, programming, and math
+  concepts -- building transferable knowledge, not just project muscle memory
+- Teaches any topic: project patterns, TypeScript, Rust, Nix, data structures,
+  type theory, networking, systems design, math -- anything you want to learn
+
+**What it does not do:**
+- Does not write, edit, or create files
+- Does not solve your problem directly -- guides you to the answer through
+  questions and scaffolded explanations
+- Does not produce session notes or quiz files (conversation is the lesson)
+
+**When to use `teach`:**
+- You want to understand *why* something works, not just *how* to use it
+- You are working with an unfamiliar pattern and want to learn the underlying
+  concept before implementing
+- You want to learn a broader topic (type theory, monads, async runtimes) with
+  your project as a concrete anchor
+- You want to be challenged and quizzed, not just given answers
+- You are onboarding to an unfamiliar codebase and want to build real
+  understanding, not just copy patterns
+
+**Distinction from `explore`:**
+`explore` answers "how does this code work?" by showing you the code.
+`teach` answers "why does this work?" by building your understanding.
+`explore` is a reference tool; `teach` is a classroom.
+
+**Example exchange:**
+
+```
+You:   Why does the model router use a profile instead of just hardcoding
+       the model name?
+
+teach: Good question -- let me show you the relevant code first.
+       [reads model-profiles.ts and select-model.ts]
+
+       The profile system is an instance of a classic design pattern called
+       the Strategy pattern. The router doesn't know *which* model to use --
+       it only knows *how* to ask for one given a role. The profile supplies
+       the actual answer.
+
+       Before I explain further: what do you think would break if you
+       hardcoded "claude-sonnet-4.6" directly in selectModel()?
+
+You:   You couldn't switch models without changing the code?
+
+teach: Exactly. And what else? Think about the test suite -- how would you
+       test selectModel() if the model name is hardcoded?
 ```
 
 ---
@@ -232,6 +298,22 @@ explore → spar → plan → build → @reviewer → commit
 - You have a strong opinion and want it challenged before investing in a plan
 - The feature has significant backwards-compatibility or security implications
 
+### Learning path (understanding before doing)
+
+For situations where you need to understand a concept or pattern before
+implementing:
+
+```
+teach → explore → plan → build → @reviewer → commit
+```
+
+**Use the learning path when:**
+- You are working with a pattern or technology you do not fully understand
+- You want to learn the theory behind what the code is doing before touching it
+- You are onboarding to an unfamiliar codebase and want real understanding, not
+  just pattern-matching
+- You want your understanding tested before you start writing code
+
 ---
 
 ## Agent Design Principles
@@ -244,7 +326,7 @@ explore → spar → plan → build → @reviewer → commit
 - **Temperature guidelines:**
   - 0.1–0.2: diagnostic (debugger) -- deterministic, precise
   - 0.2–0.3: analytical (planner, reviewer, tester, plan, explore) -- structured
-  - 0.5: generative (build, spar) -- creative thinking and implementation
+  - 0.5: generative (build, spar, teach) -- creative thinking, implementation, and teaching
 - **Subagents mirror primary agents** -- `@planner` is the delegation-target
   version of `plan`; same capability, short-lived context
 
@@ -288,6 +370,7 @@ explore → spar → plan → build → @reviewer → commit
     local.md
     explore.md
     spar.md
+    teach.md
     planner.md       ← source of truth for global subagents
     debugger.md
     reviewer.md
@@ -300,6 +383,7 @@ explore → spar → plan → build → @reviewer → commit
     local.md         → /nix/store/.../local.md     (symlink)
     explore.md       → /nix/store/.../explore.md   (symlink)
     spar.md          → /nix/store/.../spar.md      (symlink)
+    teach.md         → /nix/store/.../teach.md     (symlink)
     planner.md       → /nix/store/.../planner.md   (symlink)
     debugger.md      → /nix/store/.../debugger.md  (symlink)
     reviewer.md      → /nix/store/.../reviewer.md  (symlink)

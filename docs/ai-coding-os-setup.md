@@ -180,7 +180,7 @@ See [docs/agents.md](./agents.md) for full agent documentation.
 
 ## OpenCode Primary Agents
 
-Five primary agents are available in the TUI (switch with **Tab**):
+Six primary agents are available in the TUI (switch with **Tab**):
 
 | Agent     | Model                  | Use when…                                                    |
 |-----------|------------------------|--------------------------------------------------------------|
@@ -189,6 +189,7 @@ Five primary agents are available in the TUI (switch with **Tab**):
 | `local`   | claude-sonnet-4.6      | Experimentation, general-purpose                             |
 | `explore` | claude-sonnet-4.6      | Read-only codebase exploration and Q&A                       |
 | `spar`    | claude-opus-4.6        | Challenging a feature idea before investing in a plan        |
+| `teach`   | claude-opus-4.6        | Learning — adaptive tutor grounded in project context        |
 
 See [docs/agents.md](./agents.md) for full agent documentation, design
 principles, and the optional spar → plan handoff workflow.
@@ -256,3 +257,15 @@ want your assumptions challenged before investing in a plan:
 6. **Implement** — switch to `build`, follow the plan
 7. **Review** — `@reviewer` checks the diff before committing
 8. **Commit** — the `build` agent commits with conventional commit messages
+
+### Learning path (understanding before doing)
+
+Use this when you need to understand a concept or pattern before implementing:
+
+1. **Open OpenCode** — `cd my-project && opencode`
+2. **Learn** — switch to `teach`, ask about the concept or pattern you need to understand; it reads the project and fetches external docs to ground the lesson
+3. **Explore** — switch to `explore`, trace the relevant code with your new understanding
+4. **Plan** — switch to `plan`, describe the change
+5. **Implement** — switch to `build`, follow the plan
+6. **Review** — `@reviewer` checks the diff before committing
+7. **Commit** — the `build` agent commits with conventional commit messages

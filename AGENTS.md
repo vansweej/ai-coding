@@ -116,6 +116,19 @@ Target **90% code coverage**. Exclude untestable code with:
    home-manager switch --flake ~/Projects/home-manager#oryp6
    ```
    to activate. Verify the target file is a Nix store symlink afterwards.
+7. **Update documentation with every change** — when adding, modifying, or
+   removing any feature, agent, pipeline, skill, or configuration in this
+   repository, update the corresponding documentation in the same commit:
+   - `docs/agents.md` — for agent changes (tables, descriptions, workflows,
+     file listings)
+   - `docs/architecture.md` — for structural or pipeline changes
+   - `docs/ai-coding-os-setup.md` — for setup-facing changes (agent tables,
+     daily workflow steps)
+   - `README.md` — for user-facing pipeline or configuration changes
+   - `AGENTS.md` — for changes to conventions, rules, or directory structure
+
+   Documentation must never lag behind the code. A PR that adds a feature
+   without updating docs is incomplete and must not be merged.
 
 ---
 
@@ -257,7 +270,9 @@ All roles use `github-copilot/claude-sonnet-4.6` in the `copilot-default` profil
 ### OpenCode agent model
 
 OpenCode agents (defined in `.opencode/agents/` and `~/.config/opencode/agents/`)
-use **`github-copilot/claude-sonnet-4.6`** via the GitHub Copilot provider.
+use either **`github-copilot/claude-opus-4.6`** (plan, spar, teach) or
+**`github-copilot/claude-sonnet-4.6`** (build, local, explore, and all subagents)
+via the GitHub Copilot provider.
 
 The model-router (`ai-system/core/model-router/`) maps `AIAction` → `ModelRole`
 via `actionToRole()`, then resolves the model ID via `resolveModelForRole(role, profile)`.
