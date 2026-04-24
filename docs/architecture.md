@@ -181,7 +181,7 @@ when the agent is working in a relevant context. They complement the always-load
 
 | Category | Skills | Loaded when |
 |----------|--------|-------------|
-| **Role skills** | `programmer`, `tester`, `reviewer`, `analyst`, `architect`, `documenter`, `explorer` | Agent recognises a role-specific task (implement, review, document, etc.) |
+| **Role skills** | `programmer`, `tester`, `reviewer`, `debugger`, `analyst`, `architect`, `documenter`, `explorer` | Agent recognises a role-specific task (implement, review, debug, document, etc.) |
 | **Language skills** | `rust`, `cpp` | Agent recognises language-specific keywords (cargo, cmake, Cargo.toml, etc.) |
 
 ### Where skills live
@@ -193,6 +193,7 @@ All skills are deployed globally via Home Manager:
   programmer/SKILL.md   — coding standards (language-agnostic)
   tester/SKILL.md       — testing conventions (language-agnostic)
   reviewer/SKILL.md     — review checklist (language-agnostic)
+  debugger/SKILL.md     — debugging workflow (language-agnostic)
   rust/SKILL.md         — Rust-specific: cargo, clippy, tarpaulin, safety
   cpp/SKILL.md          — C++-specific: cmake, clang-format, clang-tidy, ctest
   ...

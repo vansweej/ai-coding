@@ -199,7 +199,8 @@ or edit files. Also reads `.spar/brief.md` if present.
 
 Diagnoses bugs and failing tests. Traces execution paths, identifies root
 causes, and proposes a fix in plain terms -- but does not apply it. Can run
-`bun test` and `bunx tsc --noEmit` to gather diagnostic output.
+`bun test` and `bunx tsc --noEmit` to gather diagnostic output. Loads the
+`debugger` skill for structured diagnostic workflow.
 
 ### @reviewer
 

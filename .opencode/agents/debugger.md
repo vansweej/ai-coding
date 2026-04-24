@@ -37,3 +37,4 @@ Rules:
   introduced the bug
 - Be precise: always cite file path and line number when referencing code
 - Follow the conventions in AGENTS.md for types and error handling patterns
+- Load the `debugger` skill for structured debugging workflow guidance

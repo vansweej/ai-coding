@@ -223,6 +223,7 @@ checklists live in dedicated skills that are loaded on demand:
 |-------|-----------------|----------|
 | `rust` | rust, cargo, crate, Cargo.toml, clippy, tarpaulin | Core principles, error handling, tooling (cargo fmt/clippy/tarpaulin), safety, testing |
 | `cpp` | c++, cpp, cmake, CMakeLists, clang, ctest | Core principles (RAII, smart pointers), error handling, tooling (clang-format/clang-tidy/ctest), testing |
+| `debugger` | debug, diagnose, trace, root cause, error, fix | Root-cause tracing, minimal fix proposal, post-fix verification |
 
 ### Project-Local AGENTS.md
 
