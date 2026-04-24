@@ -245,21 +245,49 @@ and a pointer to the relevant language skill. Scaffold pipelines (`scaffold-rust
 6. **Review** — `@reviewer` checks the diff before committing
 7. **Commit** — the `build` agent commits with conventional commit messages
 
-### Deep-dive path (complex or risky features)
+---
 
-Use this when the feature has unclear scope, touches multiple modules, or you
-want your assumptions challenged before investing in a plan:
+## Neovim Inline Prompts
 
-1. **Open OpenCode** — `cd my-project && opencode`
-2. **Explore first** — switch to `explore`, understand the relevant code
-3. **Spar** — switch to `spar`, pitch the feature idea and let it challenge your thinking
-4. **Save the brief** — ask `spar` for a Decision Brief; confirm writing it to `.spar/brief.md`
-5. **Plan** — switch to `plan`; it reads `.spar/brief.md` automatically and incorporates the context
-6. **Implement** — switch to `build`, follow the plan
-7. **Review** — `@reviewer` checks the diff before committing
-8. **Commit** — the `build` agent commits with conventional commit messages
+The `opencode.nvim` plugin exposes inline prompt actions via `<leader>os`
+(action selector) and `<leader>oa` (ask with context). These communicate with
+the OpenCode server over HTTP.
 
-### Learning path (understanding before doing)
+### Prompts
+
+| Keymap | Action | Type |
+|--------|--------|------|
+| `<leader>os → explain` | Explain selected code | Fast (no tools) |
+| `<leader>os → document` | Add doc comments to selection | Fast (no tools) |
+| `<leader>os → optimize` | Optimize selection for performance | Fast (no tools) |
+| `<leader>os → diagnostics` | Explain LSP diagnostics | Fast (no tools) |
+| `<leader>os → review` | Review selection (loads reviewer skill) | Full (tool-aware) |
+| `<leader>os → implement` | Implement selection (loads programmer skill) | Full (tool-aware) |
+| `<leader>os → test` | Write tests for selection (loads tester skill) | Full (tool-aware) |
+| `<leader>os → fix` | Fix diagnostics (loads debugger skill) | Full (tool-aware) |
+| `<leader>os → diff` | Review git diff (loads reviewer skill) | Full (tool-aware) |
+
+**Fast prompts** respond immediately from the injected context — no tool calls,
+no skill loading. Use these for quick, self-contained questions about visible code.
+
+**Full prompts** load the matching skill and use tools to read related files,
+run tests, and gather context before responding. They are slower but produce
+richer, more accurate results. Write-capable prompts (`implement`, `fix`, `test`)
+require the `build` or `local` agent to be active.
+
+### Known issue: multiple OpenCode instances
+
+If multiple OpenCode instances are running (e.g. from multiple Neovim sessions
+or a standalone `opencode` invocation), the plugin cannot determine which server
+to target. The prompt picker appears, you select an action, but nothing happens.
+
+**Fix:** ensure only one OpenCode instance is running:
+
+```bash
+pkill opencode
+```
+
+Then use `<leader>ot` in Neovim to start a fresh instance before triggering prompts.
 
 Use this when you need to understand a concept or pattern before implementing:
 

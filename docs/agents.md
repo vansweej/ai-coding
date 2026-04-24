@@ -399,3 +399,29 @@ teach → explore → plan → build → @reviewer → commit
 
 OpenCode reads `~/.config/opencode/agents/` for global agents and
 `.opencode/agents/` in the current project for project-local overrides.
+
+---
+
+## Known Issues
+
+### Multiple OpenCode instances and Neovim inline prompts
+
+The Neovim `opencode.nvim` prompts (`<leader>os`, `<leader>oa`) communicate
+with the OpenCode server via HTTP. When multiple OpenCode instances are running
+— for example from multiple Neovim sessions, or from a standalone `opencode`
+invocation alongside Neovim — the plugin cannot determine which server to
+target. It falls back to prompting for server selection, which can appear to
+"do nothing" if the selection is dismissed or conflicts with the prompt picker.
+
+**Symptoms:** the prompt picker appears, you select an action (e.g. `explain`),
+but nothing happens in the OpenCode panel.
+
+**Fix:** ensure only one OpenCode instance is running before using inline
+prompts:
+
+```bash
+pkill opencode
+```
+
+Then reopen Neovim and use `<leader>ot` to start a fresh instance before
+triggering any prompts.
