@@ -13,6 +13,13 @@ export interface RetrievalContext {
    * When omitted, workspace-type detection returns "unknown".
    */
   readonly workspace?: string;
+  /**
+   * The user's request text (e.g. event.payload.input).
+   * Used by the vector backend to build a richer semantic query so retrieval
+   * matches the actual task, not just the action label.
+   * Ignored by the file backend.
+   */
+  readonly query?: string;
 }
 
 /**

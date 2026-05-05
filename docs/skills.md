@@ -363,10 +363,110 @@ OpenCode behaviour). Phase 2 sends only the matching chunks per LLM call — for
 
 ---
 
-## Open Questions (Deferred to Phase 2)
+## Phase 2 — Vector Backend (Implemented)
 
-- Should `mergeSkills()` accept a `maxTokens` cap?
-- Should `detectWorkspaceType()` cache results per workspace path?
-- OpenCode custom tool: replace, augment, or coexist with the built-in `skill` tool?
+Phase 2 adds semantic retrieval via LanceDB + Ollama embeddings. All components
+are in `packages/skills/src/`.
+
+### New Modules
+
+| Module | Purpose |
+|--------|---------|
+| `embeddings/embedder-types.ts` | `Embedder`, `EmbeddingResult` interfaces |
+| `embeddings/ollama-embedder.ts` | `OllamaEmbedder` — calls `POST /api/embed` on local Ollama |
+| `chunking/markdown-chunker.ts` | `chunkSkill()` — splits SKILL.md on H2 headings, paragraph-splits oversized sections |
+| `store/lance-store.ts` | `LanceStore` — wraps LanceDB table (open, upsertSkill, search, deleteSkill) |
+| `indexer/index-skills.ts` | `indexSkills()` — discovers skills, hashes for staleness, chunks + embeds + upserts |
+| `indexer/cli.ts` | `bun run skill-index` CLI with `--force`, `--skill-root`, `--db-path`, `--model` |
+| `backends/vector-backend.ts` | `VectorBackend` — embeds query, ANN search, token-budget pruning, groups by skill |
+| `backends/create-backend.ts` | `createBestBackend()` — auto-selects VectorBackend or FileBackend |
+| `cli/skill-retrieval-cli.ts` | `bun run skill-retrieval` CLI used by the OpenCode tool |
+
+### Retrieval Flow (Vector Backend)
+
+```mermaid
+sequenceDiagram
+    participant Step as SkillResolverStep
+    participant VB as VectorBackend
+    participant Emb as OllamaEmbedder
+    participant Store as LanceStore (LanceDB)
+
+    Step->>VB: resolve({ action, workspace, query })
+    VB->>Emb: embed("edit refactor the parser")
+    Emb-->>VB: Float32Array[768]
+    VB->>Store: search(vector, limit=20)
+    Store-->>VB: SkillSearchResult[] (ordered by distance)
+    VB->>VB: prune to token budget (2000 tokens)
+    VB->>VB: group chunks by skill_name
+    VB-->>Step: ResolvedSkill[] with relevance scores
+```
+
+### Indexer Flow
+
+```mermaid
+flowchart TD
+    CLI["bun run skill-index"] --> Discover["discoverSkills(skillRoot)"]
+    Discover --> ForEach["For each skill"]
+    ForEach --> Hash["sha256(SKILL.md)"]
+    Hash --> Stale{"Hash changed\nor --force?"}
+    Stale -->|No| Skip["skip (skipped[])"]
+    Stale -->|Yes| Chunk["chunkSkill()"]
+    Chunk --> Embed["embedder.embedBatch(texts)"]
+    Embed --> Upsert["store.upsertSkill()"]
+    Upsert --> Indexed["indexed[]"]
+    Indexed --> Meta["write .meta.json"]
+    Skip --> Meta
+```
+
+### Backend Auto-Selection
+
+```mermaid
+flowchart TD
+    Call["createBestBackend()"] --> Checks["isOllamaReachable() + lanceDbExists()"]
+    Checks --> Both{"Both true?"}
+    Both -->|Yes| Vector["VectorBackend\n(semantic retrieval)"]
+    Both -->|No| File["FileBackend\n(static routing, always works)"]
+```
+
+### Key Design Decisions
+
+- **Token budget**: default 2000 tokens (~8000 chars). Chunks are accumulated in
+  distance order until the budget is exhausted. Oversized individual chunks are
+  still emitted (never silently dropped).
+- **Staleness detection**: SHA-256 of SKILL.md content, stored in `.meta.json`
+  alongside the DB. Only changed skills are re-embedded on each index run.
+- **Upsert strategy**: delete-by-filter + bulk add (simpler than `mergeInsert`,
+  which requires all-or-nothing match/insert configuration).
+- **LanceDB path**: `~/.local/share/ai-coding/skills.lance` (default), overridable
+  via `AI_CODING_SKILLS_DB` env var.
+- **Embedding model**: `nomic-embed-text` (768 dims) via Ollama. Overridable via
+  `--model` CLI flag or `ollamaModel` option in `createBestBackend()`.
+- **`query` field**: `RetrievalContext.query` (optional) carries the user's request
+  text. The vector backend prepends it to the action label for richer embedding.
+  The file backend ignores it.
+
+### Getting Started
+
+```bash
+# 1. Start Ollama and pull the embedding model
+ollama serve &
+ollama pull nomic-embed-text
+
+# 2. Index all skills (first time or after skill updates)
+bun run skill-index
+
+# 3. Force re-index everything
+bun run skill-index --force
+
+# 4. Pipelines now auto-use the vector backend when Ollama is running
+bun run pipeline dev-cycle /path/to/workspace --input "add error handling"
+```
+
+---
+
+## Open Questions (Deferred to Phase 3)
+
+- Phase 3: ingest PDF/HTML research corpus alongside SKILL.md files.
+- Phase 3: unified retrieval across skills + research corpus + session memory.
 - Auto-discovery of new skills vs. manual `ACTION_SKILLS` map updates?
-- Which Ollama embedding model has the best quality/speed tradeoff for technical content?
+- Should `detectWorkspaceType()` cache results per workspace path?

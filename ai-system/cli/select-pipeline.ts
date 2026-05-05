@@ -1,5 +1,7 @@
 import type { PipelineStep, Result } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
+import { FileBackend, createBestBackend } from "@ai-coding/skills";
+import type { SkillBackend } from "@ai-coding/skills";
 
 import { PIPELINE_REGISTRY } from "../config/pipeline-registry";
 import type { OrchestratorConfig } from "../core/orchestrator/orchestrate";
@@ -20,22 +22,33 @@ export type PipelineName =
 /**
  * Select and instantiate a pipeline by name.
  *
- * @param name      - Pipeline name from the CLI argument.
- * @param config    - Orchestrator config with wired dispatchers.
- * @param workspace - Workspace path passed to the pipeline factory.
+ * The best available skill backend is resolved automatically:
+ *   - VectorBackend when Ollama is reachable and the LanceDB index exists.
+ *   - FileBackend otherwise (graceful fallback, always works).
+ *
+ * @param name         - Pipeline name from the CLI argument.
+ * @param config       - Orchestrator config with wired dispatchers.
+ * @param workspace    - Workspace path passed to the pipeline factory.
+ * @param skillBackend - Optional override for the skill backend (used in tests).
  */
-export function selectPipeline(
+export async function selectPipeline(
   name: string,
   config: OrchestratorConfig,
   workspace: string,
-): Result<readonly PipelineStep<AIRequestEvent>[]> {
+  skillBackend?: SkillBackend,
+): Promise<Result<readonly PipelineStep<AIRequestEvent>[]>> {
+  const backend = skillBackend ?? (await createBestBackend());
+
   switch (name) {
     case "dev-cycle":
-      return { ok: true, value: createDevCyclePipeline(config, workspace) };
+      return { ok: true, value: createDevCyclePipeline(config, workspace, backend) };
     case "rust-dev-cycle":
-      return { ok: true, value: createRustDevCyclePipeline(config, workspace) };
+      return { ok: true, value: createRustDevCyclePipeline(config, workspace, undefined, backend) };
     case "cmake-dev-cycle":
-      return { ok: true, value: createCMakeDevCyclePipeline(config, workspace) };
+      return {
+        ok: true,
+        value: createCMakeDevCyclePipeline(config, workspace, undefined, backend),
+      };
     case "scaffold-rust":
       return { ok: true, value: createRustScaffoldPipeline(config, workspace) };
     case "scaffold-cpp":
@@ -49,3 +62,6 @@ export function selectPipeline(
     }
   }
 }
+
+/** FileBackend instance for use in tests — avoids Ollama/LanceDB I/O. */
+export const TEST_FILE_BACKEND: SkillBackend = new FileBackend();

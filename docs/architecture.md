@@ -82,7 +82,7 @@ which imports from both packages.
 ```mermaid
 graph LR
     Shared["@ai-coding/shared\nAIRequestEvent · AIAction\nModelDispatcher · Result"]
-    Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · SkillBackend"]
+    Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · VectorBackend\ncreateBestBackend · LanceStore\nOllamaEmbedder · chunkSkill"]
     Pipeline["@ai-coding/pipeline\nrunPipeline · PipelineStep\nShellStep · NixShellStep\nCoverageGateStep"]
     AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep\nrust/cmake/ts definitions"]
 
@@ -174,6 +174,20 @@ ai-coding/
         detect-workspace-type.ts     Filesystem probe → WorkspaceType
         backends/
           file-backend.ts            Phase 1: reads SKILL.md files from disk
+          vector-backend.ts          Phase 2: semantic ANN search via LanceDB
+          create-backend.ts          createBestBackend() — auto-selects best available backend
+        embeddings/
+          embedder-types.ts          Embedder, EmbeddingResult interfaces
+          ollama-embedder.ts         OllamaEmbedder — POST /api/embed (nomic-embed-text)
+        chunking/
+          markdown-chunker.ts        chunkSkill() — H2-section splitting with paragraph overflow
+        store/
+          lance-store.ts             LanceStore — LanceDB open/upsert/search/delete wrapper
+        indexer/
+          index-skills.ts            indexSkills() — hash-based staleness, chunk+embed+upsert
+          cli.ts                     bun run skill-index CLI
+        cli/
+          skill-retrieval-cli.ts     bun run skill-retrieval CLI (used by OpenCode tool)
         index.ts                     Barrel export
   ai-system/
     shared/

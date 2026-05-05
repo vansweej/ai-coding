@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { getUsage, parseArgs } from "./parse-args";
-import { selectPipeline } from "./select-pipeline";
+import { TEST_FILE_BACKEND, selectPipeline } from "./select-pipeline";
 
 // ─── parseArgs ────────────────────────────────────────────────────────────────
 
@@ -69,33 +69,48 @@ describe("parseArgs", () => {
 const STUB_CONFIG = { dispatchers: {} };
 
 describe("selectPipeline", () => {
-  it("selects dev-cycle", () => {
-    const result = selectPipeline("dev-cycle", STUB_CONFIG, "/tmp/ws");
+  it("selects dev-cycle", async () => {
+    const result = await selectPipeline("dev-cycle", STUB_CONFIG, "/tmp/ws", TEST_FILE_BACKEND);
     expect(result.ok).toBe(true);
   });
 
-  it("selects rust-dev-cycle", () => {
-    const result = selectPipeline("rust-dev-cycle", STUB_CONFIG, "/tmp/ws");
+  it("selects rust-dev-cycle", async () => {
+    const result = await selectPipeline(
+      "rust-dev-cycle",
+      STUB_CONFIG,
+      "/tmp/ws",
+      TEST_FILE_BACKEND,
+    );
     expect(result.ok).toBe(true);
   });
 
-  it("selects cmake-dev-cycle", () => {
-    const result = selectPipeline("cmake-dev-cycle", STUB_CONFIG, "/tmp/ws");
+  it("selects cmake-dev-cycle", async () => {
+    const result = await selectPipeline(
+      "cmake-dev-cycle",
+      STUB_CONFIG,
+      "/tmp/ws",
+      TEST_FILE_BACKEND,
+    );
     expect(result.ok).toBe(true);
   });
 
-  it("selects scaffold-rust", () => {
-    const result = selectPipeline("scaffold-rust", STUB_CONFIG, "/tmp/ws");
+  it("selects scaffold-rust", async () => {
+    const result = await selectPipeline("scaffold-rust", STUB_CONFIG, "/tmp/ws", TEST_FILE_BACKEND);
     expect(result.ok).toBe(true);
   });
 
-  it("selects scaffold-cpp", () => {
-    const result = selectPipeline("scaffold-cpp", STUB_CONFIG, "/tmp/ws");
+  it("selects scaffold-cpp", async () => {
+    const result = await selectPipeline("scaffold-cpp", STUB_CONFIG, "/tmp/ws", TEST_FILE_BACKEND);
     expect(result.ok).toBe(true);
   });
 
-  it("fails for an unknown pipeline name", () => {
-    const result = selectPipeline("not-a-pipeline", STUB_CONFIG, "/tmp/ws");
+  it("fails for an unknown pipeline name", async () => {
+    const result = await selectPipeline(
+      "not-a-pipeline",
+      STUB_CONFIG,
+      "/tmp/ws",
+      TEST_FILE_BACKEND,
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.message).toContain("Unknown pipeline");
@@ -103,7 +118,7 @@ describe("selectPipeline", () => {
     }
   });
 
-  it("returns a non-empty step array for each known pipeline", () => {
+  it("returns a non-empty step array for each known pipeline", async () => {
     const names = [
       "dev-cycle",
       "rust-dev-cycle",
@@ -112,7 +127,7 @@ describe("selectPipeline", () => {
       "scaffold-cpp",
     ];
     for (const name of names) {
-      const result = selectPipeline(name, STUB_CONFIG, "/tmp/ws");
+      const result = await selectPipeline(name, STUB_CONFIG, "/tmp/ws", TEST_FILE_BACKEND);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.length).toBeGreaterThan(0);

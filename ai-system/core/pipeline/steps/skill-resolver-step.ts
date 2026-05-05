@@ -8,8 +8,9 @@ import type { SkillBackend } from "@ai-coding/skills";
  * and stores the merged skill content in the pipeline context.
  *
  * The step derives the `RetrievalContext` from the pipeline event:
- *   - `action` → from `ctx.event.action`
+ *   - `action`    → from `ctx.event.action`
  *   - `workspace` → from `ctx.event.payload.workspace`
+ *   - `query`     → from `ctx.event.payload.input` (enriches vector backend retrieval)
  *
  * The merged skill content is stored as `StepResult.output` under the given step
  * name. Downstream steps (typically `OrchestratorStep`) read it via:
@@ -37,6 +38,7 @@ export function createSkillResolverStep(
         {
           action: ctx.event.action,
           workspace: ctx.event.payload.workspace,
+          query: ctx.event.payload.input,
         },
         backend,
       );

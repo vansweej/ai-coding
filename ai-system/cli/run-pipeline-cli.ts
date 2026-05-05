@@ -48,7 +48,7 @@ async function main(): Promise<void> {
 
   const config = { ...configResult.value, profile };
 
-  const pipelineResult = selectPipeline(pipelineName, config, workspace);
+  const pipelineResult = await selectPipeline(pipelineName, config, workspace);
   if (!pipelineResult.ok) {
     console.error(`Error: ${pipelineResult.error.message}`);
     process.exit(1);
