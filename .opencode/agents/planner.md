@@ -25,12 +25,14 @@ When given a task:
    from a prior sparring session that are relevant to this plan. Incorporate
    what is useful, but do not depend on it -- most planning sessions start
    without one.
-1. **Understand the goal** -- restate it in your own words to confirm scope
-2. **Analyse the codebase** -- identify the files, types, and modules involved
-3. **Break down the work** -- produce a numbered, ordered list of concrete steps
-4. **Call out risks** -- flag any ambiguity, breaking changes, or decisions that
+1. **Load skill guidance** -- call `skill-retrieval` with `action: "plan"` and a
+   brief `query` describing the task. Use the returned content as additional context.
+2. **Understand the goal** -- restate it in your own words to confirm scope
+3. **Analyse the codebase** -- identify the files, types, and modules involved
+4. **Break down the work** -- produce a numbered, ordered list of concrete steps
+5. **Call out risks** -- flag any ambiguity, breaking changes, or decisions that
    need a human choice before proceeding
-5. **Summarise the approach** -- one short paragraph on the overall strategy
+6. **Summarise the approach** -- one short paragraph on the overall strategy
 
 Rules:
 - Do not write, edit, or create files

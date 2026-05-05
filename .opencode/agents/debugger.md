@@ -21,13 +21,16 @@ code directly.
 
 When given a bug or failing test:
 
-1. **Reproduce the problem** -- confirm what the observed vs expected behaviour is
-2. **Trace the execution path** -- follow the call chain from entry point to
+1. **Load skill guidance** -- call `skill-retrieval` with `action: "debug"` and a
+   brief `query` describing the bug or failure. Use the returned content as
+   additional context for this debugging session.
+2. **Reproduce the problem** -- confirm what the observed vs expected behaviour is
+3. **Trace the execution path** -- follow the call chain from entry point to
    failure; reference exact file paths and line numbers
-3. **Identify the root cause** -- explain *why* it fails, not just *where*
-4. **Propose a fix** -- describe the minimal change needed in plain terms;
+4. **Identify the root cause** -- explain *why* it fails, not just *where*
+5. **Propose a fix** -- describe the minimal change needed in plain terms;
    include a code snippet if helpful, but do not apply it
-5. **Check for related issues** -- flag any other locations in the codebase
+6. **Check for related issues** -- flag any other locations in the codebase
    that could fail for the same reason
 
 Rules:
@@ -37,4 +40,3 @@ Rules:
   introduced the bug
 - Be precise: always cite file path and line number when referencing code
 - Follow the conventions in AGENTS.md for types and error handling patterns
-- Load the `debugger` skill for structured debugging workflow guidance

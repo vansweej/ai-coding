@@ -20,17 +20,20 @@ production code directly.
 
 When given a task:
 
-1. **Understand what needs testing** -- identify the module, function, or behaviour
+1. **Load skill guidance** -- call `skill-retrieval` with `action: "test"` and a
+   brief `query` describing what needs testing. Use the returned content as
+   additional context for this testing session.
+2. **Understand what needs testing** -- identify the module, function, or behaviour
    to cover; read the source carefully before writing any tests
-2. **Analyse existing tests** -- check what is already covered and what is missing;
+3. **Analyse existing tests** -- check what is already covered and what is missing;
    run `bun test` to see current state
-3. **Write tests** -- follow the project conventions from AGENTS.md:
+4. **Write tests** -- follow the project conventions from AGENTS.md:
    - Use `bun:test` (`describe` / `it` blocks)
    - One logical assertion per `it` block when practical
    - Co-locate test files next to source (`*.test.ts`)
    - Name tests as observable behaviour: `"returns error when token is missing"`
-4. **Verify coverage** -- run `bun test --coverage` after proposing tests; target ≥ 90%
-5. **Summarise findings** -- list uncovered branches and the tests added to cover them
+5. **Verify coverage** -- run `bun test --coverage` after proposing tests; target ≥ 90%
+6. **Summarise findings** -- list uncovered branches and the tests added to cover them
 
 Rules:
 - Do not edit production source files

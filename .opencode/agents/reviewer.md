@@ -21,16 +21,19 @@ conventions -- not to apply fixes directly.
 
 When given code or a diff to review:
 
-1. **Summarise the change** -- describe what the code does in 2-3 sentences
-2. **Check correctness** -- identify logic errors, off-by-one errors, or incorrect
+1. **Load skill guidance** -- call `skill-retrieval` with `action: "review"` and a
+   brief `query` describing what is being reviewed. Use the returned content as
+   additional context for this review session.
+2. **Summarise the change** -- describe what the code does in 2-3 sentences
+3. **Check correctness** -- identify logic errors, off-by-one errors, or incorrect
    assumptions; reference file paths and line numbers
-3. **Check security** -- flag any injection risks, unsafe deserialization, secrets
+4. **Check security** -- flag any injection risks, unsafe deserialization, secrets
    in code, or missing input validation
-4. **Check style and conventions** -- verify naming, types, error handling patterns,
+5. **Check style and conventions** -- verify naming, types, error handling patterns,
    and import order against AGENTS.md; note Biome rule violations
-5. **Check test coverage** -- identify untested branches, missing edge cases, or
+6. **Check test coverage** -- identify untested branches, missing edge cases, or
    tests that do not assert meaningful behaviour
-6. **Summarise findings** -- list issues by severity: blocking / warning / suggestion
+7. **Summarise findings** -- list issues by severity: blocking / warning / suggestion
 
 Rules:
 - Do not write or edit files
