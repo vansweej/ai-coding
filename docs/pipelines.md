@@ -202,6 +202,8 @@ createOrchestratorStep(
   action: AIAction,
   config: OrchestratorConfig,
   buildPrompt?: (ctx: PipelineContext<AIRequestEvent>) => string,
+  llmOptions?: LLMOptions,
+  buildLlmOptions?: (ctx: PipelineContext<AIRequestEvent>) => LLMOptions,
 )
 ```
 
@@ -215,7 +217,60 @@ createOrchestratorStep("implement", "edit", config, (ctx) => {
 });
 ```
 
+The `buildLlmOptions` callback allows the system prompt to be built dynamically
+from context — used when skill content (resolved by a prior `SkillResolverStep`)
+must be prepended to the system prompt at execution time:
+
+```typescript
+createOrchestratorStep(
+  "implement", "edit", config,
+  (ctx) => buildUserPrompt(ctx),
+  undefined,
+  (ctx) => ({
+    system: ctx.results.get("resolve-skills")?.output
+      ? `${ctx.results.get("resolve-skills")!.output}\n\n---\n\nYou are a coding assistant...`
+      : "You are a coding assistant...",
+    temperature: 0.4,
+  }),
+);
+```
+
 When omitted, the original `event.payload.input` is used unchanged.
+
+### SkillResolverStep
+
+_(AI-specific -- lives in `ai-system/`, not in `@ai-coding/pipeline`)_
+
+Resolves relevant skills for the current request and stores the merged skill
+content in the pipeline context. Downstream `OrchestratorStep`s read the output
+and inject it into their system prompts.
+
+```mermaid
+flowchart TD
+    Start([SkillResolverStep.execute]) --> Build["Build RetrievalContext\n{ action: event.action,\n  workspace: event.payload.workspace }"]
+    Build --> Resolve["resolveSkill(context, backend)"]
+    Resolve --> Detect["detectWorkspaceType(workspace)"]
+    Detect --> Map["resolveSkillNames(action, wsType)"]
+    Map --> Read["Read SKILL.md for each name\n(skip missing files)"]
+    Read --> Merge["mergeSkills(ResolvedSkill[])"]
+    Merge --> Result(["StepResult { output: merged string }"])
+```
+
+```typescript
+import { createSkillResolverStep } from
+  "ai-system/core/pipeline/steps/skill-resolver-step";
+import { FileBackend } from "@ai-coding/skills";
+
+createSkillResolverStep(
+  name: string,       // typically "resolve-skills"
+  backend: SkillBackend,
+)
+```
+
+Insert it as the **first step** in a pipeline definition. Downstream steps read
+the merged skill content via `ctx.results.get("resolve-skills")?.output`.
+
+See [docs/skills.md](./skills.md) for the full skills package documentation.
 
 ---
 
@@ -290,6 +345,7 @@ for (const step of result.value.steps) {
 
 | Need to do | Use |
 |-----------|-----|
+| Resolve relevant skills for the request | `createSkillResolverStep` (first step) |
 | LLM call (plan, implement, debug) | `createOrchestratorStep` |
 | Shell command, build tool, test runner | `createNixShellStep` (preferred) or `createShellStep` |
 | Validate prior output | `createCoverageGateStep` or a custom step |

@@ -20,6 +20,17 @@ graph TD
         CMakeDev["createCMakeDevCyclePipeline\ncmake --build · ctest"]
     end
 
+    subgraph PipelineSteps["Pipeline Steps (ai-system/core/pipeline/steps/)"]
+        OrcStep["createOrchestratorStep"]
+        SkillStep["createSkillResolverStep"]
+    end
+
+    subgraph SkillsPkg["@ai-coding/skills (packages/skills/)"]
+        ResolveSkill["resolveSkill()"]
+        MergeSkills["mergeSkills()"]
+        FileBack["FileBackend"]
+    end
+
     subgraph PipelinePkg["@ai-coding/pipeline (packages/pipeline/)"]
         Runner["runPipeline()"]
         ShellStep["createShellStep"]
@@ -28,7 +39,6 @@ graph TD
     end
 
     subgraph AILayer["AI Layer (ai-system/core/)"]
-        OrcStep["createOrchestratorStep"]
         Orchestrator["orchestrate()"]
         ModeRouter["resolveMode()"]
         ModelRouter["selectModel()"]
@@ -43,14 +53,21 @@ graph TD
     CMakeDev --> Runner
 
     Runner --> OrcStep
+    Runner --> SkillStep
     Runner --> ShellStep
     Runner --> NixStep
     Runner --> CoverageGate
+
+    SkillStep --> ResolveSkill
+    ResolveSkill --> FileBack
 
     OrcStep --> Orchestrator
     Orchestrator --> ModeRouter
     Orchestrator --> ModelRouter
     Orchestrator --> Copilot
+
+    style SkillsPkg fill:#2d6a4f,color:#fff
+    style SkillStep fill:#457b9d,color:#fff
 ```
 
 ---
@@ -65,15 +82,20 @@ which imports from both packages.
 ```mermaid
 graph LR
     Shared["@ai-coding/shared\nAIRequestEvent · AIAction\nModelDispatcher · Result"]
+    Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · SkillBackend"]
     Pipeline["@ai-coding/pipeline\nrunPipeline · PipelineStep\nShellStep · NixShellStep\nCoverageGateStep"]
-    AISystem["ai-system/core/pipeline\nOrchestratorStep\nrust/cmake/ts definitions"]
+    AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep\nrust/cmake/ts definitions"]
 
     AISystem --> Pipeline
     AISystem --> Shared
+    AISystem --> Skills
+    Skills --> Shared
     Pipeline -.->|"no dependency"| Shared
+    Pipeline -.->|"no dependency"| Skills
 
     style Pipeline fill:#2d6a4f,color:#fff
     style Shared fill:#1d3557,color:#fff
+    style Skills fill:#2d6a4f,color:#fff
     style AISystem fill:#457b9d,color:#fff
 ```
 
@@ -143,6 +165,16 @@ ai-coding/
           nix-shell-step.ts          Auto-detecting nix develop wrapper
           coverage-gate-step.ts      Parses coverage %, fails below threshold
         index.ts                     Barrel export
+    skills/                         Shared skill retrieval abstraction
+      src/
+        skill-types.ts               RetrievalContext, ResolvedSkill, SkillBackend, WorkspaceType
+        resolve-skill.ts             resolveSkill() — stable public API
+        merge-skills.ts              mergeSkills() — concatenate for system prompt injection
+        skill-map.ts                 ACTION_SKILLS, WORKSPACE_SKILLS, resolveSkillNames()
+        detect-workspace-type.ts     Filesystem probe → WorkspaceType
+        backends/
+          file-backend.ts            Phase 1: reads SKILL.md files from disk
+        index.ts                     Barrel export
   ai-system/
     shared/
       event-types.ts                 AIRequestEvent, AIAction, AIMode, Result (re-exported)
@@ -157,10 +189,11 @@ ai-coding/
       pipeline/
         steps/
           orchestrator-step.ts       LLM step wrapping orchestrate()
+          skill-resolver-step.ts     Skill resolution step (resolves + merges skills into context)
         definitions/
-          dev-cycle.ts               TypeScript: plan → implement → write-files → bun test
-          rust-dev-cycle.ts          Rust: plan → implement → write-files → fmt → clippy → test → tarpaulin → gate
-          cmake-dev-cycle.ts         C++: plan → implement → write-files → cmake build → ctest
+          dev-cycle.ts               TypeScript: [skills →] plan → implement → write-files → bun test
+          rust-dev-cycle.ts          Rust: [skills →] plan → implement → write-files → fmt → clippy → test → tarpaulin → gate
+          cmake-dev-cycle.ts         C++: [skills →] plan → implement → write-files → cmake build → ctest
     config/
       model-profiles.ts              ModelRole, ModelProfile, copilot-default profile
       pipeline-registry.ts           Single source of truth for pipeline metadata

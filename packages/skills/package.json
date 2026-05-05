@@ -1,0 +1,21 @@
+{
+  "name": "@ai-coding/skills",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@lancedb/lancedb": "^0.27.2",
+    "apache-arrow": "^21.1.0"
+  }
+}

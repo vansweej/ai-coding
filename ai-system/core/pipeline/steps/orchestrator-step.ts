@@ -13,11 +13,16 @@ import { orchestrate } from "../../orchestrator/orchestrate";
  * Model routing flows through the existing orchestrator chain:
  *   resolveMode(source) → selectModel(event, mode) → dispatcher.dispatch()
  *
- * @param name        - Unique step name, used as the key in PipelineContext.results.
- * @param action      - The AI action this step performs (determines model selection).
- * @param config      - Orchestrator config mapping model names to dispatchers.
- * @param buildPrompt - Optional callback to build the prompt from context.
- * @param llmOptions  - Optional LLM parameters (system prompt, temperature, maxTokens).
+ * @param name            - Unique step name, used as the key in PipelineContext.results.
+ * @param action          - The AI action this step performs (determines model selection).
+ * @param config          - Orchestrator config mapping model names to dispatchers.
+ * @param buildPrompt     - Optional callback to build the prompt from context.
+ * @param llmOptions      - Optional static LLM parameters (system prompt, temperature, maxTokens).
+ *                          Mutually exclusive with `buildLlmOptions` — if both are provided,
+ *                          `buildLlmOptions` takes precedence.
+ * @param buildLlmOptions - Optional callback to build LLM options dynamically from context.
+ *                          Use this when the system prompt must incorporate prior step outputs
+ *                          (e.g. resolved skill content). Takes precedence over `llmOptions`.
  */
 export function createOrchestratorStep(
   name: string,
@@ -25,6 +30,7 @@ export function createOrchestratorStep(
   config: OrchestratorConfig,
   buildPrompt?: (ctx: PipelineContext<AIRequestEvent>) => string,
   llmOptions?: LLMOptions,
+  buildLlmOptions?: (ctx: PipelineContext<AIRequestEvent>) => LLMOptions,
 ): PipelineStep<AIRequestEvent> {
   return {
     name,
@@ -39,7 +45,9 @@ export function createOrchestratorStep(
         payload: { ...ctx.event.payload, input: prompt },
       };
 
-      const result = await orchestrate(modifiedEvent, config, llmOptions);
+      const resolvedLlmOptions = buildLlmOptions !== undefined ? buildLlmOptions(ctx) : llmOptions;
+
+      const result = await orchestrate(modifiedEvent, config, resolvedLlmOptions);
 
       if (!result.ok) {
         return result;
