@@ -2,19 +2,32 @@
 
 ## Overview
 
-`@ai-coding/skills` is a shared retrieval abstraction that serves skill knowledge
-to both custom pipelines and (in future phases) OpenCode's agent loop. It resolves
-the right set of skill files for a given AI action and workspace context, merges
-them into a single string, and injects the result into LLM system prompts.
+`@ai-coding/skills` is a shared retrieval abstraction that serves skill
+knowledge to both custom pipelines and OpenCode agents. It resolves the right
+set of skill content for a given AI action and workspace context, and injects
+the result into LLM system prompts.
 
 **Problem it solves:** Skills — curated Markdown files with domain-specific
-instructions — were previously only available to OpenCode via its built-in `skill`
-tool. Custom pipelines used hardcoded, minimal system prompts with no access to
-the same knowledge. This package bridges that gap.
+instructions — were previously only available to OpenCode via its built-in
+`skill` tool. Custom pipelines used hardcoded, minimal system prompts with no
+access to the same knowledge. OpenCode agents had no way to query skills
+semantically. This package bridges both gaps.
 
-**Design philosophy:** Consumers are blind to the backend. The same `resolveSkill`
-call works whether the backend reads files from disk (Phase 1) or queries a vector
-database (Phase 2). Swapping backends requires no changes to consumers.
+**Design philosophy:** Consumers are blind to the backend. The same
+`resolveSkill` call works whether the backend reads files from disk
+(`FileBackend`) or queries a vector database (`VectorBackend`). Swapping
+backends requires no changes to consumers.
+
+**Two backends, one interface:**
+
+| Backend | When used | How it retrieves |
+|---------|-----------|-----------------|
+| `VectorBackend` | Ollama running + index built | Embeds the query, ANN search in LanceDB, token-budget pruning |
+| `FileBackend` | Fallback (always works) | Static action→skill map + workspace type detection |
+
+Backend selection is automatic via `createBestBackend()` — no configuration
+needed. See [docs/skill-indexer.md](./skill-indexer.md) for how to build the
+index.
 
 ---
 
@@ -24,47 +37,49 @@ database (Phase 2). Swapping backends requires no changes to consumers.
 
 ```mermaid
 graph TD
-    subgraph Pipelines["Pipeline Definitions (ai-system/core/pipeline/definitions/)"]
-        DevCycle["createDevCyclePipeline"]
-        RustCycle["createRustDevCyclePipeline"]
-        CMakeCycle["createCMakeDevCyclePipeline"]
+    subgraph Consumers["Consumers"]
+        Pipelines["Pipeline Definitions\ndev-cycle · rust-dev-cycle · cmake-dev-cycle"]
+        OpenCode["OpenCode Agents\nbuild · local · plan · explore\ndebugger · reviewer · tester · planner"]
     end
 
     subgraph SkillsPkg["@ai-coding/skills (packages/skills/)"]
+        CreateBackend["createBestBackend()"]
         ResolveSkill["resolveSkill()"]
         MergeSkills["mergeSkills()"]
-        SkillMap["resolveSkillNames()"]
-        DetectWS["detectWorkspaceType()"]
-        FileBack["FileBackend"]
+
+        subgraph Backends["Backends"]
+            VectorBack["VectorBackend\nOllamaEmbedder + LanceStore"]
+            FileBack["FileBackend\nSkillMap + detectWorkspaceType()"]
+        end
     end
 
-    subgraph SkillFiles["~/.config/opencode/skill/ (Home Manager)"]
-        Programmer["programmer/SKILL.md"]
-        Debugger["debugger/SKILL.md"]
-        Architect["architect/SKILL.md"]
-        Rust["rust/SKILL.md"]
-        Cpp["cpp/SKILL.md"]
-        More["..."]
+    subgraph Storage["Storage"]
+        LanceDB["LanceDB\n~/.local/share/ai-coding/skills.lance"]
+        SkillFiles["SKILL.md files\n~/.config/opencode/skill/"]
     end
 
-    subgraph PipelineStep["ai-system/core/pipeline/steps/"]
-        SkillStep["createSkillResolverStep"]
+    subgraph Tools["OpenCode Tools"]
+        SkillTool[".opencode/tools/skill-retrieval.ts"]
+        SkillCLI["bun run skill-retrieval"]
     end
 
-    DevCycle --> SkillStep
-    RustCycle --> SkillStep
-    CMakeCycle --> SkillStep
+    Pipelines --> CreateBackend
+    OpenCode --> SkillTool
+    SkillTool --> SkillCLI
+    SkillCLI --> CreateBackend
 
-    SkillStep --> ResolveSkill
-    ResolveSkill --> FileBack
-    FileBack --> SkillMap
-    FileBack --> DetectWS
+    CreateBackend --> VectorBack
+    CreateBackend --> FileBack
+
+    VectorBack --> LanceDB
     FileBack --> SkillFiles
 
+    CreateBackend --> ResolveSkill
     ResolveSkill --> MergeSkills
 
     style SkillsPkg fill:#2d6a4f,color:#fff
-    style SkillStep fill:#457b9d,color:#fff
+    style Storage fill:#1d3557,color:#fff
+    style Tools fill:#457b9d,color:#fff
 ```
 
 ### Package Dependency Graph
@@ -72,7 +87,7 @@ graph TD
 ```mermaid
 graph LR
     Shared["@ai-coding/shared\nAIAction · AIRequestEvent"]
-    Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · SkillBackend"]
+    Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · VectorBackend\ncreateBestBackend · LanceStore\nOllamaEmbedder · chunkSkill"]
     Pipeline["@ai-coding/pipeline\nrunPipeline · PipelineStep"]
     AISystem["ai-system/core/pipeline\nSkillResolverStep\ndev-cycle · rust-dev-cycle · cmake-dev-cycle"]
 
@@ -80,8 +95,6 @@ graph LR
     AISystem --> Skills
     AISystem --> Pipeline
     AISystem --> Shared
-    Pipeline -.->|"no dependency"| Shared
-    Pipeline -.->|"no dependency"| Skills
 
     style Skills fill:#2d6a4f,color:#fff
     style Shared fill:#1d3557,color:#fff
@@ -91,46 +104,34 @@ graph LR
 
 ---
 
-## Resolution Flow
+## Backend Selection
 
-### Full Sequence
-
-```mermaid
-sequenceDiagram
-    participant Pipeline as SkillResolverStep
-    participant Resolve as resolveSkill()
-    participant Backend as FileBackend
-    participant Detect as detectWorkspaceType()
-    participant Map as resolveSkillNames()
-    participant FS as Filesystem
-
-    Pipeline->>Resolve: resolveSkill(context, backend)
-    Resolve->>Backend: backend.resolve(context)
-    Backend->>Detect: detectWorkspaceType(workspace)
-    Detect->>FS: Bun.file("Cargo.toml").exists()
-    FS-->>Detect: true
-    Detect-->>Backend: "rust"
-    Backend->>Map: resolveSkillNames("edit", "rust")
-    Map-->>Backend: ["programmer", "rust"]
-    loop For each skill name
-        Backend->>FS: Bun.file("~/.config/opencode/skill/{name}/SKILL.md").exists()
-        FS-->>Backend: exists
-        Backend->>FS: Bun.file(...).text()
-        FS-->>Backend: content string
-    end
-    Backend-->>Resolve: ResolvedSkill[]
-    Resolve-->>Pipeline: ResolvedSkill[]
-    Pipeline->>Pipeline: mergeSkills(skills)
-    Pipeline-->>Pipeline: StepResult { output: merged string }
-```
-
-### Two-Dimensional Routing
-
-Skill resolution uses two orthogonal dimensions that compose additively:
+`createBestBackend()` is called at startup by both the pipeline CLI and the
+`skill-retrieval` tool. It checks two conditions in parallel:
 
 ```mermaid
 flowchart TD
-    Context["RetrievalContext\n{ action, workspace? }"]
+    Call["createBestBackend()"] --> Checks["isOllamaReachable()\n+\nlanceDbExists()"]
+    Checks --> Both{"Both true?"}
+    Both -->|Yes| Vector["VectorBackend\nsemantic ANN retrieval\nwith relevance scores"]
+    Both -->|No| File["FileBackend\nstatic action→skill routing\nalways works, no dependencies"]
+```
+
+The check is fast (≤ 2 s timeout on Ollama health check) and never throws.
+If Ollama is not running or the index has not been built, the system silently
+uses the file backend.
+
+---
+
+## File Backend
+
+The file backend uses two static maps to resolve skills deterministically.
+
+### Two-Dimensional Routing
+
+```mermaid
+flowchart TD
+    Context["RetrievalContext\n{ action, workspace?, query? }"]
 
     Context --> ActionDim["Action dimension\nACTION_SKILLS[action]"]
     Context --> WSDim["Workspace dimension\ndetectWorkspaceType(workspace)\n→ WORKSPACE_SKILLS[type]"]
@@ -141,17 +142,13 @@ flowchart TD
     ActionSkills --> Union["Union (action first, workspace last)"]
     WSSkills --> Union
 
-    Union --> FileRead["Read SKILL.md for each name\n(skip missing files)"]
+    Union --> FileRead["Read SKILL.md for each name\n(skip missing files silently)"]
     FileRead --> Result["ResolvedSkill[]"]
 ```
 
-**Ordering is intentional:** action skills (general method) appear before workspace
-skills (domain specialization). The LLM reads "here is how to debug" before
-"and specifically in Rust, do it this way."
-
----
-
-## Skill Routing Tables
+**Ordering is intentional:** action skills (general method) appear before
+workspace skills (domain specialisation). The LLM reads "here is how to debug"
+before "and specifically in Rust, do it this way."
 
 ### Action → Skills
 
@@ -187,9 +184,88 @@ skills (domain specialization). The LLM reads "here is how to debug" before
 
 ---
 
+## Vector Backend
+
+The vector backend retrieves semantically relevant skill chunks using Ollama
+embeddings and LanceDB approximate nearest-neighbour search.
+
+### Retrieval Flow
+
+```mermaid
+sequenceDiagram
+    participant Consumer as SkillResolverStep / skill-retrieval CLI
+    participant VB as VectorBackend
+    participant Emb as OllamaEmbedder
+    participant Store as LanceStore (LanceDB)
+
+    Consumer->>VB: resolve({ action: "edit", query: "refactor the parser", workspace })
+    VB->>VB: buildQueryText → "edit refactor the parser"
+    VB->>Emb: embed("edit refactor the parser")
+    Emb->>Emb: POST /api/embed { model: "nomic-embed-text", input: [...] }
+    Emb-->>VB: Float32Array[768]
+    VB->>Store: search(vector, limit=20)
+    Store-->>VB: SkillSearchResult[] ordered by distance
+    VB->>VB: accumulate chunks within token budget (2000 tokens)
+    VB->>VB: group chunks by skill_name
+    VB-->>Consumer: ResolvedSkill[] with relevance scores (0.0–1.0)
+```
+
+### Key Design Decisions
+
+| Decision | Value | Rationale |
+|----------|-------|-----------|
+| Token budget | 2000 tokens (~8000 chars) | Balances context richness vs. prompt size |
+| Candidate limit | 20 chunks fetched | Wide net before budget pruning |
+| Relevance score | `1 - dist / maxDist` | 1.0 = perfect match, 0.0 = maximally distant |
+| Chunk grouping | By `skill_name` | One `ResolvedSkill` per skill, chunks concatenated |
+| Oversized chunks | Always emitted | Never silently dropped, even if > budget |
+| Query string | `action + " " + query` | Richer semantic signal than action label alone |
+
+### `query` Field
+
+`RetrievalContext.query` carries the user's request text (e.g.
+`event.payload.input`). The vector backend prepends it to the action label
+before embedding, giving the ANN search a much richer signal:
+
+```
+action only:        "edit"
+action + query:     "edit refactor the Rust parser to use nom combinators"
+```
+
+The file backend ignores `query` — it has no effect on static routing.
+
+---
+
 ## Pipeline Integration
 
-### Pipeline with Skill Resolution
+### How Skill Content Flows Into the System Prompt
+
+```mermaid
+sequenceDiagram
+    participant Runner as runPipeline()
+    participant SkillStep as SkillResolverStep ("resolve-skills")
+    participant PlanStep as OrchestratorStep (plan)
+    participant ImplStep as OrchestratorStep (implement)
+    participant Dispatcher as CopilotDispatcher
+
+    Runner->>SkillStep: execute(ctx)
+    SkillStep->>SkillStep: createBestBackend() → backend
+    SkillStep->>SkillStep: backend.resolve({ action, workspace, query })
+    SkillStep->>SkillStep: mergeSkills(skills)
+    SkillStep-->>Runner: StepResult { output: "## Skill: programmer\n\n..." }
+    Runner->>Runner: ctx.results.set("resolve-skills", result)
+
+    Runner->>PlanStep: execute(ctx)
+    PlanStep-->>Runner: StepResult { output: "1. Add retry logic..." }
+
+    Runner->>ImplStep: execute(ctx)
+    Note over ImplStep: buildLlmOptions(ctx) reads<br/>ctx.results.get("resolve-skills")?.output<br/>and prepends it to the system prompt
+    ImplStep->>Dispatcher: dispatch({ system: "[skill content]\n\n---\n\n[base prompt]", ... })
+    Dispatcher-->>ImplStep: LLM response
+    ImplStep-->>Runner: StepResult { output: "```typescript\n..." }
+```
+
+### Pipeline Step Order
 
 ```mermaid
 flowchart LR
@@ -201,34 +277,86 @@ flowchart LR
     classDef skill fill:#2d6a4f,color:#fff
 ```
 
-### How Skill Content Flows Into the System Prompt
+Skill resolution runs first, before the LLM is called for planning. The
+merged skill content is stored in `ctx.results` under the key `"resolve-skills"`
+and read by the implement step via `buildLlmOptions`.
+
+---
+
+## OpenCode Integration
+
+### How Agents Use the Skills Database
+
+All action-bearing OpenCode agents (`build`, `local`, `plan`, `planner`,
+`explore`, `debugger`, `reviewer`, `tester`) have `skill-retrieval` as step 1
+of their workflow. When an agent starts a task:
+
+1. The agent calls the `skill-retrieval` tool with the appropriate `action`
+   and a brief `query` describing the task
+2. The tool shells out to `bun run skill-retrieval <action> --query <text>`
+3. `createBestBackend()` selects `VectorBackend` or `FileBackend`
+4. The merged skill content is returned to the agent as additional context
+5. The agent uses this content for the rest of the session
 
 ```mermaid
 sequenceDiagram
-    participant Runner as runPipeline()
-    participant SkillStep as SkillResolverStep
-    participant PlanStep as OrchestratorStep (plan)
-    participant ImplStep as OrchestratorStep (implement)
-    participant Dispatcher as CopilotDispatcher
+    participant Agent as OpenCode Agent (e.g. build)
+    participant Tool as skill-retrieval tool
+    participant CLI as bun run skill-retrieval
+    participant Backend as createBestBackend()
+    participant DB as VectorBackend / FileBackend
 
-    Runner->>SkillStep: execute(ctx)
-    SkillStep-->>Runner: StepResult { output: "## Skill: programmer\n\n..." }
-    Runner->>Runner: ctx.results.set("resolve-skills", ...)
-
-    Runner->>PlanStep: execute(ctx)
-    PlanStep-->>Runner: StepResult { output: "1. Add retry logic..." }
-    Runner->>Runner: ctx.results.set("plan", ...)
-
-    Runner->>ImplStep: execute(ctx)
-    Note over ImplStep: buildLlmOptions(ctx) reads<br/>ctx.results.get("resolve-skills")<br/>and prepends to system prompt
-    ImplStep->>Dispatcher: dispatch({ system: "## Skill: programmer\n\n...\n\n---\n\nYou are a coding assistant...", prompt: "..." })
-    Dispatcher-->>ImplStep: LLM response
-    ImplStep-->>Runner: StepResult { output: "```typescript..." }
+    Agent->>Tool: call skill-retrieval(action="edit", query="refactor the parser")
+    Tool->>CLI: Bun.$`bun run skill-retrieval edit --query "refactor the parser"`
+    CLI->>Backend: createBestBackend()
+    Backend-->>CLI: VectorBackend (or FileBackend)
+    CLI->>DB: resolveSkill({ action, query })
+    DB-->>CLI: ResolvedSkill[]
+    CLI->>CLI: mergeSkills(skills)
+    CLI-->>Tool: merged skill content (stdout)
+    Tool-->>Agent: skill content as tool result
+    Agent->>Agent: use skill content as additional context
 ```
+
+### Agent → Action Mapping
+
+| Agent | `action` passed | Skills typically returned |
+|-------|----------------|--------------------------|
+| `build` | `edit` | `programmer` + workspace skills |
+| `local` | `edit` | `programmer` + workspace skills |
+| `plan` | `plan` | `architect` |
+| `planner` | `plan` | `architect` |
+| `explore` | `explore` | `explorer` |
+| `debugger` | `debug` | `debugger` + workspace skills |
+| `reviewer` | `review` | `reviewer` + workspace skills |
+| `tester` | `test` | `tester` + workspace skills |
+
+Conversational agents (`spar`, `brainstorm`, `teach`) do not call
+`skill-retrieval` — they do not execute technical tasks.
 
 ---
 
 ## API Reference
+
+### `createBestBackend(options?)`
+
+Auto-selects the best available backend. Never throws.
+
+```typescript
+import { createBestBackend } from "@ai-coding/skills";
+
+const backend = await createBestBackend();
+// → VectorBackend if Ollama is running and index exists
+// → FileBackend otherwise
+
+// With options:
+const backend = await createBestBackend({
+  skillRoot: "/custom/skill/root",
+  dbPath: "/custom/skills.lance",
+  ollamaModel: "mxbai-embed-large",
+  tokenBudget: 3000,
+});
+```
 
 ### `resolveSkill(context, backend)`
 
@@ -236,17 +364,21 @@ The stable public API. Delegates to the backend; consumers are blind to the
 implementation.
 
 ```typescript
-import { resolveSkill, FileBackend } from "@ai-coding/skills";
+import { resolveSkill, createBestBackend } from "@ai-coding/skills";
 
-const backend = new FileBackend();
-const skills = await resolveSkill({ action: "edit", workspace: "/my/project" }, backend);
+const backend = await createBestBackend();
+const skills = await resolveSkill(
+  { action: "edit", workspace: "/my/project", query: "add retry logic" },
+  backend,
+);
 // → ResolvedSkill[]
 ```
 
 ### `mergeSkills(skills)`
 
 Concatenates resolved skills into a single string for system prompt injection.
-Each skill is wrapped with a Markdown header. Returns `""` for an empty array.
+Each skill is wrapped with a Markdown header and separated by `---`.
+Returns `""` for an empty array.
 
 ```typescript
 import { mergeSkills } from "@ai-coding/skills";
@@ -257,29 +389,88 @@ const systemPrompt = mergeSkills(skills);
 
 ### `FileBackend`
 
-File-based backend. Reads `SKILL.md` files from a configurable root directory.
-Skips missing files silently.
+File-based backend. Reads full `SKILL.md` files from a configurable root.
+Skips missing files silently. No external dependencies.
 
 ```typescript
 import { FileBackend } from "@ai-coding/skills";
 
-// Default: ~/.config/opencode/skill/
-const backend = new FileBackend();
-
-// Custom root (e.g. for testing):
-const backend = new FileBackend("/path/to/skills");
+const backend = new FileBackend();                    // ~/.config/opencode/skill/
+const backend = new FileBackend("/custom/skill/root"); // custom root
 ```
 
-### `createSkillResolverStep(name, backend)`
+### `VectorBackend`
 
-Pipeline step factory. Resolves skills from the event's action and workspace,
-stores merged content as `StepResult.output`.
+Vector-based backend. Requires an open `LanceStore` and an `Embedder`.
 
 ```typescript
-import { createSkillResolverStep, FileBackend } from "...";
+import { VectorBackend, LanceStore, OllamaEmbedder } from "@ai-coding/skills";
 
-const step = createSkillResolverStep("resolve-skills", new FileBackend());
-// Downstream steps: ctx.results.get("resolve-skills")?.output
+const embedder = new OllamaEmbedder("nomic-embed-text");
+const store = new LanceStore();
+await store.open(); // table must already exist (built by indexer)
+const backend = new VectorBackend(embedder, store, 2000); // 2000 token budget
+```
+
+### `OllamaEmbedder`
+
+Embeds text via a local Ollama instance. Supports single and batch embedding.
+
+```typescript
+import { OllamaEmbedder, isOllamaReachable } from "@ai-coding/skills";
+
+const reachable = await isOllamaReachable(); // → true / false
+
+const embedder = new OllamaEmbedder("nomic-embed-text", "http://localhost:11434");
+const { vector } = await embedder.embed("debug a segfault in Rust");
+// → { vector: Float32Array[768] }
+
+const results = await embedder.embedBatch(["text 1", "text 2"]);
+// → [{ vector: Float32Array[768] }, { vector: Float32Array[768] }]
+
+const dims = await embedder.dimensions; // → 768 (cached after first call)
+```
+
+### `chunkSkill(skillName, content, maxChunkChars?)`
+
+Splits a SKILL.md document into indexable chunks. Pure function, no I/O.
+
+```typescript
+import { chunkSkill } from "@ai-coding/skills";
+
+const chunks = chunkSkill("programmer", markdownContent);
+// → [{ skillName: "programmer", text: "...", chunkIndex: 0 }, ...]
+```
+
+### `LanceStore`
+
+LanceDB wrapper for skill chunk storage and retrieval.
+
+```typescript
+import { LanceStore } from "@ai-coding/skills";
+
+const store = new LanceStore("/path/to/skills.lance");
+await store.open(768);                              // create table with 768 dims
+await store.open();                                 // open existing table
+await store.upsertSkill("programmer", chunks, embeddings);
+const results = await store.search(queryVector, 10);
+await store.deleteSkill("programmer");
+const count = await store.countRows();
+```
+
+### `indexSkills(embedder, store, skillRoot?, metaPath?, force?)`
+
+Index all skills in a skill root. Handles staleness detection, chunking,
+embedding, and upsert. See [docs/skill-indexer.md](./skill-indexer.md) for
+the full indexer reference.
+
+```typescript
+import { indexSkills, OllamaEmbedder, LanceStore } from "@ai-coding/skills";
+
+const embedder = new OllamaEmbedder();
+const store = new LanceStore();
+const result = await indexSkills(embedder, store);
+// → { indexed: ["programmer", "rust"], skipped: ["debugger", ...] }
 ```
 
 ---
@@ -287,17 +478,18 @@ const step = createSkillResolverStep("resolve-skills", new FileBackend());
 ## Types
 
 ```typescript
-/** Narrow context for skill retrieval — evolved only when consumers need more. */
+/** Narrow context for skill retrieval. */
 interface RetrievalContext {
   readonly action: AIAction;
-  readonly workspace?: string;
+  readonly workspace?: string; // used for workspace type detection
+  readonly query?: string;     // user's request text — enriches vector retrieval
 }
 
 /** A single resolved skill with its content and optional relevance score. */
 interface ResolvedSkill {
   readonly name: string;
   readonly content: string;
-  readonly relevance?: number; // populated by vector backend (Phase 2)
+  readonly relevance?: number; // 0.0–1.0; populated by VectorBackend only
 }
 
 /** Pluggable backend interface — consumers are blind to the implementation. */
@@ -307,6 +499,15 @@ interface SkillBackend {
 
 /** Detected workspace project type from filesystem marker files. */
 type WorkspaceType = "rust" | "cpp" | "typescript" | "unknown";
+
+/** Options for createBestBackend(). */
+interface CreateBackendOptions {
+  readonly skillRoot?: string;    // default: ~/.config/opencode/skill
+  readonly dbPath?: string;       // default: ~/.local/share/ai-coding/skills.lance
+  readonly ollamaModel?: string;  // default: "nomic-embed-text"
+  readonly ollamaUrl?: string;    // default: "http://localhost:11434"
+  readonly tokenBudget?: number;  // default: 2000 tokens
+}
 ```
 
 ---
@@ -326,147 +527,48 @@ export class MyCustomBackend implements SkillBackend {
 }
 ```
 
-The vector backend (Phase 2) will implement this interface using LanceDB and
-Ollama embeddings. Swapping it in requires no changes to pipeline definitions
-or the `SkillResolverStep`.
-
 ---
 
-## Phase 2 Evolution
+## Module Map
 
-```mermaid
-flowchart TD
-    subgraph Phase1["Phase 1 (current)"]
-        FB["FileBackend\nReads full SKILL.md files\nfrom ~/.config/opencode/skill/"]
-    end
-
-    subgraph Phase2["Phase 2 (planned)"]
-        VB["VectorBackend\nChunks skills at ## headings\nEmbeds via Ollama (nomic-embed-text)\nQueries LanceDB by semantic similarity\nReturns top-k chunks with relevance scores"]
-    end
-
-    subgraph Phase3["Phase 3 (future)"]
-        UB["UnifiedBackend\nSkill chunks + research corpus + session memory\nSingle semantic query across all sources"]
-    end
-
-    Consumer["resolveSkill(context, backend)"]
-    Consumer --> FB
-    Consumer --> VB
-    Consumer --> UB
-
-    FB -.->|"swap backend,\nno consumer changes"| VB
-    VB -.->|"extend backend,\nno consumer changes"| UB
 ```
-
-**Token efficiency improvement:** Phase 1 sends full skill files (same as current
-OpenCode behaviour). Phase 2 sends only the matching chunks per LLM call — for a
-500-line skill, this could reduce injected tokens by 80%+ per call.
-
----
-
-## Phase 2 — Vector Backend (Implemented)
-
-Phase 2 adds semantic retrieval via LanceDB + Ollama embeddings. All components
-are in `packages/skills/src/`.
-
-### New Modules
-
-| Module | Purpose |
-|--------|---------|
-| `embeddings/embedder-types.ts` | `Embedder`, `EmbeddingResult` interfaces |
-| `embeddings/ollama-embedder.ts` | `OllamaEmbedder` — calls `POST /api/embed` on local Ollama |
-| `chunking/markdown-chunker.ts` | `chunkSkill()` — splits SKILL.md on H2 headings, paragraph-splits oversized sections |
-| `store/lance-store.ts` | `LanceStore` — wraps LanceDB table (open, upsertSkill, search, deleteSkill) |
-| `indexer/index-skills.ts` | `indexSkills()` — discovers skills, hashes for staleness, chunks + embeds + upserts |
-| `indexer/cli.ts` | `bun run skill-index` CLI with `--force`, `--skill-root`, `--db-path`, `--model` |
-| `backends/vector-backend.ts` | `VectorBackend` — embeds query, ANN search, token-budget pruning, groups by skill |
-| `backends/create-backend.ts` | `createBestBackend()` — auto-selects VectorBackend or FileBackend |
-| `cli/skill-retrieval-cli.ts` | `bun run skill-retrieval` CLI used by the OpenCode tool |
-
-### Retrieval Flow (Vector Backend)
-
-```mermaid
-sequenceDiagram
-    participant Step as SkillResolverStep
-    participant VB as VectorBackend
-    participant Emb as OllamaEmbedder
-    participant Store as LanceStore (LanceDB)
-
-    Step->>VB: resolve({ action, workspace, query })
-    VB->>Emb: embed("edit refactor the parser")
-    Emb-->>VB: Float32Array[768]
-    VB->>Store: search(vector, limit=20)
-    Store-->>VB: SkillSearchResult[] (ordered by distance)
-    VB->>VB: prune to token budget (2000 tokens)
-    VB->>VB: group chunks by skill_name
-    VB-->>Step: ResolvedSkill[] with relevance scores
-```
-
-### Indexer Flow
-
-```mermaid
-flowchart TD
-    CLI["bun run skill-index"] --> Discover["discoverSkills(skillRoot)"]
-    Discover --> ForEach["For each skill"]
-    ForEach --> Hash["sha256(SKILL.md)"]
-    Hash --> Stale{"Hash changed\nor --force?"}
-    Stale -->|No| Skip["skip (skipped[])"]
-    Stale -->|Yes| Chunk["chunkSkill()"]
-    Chunk --> Embed["embedder.embedBatch(texts)"]
-    Embed --> Upsert["store.upsertSkill()"]
-    Upsert --> Indexed["indexed[]"]
-    Indexed --> Meta["write .meta.json"]
-    Skip --> Meta
-```
-
-### Backend Auto-Selection
-
-```mermaid
-flowchart TD
-    Call["createBestBackend()"] --> Checks["isOllamaReachable() + lanceDbExists()"]
-    Checks --> Both{"Both true?"}
-    Both -->|Yes| Vector["VectorBackend\n(semantic retrieval)"]
-    Both -->|No| File["FileBackend\n(static routing, always works)"]
-```
-
-### Key Design Decisions
-
-- **Token budget**: default 2000 tokens (~8000 chars). Chunks are accumulated in
-  distance order until the budget is exhausted. Oversized individual chunks are
-  still emitted (never silently dropped).
-- **Staleness detection**: SHA-256 of SKILL.md content, stored in `.meta.json`
-  alongside the DB. Only changed skills are re-embedded on each index run.
-- **Upsert strategy**: delete-by-filter + bulk add (simpler than `mergeInsert`,
-  which requires all-or-nothing match/insert configuration).
-- **LanceDB path**: `~/.local/share/ai-coding/skills.lance` (default), overridable
-  via `AI_CODING_SKILLS_DB` env var.
-- **Embedding model**: `nomic-embed-text` (768 dims) via Ollama. Overridable via
-  `--model` CLI flag or `ollamaModel` option in `createBestBackend()`.
-- **`query` field**: `RetrievalContext.query` (optional) carries the user's request
-  text. The vector backend prepends it to the action label for richer embedding.
-  The file backend ignores it.
-
-### Getting Started
-
-```bash
-# 1. Start Ollama and pull the embedding model
-ollama serve &
-ollama pull nomic-embed-text
-
-# 2. Index all skills (first time or after skill updates)
-bun run skill-index
-
-# 3. Force re-index everything
-bun run skill-index --force
-
-# 4. Pipelines now auto-use the vector backend when Ollama is running
-bun run pipeline dev-cycle /path/to/workspace --input "add error handling"
+packages/skills/src/
+  skill-types.ts               RetrievalContext, ResolvedSkill, SkillBackend, WorkspaceType
+  resolve-skill.ts             resolveSkill() — stable public API, delegates to backend
+  merge-skills.ts              mergeSkills() — concatenate for system prompt injection
+  skill-map.ts                 ACTION_SKILLS, WORKSPACE_SKILLS, resolveSkillNames()
+  detect-workspace-type.ts     Filesystem probe → WorkspaceType
+  backends/
+    file-backend.ts            FileBackend — reads SKILL.md files from disk
+    vector-backend.ts          VectorBackend — ANN search via LanceDB
+    create-backend.ts          createBestBackend() — auto-selects best backend
+  embeddings/
+    embedder-types.ts          Embedder, EmbeddingResult interfaces
+    ollama-embedder.ts         OllamaEmbedder, isOllamaReachable()
+  chunking/
+    markdown-chunker.ts        chunkSkill() — H2-section splitting
+  store/
+    lance-store.ts             LanceStore — LanceDB open/upsert/search/delete
+  indexer/
+    index-skills.ts            indexSkills() — staleness detection + chunk+embed+upsert
+    cli.ts                     bun run skill-index CLI
+  cli/
+    skill-retrieval-cli.ts     bun run skill-retrieval CLI (used by OpenCode tool)
+  index.ts                     Barrel export (all public symbols)
 ```
 
 ---
 
-## Open Questions (Deferred to Phase 3)
+## Phase 3 (Future)
 
-- Phase 3: ingest PDF/HTML research corpus alongside SKILL.md files.
-- Phase 3: unified retrieval across skills + research corpus + session memory.
-- Auto-discovery of new skills vs. manual `ACTION_SKILLS` map updates?
-- Should `detectWorkspaceType()` cache results per workspace path?
+Phase 3 will extend the vector store beyond skill files to include:
+
+- **Research corpus** — PDF/HTML documents (papers, blog posts, language specs)
+  ingested alongside SKILL.md files
+- **Session memory** — relevant context from prior sessions stored as vectors
+  and retrieved automatically
+- **Unified retrieval** — a single semantic query across skills, research
+  corpus, and session memory
+
+The `SkillBackend` interface will remain unchanged — Phase 3 is a backend
+implementation detail invisible to consumers.
