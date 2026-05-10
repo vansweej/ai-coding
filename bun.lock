@@ -10,6 +10,20 @@
         "typescript": "^5.7.0",
       },
     },
+    "packages/codebase": {
+      "name": "@ai-coding/codebase",
+      "version": "0.1.0",
+      "dependencies": {
+        "@ai-coding/embeddings": "workspace:*",
+        "@lancedb/lancedb": "^0.27.2",
+        "apache-arrow": "^21.1.0",
+        "web-tree-sitter": "^0.25.0",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.2.0",
+        "typescript": "^5.7.0",
+      },
+    },
     "packages/embeddings": {
       "name": "@ai-coding/embeddings",
       "version": "0.1.0",
@@ -41,6 +55,8 @@
     },
   },
   "packages": {
+    "@ai-coding/codebase": ["@ai-coding/codebase@workspace:packages/codebase"],
+
     "@ai-coding/embeddings": ["@ai-coding/embeddings@workspace:packages/embeddings"],
 
     "@ai-coding/pipeline": ["@ai-coding/pipeline@workspace:packages/pipeline"],
@@ -134,6 +150,8 @@
     "typical": ["typical@7.3.0", "", {}, "sha512-ya4mg/30vm+DOWfBg4YK3j2WD6TWtRkCbasOJr40CseYENzCUby/7rIvXA99JGsQHeNxLbnXdyLLxKSv3tauFw=="],
 
     "undici-types": ["undici-types@7.16.0", "", {}, "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="],
+
+    "web-tree-sitter": ["web-tree-sitter@0.25.10", "", { "peerDependencies": { "@types/emscripten": "^1.40.0" }, "optionalPeers": ["@types/emscripten"] }, "sha512-Y09sF44/13XvgVKgO2cNDw5rGk6s26MgoZPXLESvMXeefBf7i6/73eFurre0IsTW6E14Y0ArIzhUMmjoc7xyzA=="],
 
     "wordwrapjs": ["wordwrapjs@5.1.1", "", {}, "sha512-0yweIbkINJodk27gX9LBGMzyQdBDan3s/dEAiwBOj+Mf0PPyWL6/rikalkv8EeD0E8jm4o5RXEOrFTP3NXbhJg=="],
 
