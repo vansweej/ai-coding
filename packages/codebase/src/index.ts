@@ -18,6 +18,9 @@ export { discoverFiles, resolveFilePath } from "./discovery/discover-files";
 
 // Chunking
 export { fallbackChunk } from "./chunking/fallback-chunker";
+export { chunkFile } from "./chunking/code-chunker";
+export { extractChunks } from "./chunking/node-extractors";
+export { ParserPool, DEFAULT_GRAMMARS_DIR } from "./chunking/parser-pool";
 
 // Store
 export type { CodebaseRow, CodebaseSearchResult } from "./store/codebase-store";
