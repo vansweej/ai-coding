@@ -3,8 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { EmbeddingResult } from "@ai-coding/embeddings";
+
 import type { SkillChunk } from "../chunking/markdown-chunker";
-import type { EmbeddingResult } from "../embeddings/embedder-types";
 import { LanceStore } from "./lance-store";
 
 // ── helpers ──────────────────────────────────────────────────────────────────

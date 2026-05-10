@@ -1,4 +1,4 @@
-import type { Embedder } from "../embeddings/embedder-types";
+import type { Embedder } from "@ai-coding/embeddings";
 import type { ResolvedSkill, RetrievalContext, SkillBackend } from "../skill-types";
 import type { LanceStore } from "../store/lance-store";
 

@@ -2,8 +2,8 @@ import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import type { Embedder } from "@ai-coding/embeddings";
 import { chunkSkill } from "../chunking/markdown-chunker";
-import type { Embedder } from "../embeddings/embedder-types";
 import type { LanceStore } from "../store/lance-store";
 
 /** Default skill root — same as FileBackend. */

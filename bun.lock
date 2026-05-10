@@ -10,6 +10,14 @@
         "typescript": "^5.7.0",
       },
     },
+    "packages/embeddings": {
+      "name": "@ai-coding/embeddings",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "^1.2.0",
+        "typescript": "^5.7.0",
+      },
+    },
     "packages/pipeline": {
       "name": "@ai-coding/pipeline",
       "version": "0.1.0",
@@ -22,6 +30,7 @@
       "name": "@ai-coding/skills",
       "version": "0.1.0",
       "dependencies": {
+        "@ai-coding/embeddings": "workspace:*",
         "@lancedb/lancedb": "^0.27.2",
         "apache-arrow": "^21.1.0",
       },
@@ -32,6 +41,8 @@
     },
   },
   "packages": {
+    "@ai-coding/embeddings": ["@ai-coding/embeddings@workspace:packages/embeddings"],
+
     "@ai-coding/pipeline": ["@ai-coding/pipeline@workspace:packages/pipeline"],
 
     "@ai-coding/skills": ["@ai-coding/skills@workspace:packages/skills"],

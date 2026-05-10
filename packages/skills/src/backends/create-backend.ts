@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { OllamaEmbedder, isOllamaReachable } from "../embeddings/ollama-embedder";
+import { OllamaEmbedder, isOllamaReachable } from "@ai-coding/embeddings";
 import type { SkillBackend } from "../skill-types";
 import { DEFAULT_DB_PATH, LanceStore } from "../store/lance-store";
 import { FileBackend } from "./file-backend";

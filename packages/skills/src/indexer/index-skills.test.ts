@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Embedder, EmbeddingResult } from "../embeddings/embedder-types";
+import type { Embedder, EmbeddingResult } from "@ai-coding/embeddings";
+
 import { LanceStore } from "../store/lance-store";
 import { indexSkills } from "./index-skills";
 

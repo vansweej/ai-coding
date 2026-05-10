@@ -3,8 +3,9 @@ import { join } from "node:path";
 import { connect } from "@lancedb/lancedb";
 import { Field, FixedSizeList, Float32, Int32, Schema, Utf8 } from "apache-arrow";
 
+import type { EmbeddingResult } from "@ai-coding/embeddings";
+
 import type { SkillChunk } from "../chunking/markdown-chunker";
-import type { EmbeddingResult } from "../embeddings/embedder-types";
 
 /** Default LanceDB path — overridable via AI_CODING_SKILLS_DB env var. */
 export const DEFAULT_DB_PATH = join(homedir(), ".local", "share", "ai-coding", "skills.lance");

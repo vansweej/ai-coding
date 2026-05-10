@@ -1,5 +1,5 @@
 {
-  "name": "@ai-coding/skills",
+  "name": "@ai-coding/embeddings",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,10 +13,5 @@
   "devDependencies": {
     "@types/bun": "^1.2.0",
     "typescript": "^5.7.0"
-  },
-  "dependencies": {
-    "@ai-coding/embeddings": "workspace:*",
-    "@lancedb/lancedb": "^0.27.2",
-    "apache-arrow": "^21.1.0"
   }
 }

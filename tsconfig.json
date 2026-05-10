@@ -15,8 +15,10 @@
     "baseUrl": ".",
     "paths": {
       "@ai-coding/shared": ["ai-system/shared/event-types.ts"],
+      "@ai-coding/embeddings": ["packages/embeddings/src/index.ts"],
       "@ai-coding/pipeline": ["packages/pipeline/src/index.ts"],
-      "@ai-coding/skills": ["packages/skills/src/index.ts"]
+      "@ai-coding/skills": ["packages/skills/src/index.ts"],
+      "@ai-coding/codebase": ["packages/codebase/src/index.ts"]
     },
     "types": ["bun"]
   },

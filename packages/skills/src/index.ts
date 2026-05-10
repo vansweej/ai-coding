@@ -11,8 +11,10 @@ export { detectWorkspaceType } from "./detect-workspace-type";
 export { FileBackend } from "./backends/file-backend";
 
 // Phase 2 — vector backend and supporting modules
-export type { EmbeddingResult, Embedder } from "./embeddings/embedder-types";
-export { OllamaEmbedder, isOllamaReachable } from "./embeddings/ollama-embedder";
+// Embedder types are re-exported from @ai-coding/embeddings for backward
+// compatibility. Consumers should prefer importing directly from that package.
+export type { EmbeddingResult, Embedder } from "@ai-coding/embeddings";
+export { OllamaEmbedder, isOllamaReachable } from "@ai-coding/embeddings";
 export type { SkillChunk } from "./chunking/markdown-chunker";
 export { chunkSkill } from "./chunking/markdown-chunker";
 export type { SkillRow, SkillSearchResult } from "./store/lance-store";

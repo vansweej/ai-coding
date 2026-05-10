@@ -15,7 +15,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { OllamaEmbedder, isOllamaReachable } from "../embeddings/ollama-embedder";
+import { OllamaEmbedder, isOllamaReachable } from "@ai-coding/embeddings";
 import { LanceStore } from "../store/lance-store";
 import { indexSkills } from "./index-skills";
 
