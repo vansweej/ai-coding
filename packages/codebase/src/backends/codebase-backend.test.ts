@@ -93,11 +93,7 @@ describe("CodebaseBackend.search()", () => {
   });
 
   it("each result has the required fields", async () => {
-    await createFile(
-      repoDir,
-      "lib/util.ts",
-      "export function add(a: number, b: number) { return a + b; }\n",
-    );
+    await createFile(repoDir, "lib/util.ts", "export function add(a: number, b: number) { return a + b; }\n");
 
     const backend = new CodebaseBackend(embedder, store, pool);
     const results = await backend.search("addition utility", repoDir, { refresh: true });

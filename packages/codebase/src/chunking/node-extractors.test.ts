@@ -30,7 +30,7 @@ function fakeNode(params: {
     startPosition: { row: params.startRow ?? 0, column: 0 },
     endPosition: { row: params.endRow ?? 0, column: 0 },
     startIndex: params.startIndex ?? 0,
-    endIndex: params.endIndex ?? params.text?.length ?? 10,
+    endIndex: params.endIndex ?? (params.text?.length ?? 10),
     children: params.children ?? [],
     firstNamedChild: params.firstNamedChild ?? null,
     childForFieldName: (name: string) => params.fields?.[name] ?? null,

@@ -22,8 +22,8 @@ import { resolve } from "node:path";
 
 import { OllamaEmbedder, isOllamaReachable } from "@ai-coding/embeddings";
 
-import { DEFAULT_GRAMMARS_DIR, ParserPool } from "../chunking/parser-pool";
-import { CodebaseStore, DEFAULT_CODEBASE_DB_PATH, DEFAULT_TTL_DAYS } from "../store/codebase-store";
+import { ParserPool, DEFAULT_GRAMMARS_DIR } from "../chunking/parser-pool";
+import { DEFAULT_CODEBASE_DB_PATH, DEFAULT_TTL_DAYS, CodebaseStore } from "../store/codebase-store";
 import { indexCodebase } from "./index-codebase";
 import { runPostIndexPurge } from "./purge";
 
@@ -133,7 +133,11 @@ try {
     }
   }
 
-  if (result.indexed.length === 0 && result.skipped.length === 0 && result.deleted.length === 0) {
+  if (
+    result.indexed.length === 0 &&
+    result.skipped.length === 0 &&
+    result.deleted.length === 0
+  ) {
     console.log("\n⚠️   No files found. Is the repo empty or is git ls-files returning nothing?");
   }
 

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { writeFile } from "node:fs/promises";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 import { DEFAULT_GRAMMARS_DIR, ParserPool } from "./parser-pool";
 
@@ -85,7 +85,7 @@ describe("ParserPool constructor", () => {
       expect(pool.grammarPath("rust")).toBe("/env/grammars/tree-sitter-rust.wasm");
     } finally {
       if (original === undefined) {
-        process.env.AI_CODING_GRAMMARS_DIR = undefined;
+        delete process.env.AI_CODING_GRAMMARS_DIR;
       } else {
         process.env.AI_CODING_GRAMMARS_DIR = original;
       }
@@ -95,7 +95,7 @@ describe("ParserPool constructor", () => {
   it("falls back to DEFAULT_GRAMMARS_DIR when env var is unset", () => {
     const original = process.env.AI_CODING_GRAMMARS_DIR;
     try {
-      process.env.AI_CODING_GRAMMARS_DIR = undefined;
+      delete process.env.AI_CODING_GRAMMARS_DIR;
       const pool = new ParserPool();
       expect(pool.grammarPath("typescript")).toBe(
         join(DEFAULT_GRAMMARS_DIR, "tree-sitter-typescript.wasm"),
@@ -115,7 +115,7 @@ describe("ParserPool constructor", () => {
       expect(pool.grammarPath("rust")).toBe("/explicit/path/tree-sitter-rust.wasm");
     } finally {
       if (original === undefined) {
-        process.env.AI_CODING_GRAMMARS_DIR = undefined;
+        delete process.env.AI_CODING_GRAMMARS_DIR;
       } else {
         process.env.AI_CODING_GRAMMARS_DIR = original;
       }
@@ -134,29 +134,40 @@ describe("ParserPool.getParser()", () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("throws with a helpful message when the grammar file does not exist", async () => {
-    const pool = new ParserPool(tmpDir);
-    // This call initialises the WASM runtime then checks for the .wasm file.
-    // The runtime init uses the bundled tree-sitter.wasm from web-tree-sitter.
-    await expect(pool.getParser("typescript")).rejects.toThrow(
-      'Grammar not found for language "typescript"',
-    );
-  }, /* timeout ms */ 15_000);
+  it(
+    "throws with a helpful message when the grammar file does not exist",
+    async () => {
+      const pool = new ParserPool(tmpDir);
+      // This call initialises the WASM runtime then checks for the .wasm file.
+      // The runtime init uses the bundled tree-sitter.wasm from web-tree-sitter.
+      await expect(pool.getParser("typescript")).rejects.toThrow(
+        'Grammar not found for language "typescript"',
+      );
+    },
+    /* timeout ms */ 15_000,
+  );
 
-  it("error message includes the expected file path", async () => {
-    const pool = new ParserPool(tmpDir);
-    const expectedPath = join(tmpDir, "tree-sitter-typescript.wasm");
-    await expect(pool.getParser("typescript")).rejects.toThrow(expectedPath);
-  }, 15_000);
+  it(
+    "error message includes the expected file path",
+    async () => {
+      const pool = new ParserPool(tmpDir);
+      const expectedPath = join(tmpDir, "tree-sitter-typescript.wasm");
+      await expect(pool.getParser("typescript")).rejects.toThrow(expectedPath);
+    },
+    15_000,
+  );
 
-  it("returns a cached parser on repeated calls (does not re-initialise)", async () => {
-    // Put a real (empty) wasm placeholder to get past the file-existence
-    // check — the actual language loading will fail, but that's fine since
-    // we only verify the cache lookup path via hasGrammar / grammarPath.
-    // Instead, verify caching by calling hasGrammar twice and confirming
-    // state is consistent.
-    const pool = new ParserPool(tmpDir);
-    expect(pool.hasGrammar("typescript")).toBe(false);
-    expect(pool.hasGrammar("typescript")).toBe(false); // idempotent
-  });
+  it(
+    "returns a cached parser on repeated calls (does not re-initialise)",
+    async () => {
+      // Put a real (empty) wasm placeholder to get past the file-existence
+      // check — the actual language loading will fail, but that's fine since
+      // we only verify the cache lookup path via hasGrammar / grammarPath.
+      // Instead, verify caching by calling hasGrammar twice and confirming
+      // state is consistent.
+      const pool = new ParserPool(tmpDir);
+      expect(pool.hasGrammar("typescript")).toBe(false);
+      expect(pool.hasGrammar("typescript")).toBe(false); // idempotent
+    },
+  );
 });

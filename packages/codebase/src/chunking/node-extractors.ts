@@ -31,8 +31,8 @@ const CHUNK_NODES: Readonly<Record<string, readonly string[]>> = {
     "type_alias_declaration",
     "enum_declaration",
     "export_statement",
-    "lexical_declaration", // const/let at module level
-    "variable_declaration", // var at module level
+    "lexical_declaration",    // const/let at module level
+    "variable_declaration",  // var at module level
     "import_statement",
   ],
   javascript: [
@@ -87,7 +87,7 @@ const CHUNK_NODES: Readonly<Record<string, readonly string[]>> = {
     "decorated_definition",
     "import_statement",
     "import_from_statement",
-    "assignment", // top-level constants
+    "assignment",             // top-level constants
   ],
   haskell: [
     "function",
@@ -103,7 +103,7 @@ const CHUNK_NODES: Readonly<Record<string, readonly string[]>> = {
   lua: [
     "function_declaration",
     "local_function",
-    "assignment_statement", // module-level assignments
+    "assignment_statement",  // module-level assignments
     "local_variable_declaration",
   ],
   julia: [
