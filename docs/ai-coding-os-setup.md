@@ -38,9 +38,6 @@ ai-coding/
       select-pipeline.ts   Instantiates pipeline by name
   opencode/
     mappings/              opencode.json (provider/model config, symlinked by Home Manager)
-  .opencode/
-    agents/                Project-local subagents (planner, debugger, reviewer, tester)
-    commands/              Pipeline slash commands
   docs/                    Documentation (you are here)
   AGENTS.md                AI agent instructions for this repo
 ```

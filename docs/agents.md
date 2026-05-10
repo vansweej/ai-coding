@@ -517,7 +517,8 @@ teach → explore → plan → build → @reviewer → commit
    ```
 
 6. **If the agent is project-local** (scoped to `ai-coding/` only), also add
-   it to `.opencode/agents/` in this repo. Keep the two copies in sync.
+   it to `~/Projects/home-manager/opencode/agents/` and deploy via
+   `home-manager switch`. There is no project-local `.opencode/agents/` directory.
 
 ---
 
@@ -551,16 +552,10 @@ teach → explore → plan → build → @reviewer → commit
     debugger.md      → /nix/store/.../debugger.md      (symlink)
     reviewer.md      → /nix/store/.../reviewer.md      (symlink)
     tester.md        → /nix/store/.../tester.md        (symlink)
-
-~/Projects/ai-coding/.opencode/agents/
-    planner.md       ← project-local copy (kept in sync with home-manager)
-    debugger.md
-    reviewer.md
-    tester.md
 ```
 
-OpenCode reads `~/.config/opencode/agents/` for global agents and
-`.opencode/agents/` in the current project for project-local overrides.
+OpenCode reads `~/.config/opencode/agents/` for all agents. There is no
+project-local `.opencode/agents/` directory — all agents are global.
 
 ---
 

@@ -59,7 +59,7 @@ graph TD
     end
 
     subgraph Tools["OpenCode Tools"]
-        SkillTool[".opencode/tools/skill-retrieval.ts"]
+        SkillTool["~/.config/opencode/tools/skill-retrieval.ts"]
         SkillCLI["bun run skill-retrieval"]
     end
 

@@ -166,14 +166,14 @@ Examples:
 /pipeline rust-dev-cycle ./my-project --input "Add a config module"
 ```
 
-Command files live in `.opencode/commands/`. Add new ones there to expose
-additional pipelines as slash commands.
+Command files are deployed globally to `~/.config/opencode/commands/` via Home Manager.
+Add new ones in `~/Projects/home-manager/opencode/commands/` and run `home-manager switch`.
 
 ---
 
 ### Custom tool (conversational)
 
-A custom tool registered at `.opencode/tools/pipeline.ts` lets the LLM call
+A custom tool deployed globally at `~/.config/opencode/tools/pipeline.ts` via Home Manager lets the LLM call
 pipelines autonomously during a conversation. Instead of typing a slash command,
 describe your intent naturally:
 

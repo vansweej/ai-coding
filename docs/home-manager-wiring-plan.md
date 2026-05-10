@@ -1,8 +1,10 @@
 # Home Manager Wiring Plan (Completed)
 
-> **Status: Implemented.** This document describes the original wiring plan.
-> The home-manager repo now deploys all agents (planner, debugger, reviewer,
-> tester) and the opencode.json config globally via `home.nix`.
+> **Status: Fully implemented.** This document describes the original wiring
+> plan. The home-manager repo now deploys all agents, skills, commands, tools,
+> and the opencode.json config globally via `home.nix`. The ai-coding repo no
+> longer contains a `.opencode/` directory — all OpenCode configuration is
+> self-contained in `~/Projects/home-manager/opencode/`.
 
 ## Goal
 
@@ -158,15 +160,13 @@ opencode
 
 ---
 
-## Future: Keeping Profiles in Sync
+## Tools
 
-The agent profiles exist in two places within the repo:
+Custom OpenCode tools (`pipeline.ts`, `codebase-retrieval.ts`,
+`skill-retrieval.ts`) live in `opencode/tools/` in the home-manager repo.
+They are deployed as live symlinks into `~/.config/opencode/tools/` via
+`mkOutOfStoreSymlink`, pointing back to `~/Projects/home-manager/opencode/tools/`.
 
-| Path | Purpose |
-|------|---------|
-| `.opencode/agents/` | Per-project, picked up automatically by OpenCode |
-| `opencode/profiles/` | Home Manager symlink source (global) |
-
-They are currently manually kept identical. A future improvement would be to
-have `.opencode/agents/` contain symlinks pointing to `opencode/profiles/`,
-eliminating the duplication. This is tracked as a known improvement.
+`bun install` runs in `~/.config/opencode/` during Home Manager activation to
+provide the `@opencode-ai/plugin` dependency. The `package.json` is deployed
+as a Nix store copy from `opencode/package.json` in the home-manager repo.
