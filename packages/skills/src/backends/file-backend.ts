@@ -6,7 +6,7 @@ import { resolveSkillNames } from "../skill-map";
 import type { ResolvedSkill, RetrievalContext, SkillBackend } from "../skill-types";
 
 /** Default skill root: Home Manager deploys all skills here. */
-const DEFAULT_SKILL_ROOT = join(homedir(), ".config", "opencode", "skill");
+const DEFAULT_SKILL_ROOT = join(homedir(), ".config", "opencode", "skills");
 
 /**
  * File-based skill backend that reads `SKILL.md` files from a local directory.
@@ -35,7 +35,7 @@ export class FileBackend implements SkillBackend {
 
   /**
    * @param skillRoot - Absolute path to the skill root directory.
-   *                    Defaults to `~/.config/opencode/skill`.
+   *                    Defaults to `~/.config/opencode/skills`.
    */
   constructor(skillRoot: string = DEFAULT_SKILL_ROOT) {
     this.skillRoot = skillRoot;

@@ -6,7 +6,7 @@ The skill indexer builds a **vector database** of all installed skill files so
 that pipelines and OpenCode agents can retrieve semantically relevant skill
 content for any task — not just the skills statically mapped to an action label.
 
-It reads every `SKILL.md` file under `~/.config/opencode/skill/`, splits each
+It reads every `SKILL.md` file under `~/.config/opencode/skills/`, splits each
 file into chunks, embeds the chunks using a local Ollama model, and stores the
 vectors in a LanceDB database on disk. Once indexed, the vector backend can
 answer queries like "which skills are relevant to refactoring a Rust parser?"
@@ -102,7 +102,7 @@ bun run skill-index [options]
 
 Options:
   --force           Re-index all skills, ignoring staleness hashes
-  --skill-root <p>  Override skill root (default: ~/.config/opencode/skill)
+  --skill-root <p>  Override skill root (default: ~/.config/opencode/skills)
   --db-path <p>     Override LanceDB path (default: ~/.local/share/ai-coding/skills.lance)
   --model <name>    Ollama embedding model (default: nomic-embed-text)
 ```
@@ -117,8 +117,7 @@ The indexer scans `skillRoot` for subdirectories. Each subdirectory is treated
 as a skill. Only directories that contain a `SKILL.md` file are processed.
 
 ```
-~/.config/opencode/skill/
-  programmer/SKILL.md   ← indexed
+~/.config/opencode/skills/
   debugger/SKILL.md     ← indexed
   rust/SKILL.md         ← indexed
   cpp/SKILL.md          ← indexed
@@ -251,7 +250,7 @@ environment variable.
 |-------|--------|
 | First-time setup | `bun run skill-index` |
 | A `SKILL.md` file is updated | `bun run skill-index` (incremental, only re-indexes changed skills) |
-| New skill added to `~/.config/opencode/skill/` | `bun run skill-index` |
+| New skill added to `~/.config/opencode/skills/` | `bun run skill-index` |
 | Skill removed | `bun run skill-index --force` (removes stale rows) |
 | Switching embedding models | `bun run skill-index --force --model <new-model>` |
 | Database corruption | Delete `~/.local/share/ai-coding/skills.lance/` then `bun run skill-index` |
@@ -287,7 +286,7 @@ set `OLLAMA_HOST` — support for `--ollama-url` is planned.)*
 The skill root directory is empty or does not exist. Verify:
 
 ```bash
-ls ~/.config/opencode/skill/
+ls ~/.config/opencode/skills/
 ```
 
 Skills are deployed by Home Manager. If the directory is empty, run:

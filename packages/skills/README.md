@@ -9,7 +9,7 @@ single string, and injects the result into LLM system prompts.
 ```typescript
 import { FileBackend, mergeSkills, resolveSkill } from "@ai-coding/skills";
 
-const backend = new FileBackend(); // reads from ~/.config/opencode/skill/
+const backend = new FileBackend(); // reads from ~/.config/opencode/skills/
 
 const skills = await resolveSkill(
   { action: "edit", workspace: "/my/rust/project" },

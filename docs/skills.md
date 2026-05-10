@@ -55,7 +55,7 @@ graph TD
 
     subgraph Storage["Storage"]
         LanceDB["LanceDB\n~/.local/share/ai-coding/skills.lance"]
-        SkillFiles["SKILL.md files\n~/.config/opencode/skill/"]
+        SkillFiles["SKILL.md files\n~/.config/opencode/skills/"]
     end
 
     subgraph Tools["OpenCode Tools"]
@@ -412,7 +412,7 @@ Skips missing files silently. No external dependencies.
 ```typescript
 import { FileBackend } from "@ai-coding/skills";
 
-const backend = new FileBackend();                    // ~/.config/opencode/skill/
+const backend = new FileBackend();                    // ~/.config/opencode/skills/
 const backend = new FileBackend("/custom/skill/root"); // custom root
 ```
 

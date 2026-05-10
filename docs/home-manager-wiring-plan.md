@@ -34,16 +34,16 @@ After `home-manager switch`:
 ```
 ~/.config/opencode/
 ├── AGENTS.md         → ~/Projects/home-manager/opencode/AGENTS.md (language-agnostic rules)
-├── skill/
-│   ├── analyst/SKILL.md    → .../opencode/skill/analyst/SKILL.md
-│   ├── architect/SKILL.md  → .../opencode/skill/architect/SKILL.md
-│   ├── documenter/SKILL.md → .../opencode/skill/documenter/SKILL.md
-│   ├── explorer/SKILL.md   → .../opencode/skill/explorer/SKILL.md
-│   ├── programmer/SKILL.md → .../opencode/skill/programmer/SKILL.md
-│   ├── reviewer/SKILL.md   → .../opencode/skill/reviewer/SKILL.md
-│   ├── tester/SKILL.md     → .../opencode/skill/tester/SKILL.md
-│   ├── rust/SKILL.md       → .../opencode/skill/rust/SKILL.md   ← language skill
-│   └── cpp/SKILL.md        → .../opencode/skill/cpp/SKILL.md    ← language skill
+├── skills/
+│   ├── analyst/SKILL.md    → .../opencode/skills/analyst/SKILL.md
+│   ├── architect/SKILL.md  → .../opencode/skills/architect/SKILL.md
+│   ├── documenter/SKILL.md → .../opencode/skills/documenter/SKILL.md
+│   ├── explorer/SKILL.md   → .../opencode/skills/explorer/SKILL.md
+│   ├── programmer/SKILL.md → .../opencode/skills/programmer/SKILL.md
+│   ├── reviewer/SKILL.md   → .../opencode/skills/reviewer/SKILL.md
+│   ├── tester/SKILL.md     → .../opencode/skills/tester/SKILL.md
+│   ├── rust/SKILL.md       → .../opencode/skills/rust/SKILL.md   ← language skill
+│   └── cpp/SKILL.md        → .../opencode/skills/cpp/SKILL.md    ← language skill
 ├── agents/
 │   ├── plan.md       → ~/Projects/home-manager/opencode/agents/plan.md
 │   ├── build.md      → ~/Projects/home-manager/opencode/agents/build.md

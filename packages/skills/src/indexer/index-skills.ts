@@ -7,7 +7,7 @@ import { chunkSkill } from "../chunking/markdown-chunker";
 import type { LanceStore } from "../store/lance-store";
 
 /** Default skill root — same as FileBackend. */
-const DEFAULT_SKILL_ROOT = join(homedir(), ".config", "opencode", "skill");
+const DEFAULT_SKILL_ROOT = join(homedir(), ".config", "opencode", "skills");
 
 /** Shape of the `.meta.json` staleness file written alongside the DB. */
 export interface SkillIndexMeta {

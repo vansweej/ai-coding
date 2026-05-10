@@ -8,7 +8,7 @@ import { FileBackend } from "./file-backend";
 import { VectorBackend } from "./vector-backend";
 
 /** Default skill root — same as FileBackend. */
-const DEFAULT_SKILL_ROOT = join(homedir(), ".config", "opencode", "skill");
+const DEFAULT_SKILL_ROOT = join(homedir(), ".config", "opencode", "skills");
 
 /**
  * Options for `createBestBackend`.
@@ -17,7 +17,7 @@ const DEFAULT_SKILL_ROOT = join(homedir(), ".config", "opencode", "skill");
 export interface CreateBackendOptions {
   /**
    * Absolute path to the skill root directory.
-   * Defaults to `~/.config/opencode/skill`.
+   * Defaults to `~/.config/opencode/skills`.
    */
   readonly skillRoot?: string;
   /**

@@ -6,7 +6,7 @@
  *
  * Options:
  *   --force        Re-index all skills, ignoring staleness hashes.
- *   --skill-root   Override the default skill root (~/.config/opencode/skill).
+ *   --skill-root   Override the default skill root (~/.config/opencode/skills).
  *   --db-path      Override the LanceDB path (~/.local/share/ai-coding/skills.lance).
  *   --model        Ollama model name for embeddings (default: nomic-embed-text).
  */
@@ -31,7 +31,7 @@ function option(name: string, fallback: string): string {
 }
 
 const force = flag("--force");
-const skillRoot = option("--skill-root", join(homedir(), ".config", "opencode", "skill"));
+const skillRoot = option("--skill-root", join(homedir(), ".config", "opencode", "skills"));
 const dbPath = option("--db-path", join(homedir(), ".local", "share", "ai-coding", "skills.lance"));
 const model = option("--model", "nomic-embed-text");
 

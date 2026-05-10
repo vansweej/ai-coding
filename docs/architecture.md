@@ -266,7 +266,7 @@ when the agent is working in a relevant context. They complement the always-load
 All skills are deployed globally via Home Manager:
 
 ```
-~/.config/opencode/skill/
+~/.config/opencode/skills/
   programmer/SKILL.md   — coding standards (language-agnostic)
   tester/SKILL.md       — testing conventions (language-agnostic)
   reviewer/SKILL.md     — review checklist (language-agnostic)
