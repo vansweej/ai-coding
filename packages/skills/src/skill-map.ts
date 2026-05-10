@@ -34,7 +34,7 @@ export const ACTION_SKILLS: Readonly<Record<AIAction, readonly string[]>> = {
 export const WORKSPACE_SKILLS: Readonly<Record<WorkspaceType, readonly string[]>> = {
   rust: ["rust"],
   cpp: ["cpp"],
-  typescript: [],
+  typescript: ["typescript"],
   unknown: [],
 };
 

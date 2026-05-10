@@ -45,8 +45,8 @@ describe("WORKSPACE_SKILLS", () => {
     expect(WORKSPACE_SKILLS.cpp).toEqual(["cpp"]);
   });
 
-  it("maps typescript to empty array", () => {
-    expect(WORKSPACE_SKILLS.typescript).toEqual([]);
+  it("maps typescript to typescript skill", () => {
+    expect(WORKSPACE_SKILLS.typescript).toEqual(["typescript"]);
   });
 
   it("maps unknown to empty array", () => {
@@ -67,8 +67,16 @@ describe("resolveSkillNames", () => {
     expect(resolveSkillNames("plan", "unknown")).toEqual(["architect"]);
   });
 
-  it("returns only action skill when workspace is typescript", () => {
-    expect(resolveSkillNames("refactor", "typescript")).toEqual(["programmer"]);
+  it("returns action skill + workspace skill for edit in typescript", () => {
+    expect(resolveSkillNames("edit", "typescript")).toEqual(["programmer", "typescript"]);
+  });
+
+  it("returns only workspace skill when action has no skills (chat + typescript)", () => {
+    expect(resolveSkillNames("chat", "typescript")).toEqual(["typescript"]);
+  });
+
+  it("returns action skill + workspace skill for refactor in typescript", () => {
+    expect(resolveSkillNames("refactor", "typescript")).toEqual(["programmer", "typescript"]);
   });
 
   it("returns only workspace skill when action has no skills (chat + rust)", () => {
