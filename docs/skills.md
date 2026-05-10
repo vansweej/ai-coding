@@ -182,6 +182,23 @@ before "and specifically in Rust, do it this way."
 | `chat` | Rust project | `rust` |
 | `explore` | Unknown | `explorer` |
 
+### Utility Skills
+
+Some skills are not mapped to any `AIAction` and are never auto-injected by the
+file backend. They are loaded exclusively on demand — either by the agent via
+the `skill` tool when it recognises the user's intent, or by the vector backend
+when a semantic query surfaces them.
+
+| Skill | Purpose | Trigger |
+|-------|---------|---------|
+| `context-audit` | Audit OpenCode setup for token waste and context bloat | User asks to audit context, check settings, or optimise tokens |
+
+Utility skills appear in `<available_skills>` in the `skill` tool description
+on every turn (one line each), so their descriptions should be concise and
+specific. Their content is only injected when explicitly loaded.
+
+See [docs/context-audit.md](./context-audit.md) for the full reference.
+
 ---
 
 ## Vector Backend

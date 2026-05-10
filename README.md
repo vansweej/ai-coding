@@ -231,6 +231,27 @@ at /tmp/my-project following those instructions.
 
 ---
 
+## Skills
+
+OpenCode agents use the `skill-retrieval` tool to load curated instructions
+from SKILL.md files. Skills are auto-selected based on the task type
+(action) and project language (workspace type).
+
+| Category | Skills |
+|----------|--------|
+| Task skills | `programmer`, `debugger`, `architect`, `explorer`, `analyst`, `reviewer`, `tester` |
+| Language skills | `rust`, `cpp` |
+| Utility skills | `context-audit` |
+
+Task and language skills are auto-injected for matching sessions. Utility skills
+are loaded on demand when the agent recognises the user's intent.
+
+See [`docs/skills.md`](docs/skills.md) for the full architecture, routing
+tables, and API reference. See [`docs/context-audit.md`](docs/context-audit.md)
+for the context audit skill reference.
+
+---
+
 ## Development
 
 ```bash
