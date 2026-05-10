@@ -11,6 +11,15 @@ runtime and package manager. All LLM calls go through **GitHub Copilot**
 
 ```
 ai-coding/
+  packages/
+    embeddings/            - Shared embedding abstraction (@ai-coding/embeddings)
+                             Embedder, EmbeddingResult, OllamaEmbedder, isOllamaReachable
+    pipeline/              - Generic pipeline infrastructure (@ai-coding/pipeline)
+                             runPipeline, PipelineStep, ShellStep, NixShellStep, CoverageGateStep
+    skills/                - Skill retrieval system (@ai-coding/skills)
+                             resolveSkill, mergeSkills, FileBackend, VectorBackend, LanceStore, chunkSkill
+    codebase/              - Codebase RAG indexer (@ai-coding/codebase)
+                             CodebaseBackend, indexCodebase, CodebaseStore, ParserPool, chunkFile
   ai-system/
     config/
       model-profiles.ts    - ModelRole, ModelProfile, copilot-default profile
@@ -33,7 +42,7 @@ ai-coding/
   .opencode/
     agents/                - Project-local subagents (planner, debugger, reviewer, tester)
     commands/              - Pipeline slash commands
-    tools/                 - Custom OpenCode tools
+    tools/                 - Custom OpenCode tools (pipeline.ts, codebase-retrieval.ts)
   docs/                    - Project documentation
 ```
 
@@ -129,6 +138,17 @@ Target **90% code coverage**. Exclude untestable code with:
 
    Documentation must never lag behind the code. A PR that adds a feature
    without updating docs is incomplete and must not be merged.
+
+   The canonical reference for each area:
+
+   | Area | Doc file |
+   |------|----------|
+   | Agents (tables, descriptions, workflows) | `docs/agents.md` |
+   | Architecture or pipeline structure | `docs/architecture.md` |
+   | Setup / daily workflow | `docs/ai-coding-os-setup.md` |
+   | Codebase indexer | `docs/codebase-indexer.md` |
+   | User-facing pipelines / configuration | `README.md` |
+   | Conventions, rules, directory structure | `AGENTS.md` |
 
 ---
 

@@ -13,6 +13,9 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
   generated code to disk before build/test steps run
 - **Scaffold pipelines** -- generate new Rust and C++ projects including a `flake.nix` dev shell
   and a lightweight `AGENTS.md` with build commands and a language-skill reference
+- **Codebase indexer** -- indexes git repositories into a local LanceDB vector store using
+  tree-sitter WASM chunking and Ollama embeddings, enabling semantic code retrieval across
+  sessions. See [`docs/codebase-indexer.md`](docs/codebase-indexer.md) for full documentation
 
 ---
 
@@ -94,6 +97,28 @@ bun run pipeline <name> <workspace> [--input "request text"] [--profile <name>]
 | `dev-cycle`       | plan → implement → write-files → bun test                          | TypeScript |
 | `rust-dev-cycle`  | plan → implement → write-files → fmt → clippy → test → coverage    | Rust       |
 | `cmake-dev-cycle` | plan → implement → write-files → configure → build → ctest         | C++        |
+
+## Codebase indexer
+
+Index a git repository for semantic code search:
+
+```bash
+# Index a repository
+bun run index-codebase <repo-path> [--force] [--ttl <days>]
+
+# Search the index
+bun run codebase-retrieval <query> [--workspace <path>] [--limit <n>] [--no-refresh]
+```
+
+Requires Ollama running locally with the `nomic-embed-text` model:
+
+```bash
+ollama serve
+ollama pull nomic-embed-text
+```
+
+See [`docs/codebase-indexer.md`](docs/codebase-indexer.md) for full CLI reference,
+environment variables, and language support.
 
 ### Examples
 

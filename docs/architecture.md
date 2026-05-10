@@ -82,7 +82,9 @@ which imports from both packages.
 ```mermaid
 graph LR
     Shared["@ai-coding/shared\nAIRequestEvent · AIAction\nModelDispatcher · Result"]
-    Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · VectorBackend\ncreateBestBackend · LanceStore\nOllamaEmbedder · chunkSkill"]
+    Embeddings["@ai-coding/embeddings\nEmbedder · EmbeddingResult\nOllamaEmbedder · isOllamaReachable"]
+    Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · VectorBackend\ncreateBestBackend · LanceStore\nchunkSkill"]
+    Codebase["@ai-coding/codebase\nCodebaseBackend · indexCodebase\nCodebaseStore · ParserPool\nchunkFile · discoverFiles"]
     Pipeline["@ai-coding/pipeline\nrunPipeline · PipelineStep\nShellStep · NixShellStep\nCoverageGateStep"]
     AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep\nrust/cmake/ts definitions"]
 
@@ -90,12 +92,16 @@ graph LR
     AISystem --> Shared
     AISystem --> Skills
     Skills --> Shared
+    Skills --> Embeddings
+    Codebase --> Embeddings
     Pipeline -.->|"no dependency"| Shared
     Pipeline -.->|"no dependency"| Skills
 
     style Pipeline fill:#2d6a4f,color:#fff
     style Shared fill:#1d3557,color:#fff
     style Skills fill:#2d6a4f,color:#fff
+    style Embeddings fill:#2d6a4f,color:#fff
+    style Codebase fill:#457b9d,color:#fff
     style AISystem fill:#457b9d,color:#fff
 ```
 
@@ -156,6 +162,11 @@ sequenceDiagram
 ```
 ai-coding/
   packages/
+    embeddings/                     Shared embedding abstraction (@ai-coding/embeddings)
+      src/
+        embedder-types.ts            Embedder, EmbeddingResult interfaces
+        ollama-embedder.ts           OllamaEmbedder — POST /api/embed (nomic-embed-text)
+        index.ts                     Barrel export
     pipeline/                       Generic pipeline infrastructure
       src/
         pipeline-types.ts            PipelineStep<T>, PipelineContext<T>, Result, StepResult
@@ -176,9 +187,6 @@ ai-coding/
           file-backend.ts            Phase 1: reads SKILL.md files from disk
           vector-backend.ts          Phase 2: semantic ANN search via LanceDB
           create-backend.ts          createBestBackend() — auto-selects best available backend
-        embeddings/
-          embedder-types.ts          Embedder, EmbeddingResult interfaces
-          ollama-embedder.ts         OllamaEmbedder — POST /api/embed (nomic-embed-text)
         chunking/
           markdown-chunker.ts        chunkSkill() — H2-section splitting with paragraph overflow
         store/
@@ -188,6 +196,28 @@ ai-coding/
           cli.ts                     bun run skill-index CLI
         cli/
           skill-retrieval-cli.ts     bun run skill-retrieval CLI (used by OpenCode tool)
+        index.ts                     Barrel export
+    codebase/                       Codebase RAG indexer (@ai-coding/codebase)
+      src/
+        chunk-types.ts               CodeChunk interface
+        discovery/
+          detect-language.ts         Extension → tree-sitter grammar name
+          discover-files.ts          git ls-files walker; resolveFilePath helper
+        chunking/
+          parser-pool.ts             ParserPool — lazy WASM init + grammar caching
+          node-extractors.ts         CHUNK_NODES map + extractChunks (AST walk)
+          code-chunker.ts            chunkFile — tree-sitter or fallback dispatch
+          fallback-chunker.ts        Heading-aware paragraph splitter
+        store/
+          codebase-store.ts          CodebaseStore — LanceDB codebase table wrapper
+        indexer/
+          index-codebase.ts          indexCodebase — hash-based incremental indexer
+          purge.ts                   purgeStale · purgeDeadRepos · runPostIndexPurge
+          cli.ts                     bun run index-codebase CLI
+        backends/
+          codebase-backend.ts        CodebaseBackend — search with query-time refresh
+        cli/
+          codebase-retrieval-cli.ts  bun run codebase-retrieval CLI
         index.ts                     Barrel export
   ai-system/
     shared/
