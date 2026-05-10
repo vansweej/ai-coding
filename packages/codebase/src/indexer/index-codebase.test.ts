@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile, unlink } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -46,7 +46,11 @@ async function initGitRepo(dir: string): Promise<void> {
   await run(["git", "config", "user.name", "Test"]);
 }
 
-async function createFile(dir: string, relativePath: string, content = "hello world\n"): Promise<void> {
+async function createFile(
+  dir: string,
+  relativePath: string,
+  content = "hello world\n",
+): Promise<void> {
   const full = join(dir, relativePath);
   await mkdir(full.split("/").slice(0, -1).join("/"), { recursive: true });
   await writeFile(full, content);

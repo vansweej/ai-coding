@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import type { Tree } from "web-tree-sitter";
 
-import type { ParserPool } from "./parser-pool";
 import { chunkFile } from "./code-chunker";
+import type { ParserPool } from "./parser-pool";
 
 // ── mock helpers ──────────────────────────────────────────────────────────────
 
@@ -62,7 +62,12 @@ function treeWithFunction(source: string): Tree {
           firstNamedChild: null,
           childForFieldName: (name: string) =>
             name === "name"
-              ? { type: "identifier", text: "myFunc", childForFieldName: () => null, firstNamedChild: null }
+              ? {
+                  type: "identifier",
+                  text: "myFunc",
+                  childForFieldName: () => null,
+                  firstNamedChild: null,
+                }
               : null,
         },
       ],

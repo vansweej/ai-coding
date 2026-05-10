@@ -39,10 +39,6 @@ ai-coding/
       event-types.ts       - Shared type definitions (AIRequestEvent, AIAction, etc.)
   opencode/
     mappings/              - OpenCode provider/model configs (symlinked by Home Manager)
-  .opencode/
-    agents/                - Project-local subagents (planner, debugger, reviewer, tester)
-    commands/              - Pipeline slash commands
-    tools/                 - Custom OpenCode tools (pipeline.ts, codebase-retrieval.ts)
   docs/                    - Project documentation
 ```
 
