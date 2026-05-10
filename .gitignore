@@ -8,3 +8,4 @@ dist/
 # Spar Decision Briefs -- ephemeral working artifacts, not project history
 .spar/
 
+.DS_Store
