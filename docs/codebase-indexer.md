@@ -287,11 +287,14 @@ indexed rows are never swept away immediately after indexing.
 **Manual purge commands:**
 
 ```bash
-# Purge all rows for a specific repo
+# Via bun run (from ai-coding monorepo)
 bun run index-codebase /path/to/repo --purge-only
 
+# Via shell wrapper (from any directory)
+index-codebase --purge-only
+
 # Adjust TTL
-bun run index-codebase /path/to/repo --ttl 7
+index-codebase --ttl 7
 ```
 
 ---
@@ -348,6 +351,70 @@ bun run codebase-retrieval "how does the purge step work"
 
 # Fast query without re-index
 bun run codebase-retrieval "LanceDB schema" --workspace . --no-refresh
+```
+
+---
+
+## Shell Wrappers (run from any directory)
+
+Home Manager deploys two bash wrapper scripts to `~/.local/bin/` so the
+indexer and retrieval CLIs can be invoked from any repository directory
+without `cd`-ing to the ai-coding monorepo first. Both wrappers use
+`$AI_CODING_MONOREPO` (set globally by Home Manager) to locate the monorepo
+and delegate to `bun run --cwd`.
+
+### `index-codebase`
+
+```bash
+# Index the current directory (repo path defaults to $PWD)
+index-codebase
+
+# Index a specific repo
+index-codebase /path/to/repo
+
+# Force full re-index of current directory
+index-codebase --force
+
+# Custom TTL
+index-codebase --ttl 7
+
+# Purge only — no repo path needed
+index-codebase --purge-only
+```
+
+All flags (`--force`, `--ttl`, `--db-path`, `--model`, `--grammars`) are
+forwarded verbatim to the underlying CLI.
+
+### `codebase-retrieval`
+
+```bash
+# Search the current repo (--workspace $PWD is injected automatically)
+codebase-retrieval "hash-based staleness check"
+
+# Search a specific repo
+codebase-retrieval "purge pipeline" --workspace /path/to/repo
+
+# Limit results
+codebase-retrieval "LanceDB schema" --limit 5
+
+# Fast query without incremental re-index
+codebase-retrieval "LanceDB schema" --no-refresh
+```
+
+When `--workspace` is not provided, `$PWD` is injected automatically so
+results are scoped to the repository you are currently working in. Pass
+`--workspace` explicitly to search a different repo or to search globally
+(omit `--workspace` entirely only when you want cross-repo results — but
+note that the wrapper always injects `$PWD` unless you override it).
+
+### Prerequisites
+
+Scripts are deployed by running `home-manager switch` on any machine. After
+the switch, open a new shell (so `~/.local/bin` is on `$PATH`) and verify:
+
+```bash
+which index-codebase       # → ~/.local/bin/index-codebase
+which codebase-retrieval   # → ~/.local/bin/codebase-retrieval
 ```
 
 ---

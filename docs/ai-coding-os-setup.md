@@ -235,13 +235,14 @@ and a pointer to the relevant language skill. Scaffold pipelines (`scaffold-rust
 
 ### Quick path (most common)
 
-1. **Open OpenCode** — `cd my-project && opencode` (or just `opencode` from anywhere)
-2. **Explore first** — switch to the `explore` agent (Tab), ask questions about unfamiliar code
-3. **Plan** — switch to the `plan` agent, describe the change
-4. **Implement** — switch to `build`, tell it to follow the plan
-5. **Run a pipeline** — for self-contained tasks: `/pipeline dev-cycle . "Add error handling"`
-6. **Review** — `@reviewer` checks the diff before committing
-7. **Commit** — the `build` agent commits with conventional commit messages
+1. **Index your repo** — `cd my-project && index-codebase` (first time, or after large changes)
+2. **Open OpenCode** — `opencode` (or just `opencode` from anywhere)
+3. **Explore first** — switch to the `explore` agent (Tab), ask questions about unfamiliar code
+4. **Plan** — switch to the `plan` agent, describe the change
+5. **Implement** — switch to `build`, tell it to follow the plan
+6. **Run a pipeline** — for self-contained tasks: `/pipeline dev-cycle . "Add error handling"`
+7. **Review** — `@reviewer` checks the diff before committing
+8. **Commit** — the `build` agent commits with conventional commit messages
 
 ---
 

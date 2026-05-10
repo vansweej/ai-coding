@@ -103,11 +103,22 @@ bun run pipeline <name> <workspace> [--input "request text"] [--profile <name>]
 Index a git repository for semantic code search:
 
 ```bash
-# Index a repository
+# Via bun run (from the ai-coding monorepo directory)
 bun run index-codebase <repo-path> [--force] [--ttl <days>]
-
-# Search the index
 bun run codebase-retrieval <query> [--workspace <path>] [--limit <n>] [--no-refresh]
+```
+
+If the shell wrappers are installed via Home Manager (`home-manager switch`),
+you can run from any repository directory without referencing the monorepo:
+
+```bash
+# From inside any git repo
+index-codebase              # index current directory
+index-codebase --force      # force full re-index
+index-codebase --purge-only # purge stale rows only
+
+codebase-retrieval "my query"              # search current repo
+codebase-retrieval "my query" --no-refresh # skip incremental re-index
 ```
 
 Requires Ollama running locally with the `nomic-embed-text` model:
