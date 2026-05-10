@@ -27,6 +27,11 @@ export type { IndexCodebaseOptions, IndexCodebaseResult } from "./indexer/index-
 export { indexCodebase } from "./indexer/index-codebase";
 export type { PurgeResult } from "./indexer/purge";
 export { purgeStale, purgeDeadRepos, purgeRepo, runPostIndexPurge } from "./indexer/purge";
+
+// Retrieval backend
+export type { CodebaseResult, CodebaseSearchOptions } from "./backends/codebase-backend";
+export { CodebaseBackend } from "./backends/codebase-backend";
+
 export {
   CodebaseStore,
   DEFAULT_CODEBASE_DB_PATH,

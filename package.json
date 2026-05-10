@@ -16,7 +16,8 @@
     "pipeline": "bun run ai-system/cli/run-pipeline-cli.ts",
     "skill-index": "bun run packages/skills/src/indexer/cli.ts",
     "skill-retrieval": "bun run packages/skills/src/cli/skill-retrieval-cli.ts",
-    "index-codebase": "bun run packages/codebase/src/indexer/cli.ts"
+    "index-codebase": "bun run packages/codebase/src/indexer/cli.ts",
+    "codebase-retrieval": "bun run packages/codebase/src/cli/codebase-retrieval-cli.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.0",
