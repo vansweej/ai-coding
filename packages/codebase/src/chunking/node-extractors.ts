@@ -2,6 +2,7 @@ import type { Tree } from "web-tree-sitter";
 import type { Node as SyntaxNode } from "web-tree-sitter";
 
 import type { CodeChunk } from "../chunk-types";
+import { splitOversized } from "./split-oversized";
 
 /** Maximum characters per chunk before sub-splitting. */
 const DEFAULT_MAX_CHUNK_CHARS = 3000;
@@ -31,8 +32,8 @@ const CHUNK_NODES: Readonly<Record<string, readonly string[]>> = {
     "type_alias_declaration",
     "enum_declaration",
     "export_statement",
-    "lexical_declaration",    // const/let at module level
-    "variable_declaration",  // var at module level
+    "lexical_declaration", // const/let at module level
+    "variable_declaration", // var at module level
     "import_statement",
   ],
   javascript: [
@@ -87,7 +88,7 @@ const CHUNK_NODES: Readonly<Record<string, readonly string[]>> = {
     "decorated_definition",
     "import_statement",
     "import_from_statement",
-    "assignment",             // top-level constants
+    "assignment", // top-level constants
   ],
   haskell: [
     "function",
@@ -103,7 +104,7 @@ const CHUNK_NODES: Readonly<Record<string, readonly string[]>> = {
   lua: [
     "function_declaration",
     "local_function",
-    "assignment_statement",  // module-level assignments
+    "assignment_statement", // module-level assignments
     "local_variable_declaration",
   ],
   julia: [
@@ -212,46 +213,24 @@ function collectChunks(
     return;
   }
 
-  // Sub-split oversized nodes on blank lines
-  const paragraphs = rawText.split(/\n{2,}/);
-  let current = prefix;
+  // Sub-split oversized nodes using the shared three-tier splitter,
+  // which guarantees every piece respects maxChunkChars.
+  const parts = splitOversized(fullText, maxChunkChars);
   let currentStart = startLine;
 
-  for (const para of paragraphs) {
-    const candidate = current.length === 0 ? para : `${current}\n\n${para}`;
-    if (candidate.length <= maxChunkChars) {
-      current = candidate;
-    } else {
-      if (current.trim().length > 0) {
-        const lines = current.split("\n").length;
-        chunks.push({
-          repoId,
-          filePath,
-          symbolName,
-          symbolKind,
-          text: current.trim(),
-          chunkIndex: chunks.length,
-          startLine: currentStart,
-          endLine: currentStart + lines - 1,
-        });
-        currentStart += lines;
-      }
-      current = para;
-    }
-  }
-
-  if (current.trim().length > 0) {
-    const lines = current.split("\n").length;
+  for (const part of parts) {
+    const lines = part.split("\n").length;
     chunks.push({
       repoId,
       filePath,
       symbolName,
       symbolKind,
-      text: current.trim(),
+      text: part,
       chunkIndex: chunks.length,
       startLine: currentStart,
       endLine: currentStart + lines - 1,
     });
+    currentStart += lines;
   }
 }
 

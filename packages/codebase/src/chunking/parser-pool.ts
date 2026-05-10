@@ -16,13 +16,7 @@ import { Language, Parser } from "web-tree-sitter";
  * For example:
  *   `~/.local/share/ai-coding/grammars/tree-sitter-typescript.wasm`
  */
-export const DEFAULT_GRAMMARS_DIR = join(
-  homedir(),
-  ".local",
-  "share",
-  "ai-coding",
-  "grammars",
-);
+export const DEFAULT_GRAMMARS_DIR = join(homedir(), ".local", "share", "ai-coding", "grammars");
 
 /**
  * Manages a pool of `web-tree-sitter` Parser instances, one per language.
@@ -83,8 +77,7 @@ export class ParserPool {
     const wasmPath = this.grammarPath(language);
     if (!existsSync(wasmPath)) {
       throw new Error(
-        `Grammar not found for language "${language}": ${wasmPath}\n` +
-          `Run home-manager switch to deploy grammars, or set AI_CODING_GRAMMARS_DIR.`,
+        `Grammar not found for language "${language}": ${wasmPath}\nRun home-manager switch to deploy grammars, or set AI_CODING_GRAMMARS_DIR.`,
       );
     }
 

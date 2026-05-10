@@ -1,4 +1,5 @@
 import type { CodeChunk } from "../chunk-types";
+import { splitOversized } from "./split-oversized";
 
 /** Maximum characters per chunk before sub-splitting on blank lines. */
 const DEFAULT_MAX_CHUNK_CHARS = 3000;
@@ -50,46 +51,17 @@ export function fallbackChunk(
         makeChunk(repoId, filePath, text, chunks.length, section.startLine, section.endLine),
       );
     } else {
-      // Sub-split oversized sections on blank lines
-      const paragraphs = text.split(/\n{2,}/);
-      let current = "";
-      let currentStart = section.startLine;
+      // Sub-split oversized sections using the shared three-tier splitter,
+      // which guarantees every piece respects maxChunkChars.
+      const parts = splitOversized(text, maxChunkChars);
+      let partStart = section.startLine;
 
-      for (const para of paragraphs) {
-        const candidate = current.length === 0 ? para : `${current}\n\n${para}`;
-        if (candidate.length <= maxChunkChars) {
-          current = candidate;
-        } else {
-          if (current.trim().length > 0) {
-            const paraLines = current.split("\n").length;
-            chunks.push(
-              makeChunk(
-                repoId,
-                filePath,
-                current.trim(),
-                chunks.length,
-                currentStart,
-                currentStart + paraLines - 1,
-              ),
-            );
-            currentStart += paraLines;
-          }
-          current = para;
-        }
-      }
-
-      if (current.trim().length > 0) {
-        const paraLines = current.split("\n").length;
+      for (const part of parts) {
+        const partLines = part.split("\n").length;
         chunks.push(
-          makeChunk(
-            repoId,
-            filePath,
-            current.trim(),
-            chunks.length,
-            currentStart,
-            currentStart + paraLines - 1,
-          ),
+          makeChunk(repoId, filePath, part, chunks.length, partStart, partStart + partLines - 1),
         );
+        partStart += partLines;
       }
     }
   }
