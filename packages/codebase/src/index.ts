@@ -22,8 +22,11 @@ export { chunkFile } from "./chunking/code-chunker";
 export { extractChunks } from "./chunking/node-extractors";
 export { ParserPool, DEFAULT_GRAMMARS_DIR } from "./chunking/parser-pool";
 
-// Store
-export type { CodebaseRow, CodebaseSearchResult } from "./store/codebase-store";
+// Indexer
+export type { IndexCodebaseOptions, IndexCodebaseResult } from "./indexer/index-codebase";
+export { indexCodebase } from "./indexer/index-codebase";
+export type { PurgeResult } from "./indexer/purge";
+export { purgeStale, purgeDeadRepos, purgeRepo, runPostIndexPurge } from "./indexer/purge";
 export {
   CodebaseStore,
   DEFAULT_CODEBASE_DB_PATH,
