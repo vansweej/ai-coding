@@ -9,6 +9,10 @@
         "@types/bun": "^1.2.0",
         "typescript": "^5.7.0",
       },
+      "optionalDependencies": {
+        "@lancedb/lancedb-darwin-arm64": "0.27.2",
+        "@lancedb/lancedb-linux-x64-gnu": "0.27.2",
+      },
     },
     "packages/codebase": {
       "name": "@ai-coding/codebase",
