@@ -46,7 +46,11 @@ async function initGitRepo(dir: string): Promise<void> {
   await run(["git", "config", "user.name", "Test"]);
 }
 
-async function createFile(dir: string, relativePath: string, content = "hello world\n"): Promise<void> {
+async function createFile(
+  dir: string,
+  relativePath: string,
+  content = "hello world\n",
+): Promise<void> {
   const full = join(dir, relativePath);
   await mkdir(full.split("/").slice(0, -1).join("/"), { recursive: true });
   await writeFile(full, content);

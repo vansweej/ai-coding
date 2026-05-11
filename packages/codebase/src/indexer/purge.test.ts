@@ -98,12 +98,7 @@ describe("purgeDeadRepos", () => {
 
   it("returns empty array when no dead repos exist", async () => {
     // Insert rows with a live repo (tmpDir itself exists)
-    await store.upsertFile(
-      tmpDir,
-      "a.ts",
-      [makeChunk(tmpDir, "a.ts")],
-      [makeEmbedding()],
-    );
+    await store.upsertFile(tmpDir, "a.ts", [makeChunk(tmpDir, "a.ts")], [makeEmbedding()]);
     const dead = await purgeDeadRepos(store);
     expect(dead).toHaveLength(0);
     expect(await store.countRows()).toBe(1);
@@ -111,12 +106,7 @@ describe("purgeDeadRepos", () => {
 
   it("removes rows for a repo whose directory does not exist", async () => {
     const deadRepo = "/nonexistent/path/that/definitely/does/not/exist/xyz123";
-    await store.upsertFile(
-      deadRepo,
-      "a.ts",
-      [makeChunk(deadRepo, "a.ts")],
-      [makeEmbedding()],
-    );
+    await store.upsertFile(deadRepo, "a.ts", [makeChunk(deadRepo, "a.ts")], [makeEmbedding()]);
     expect(await store.countRows()).toBe(1);
 
     const dead = await purgeDeadRepos(store);
@@ -126,12 +116,7 @@ describe("purgeDeadRepos", () => {
 
   it("returns the list of purged repo IDs", async () => {
     const deadRepo = "/nonexistent/path/xyz789";
-    await store.upsertFile(
-      deadRepo,
-      "b.ts",
-      [makeChunk(deadRepo, "b.ts")],
-      [makeEmbedding()],
-    );
+    await store.upsertFile(deadRepo, "b.ts", [makeChunk(deadRepo, "b.ts")], [makeEmbedding()]);
 
     const dead = await purgeDeadRepos(store);
     expect(dead).toEqual([deadRepo]);

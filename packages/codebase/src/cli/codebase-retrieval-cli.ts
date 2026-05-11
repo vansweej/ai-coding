@@ -91,7 +91,8 @@ try {
   const output = results
     .map((r, i) => {
       const location = `${r.filePath}:${r.startLine}-${r.endLine}`;
-      const symbol = r.symbolName !== null ? ` (${r.symbolKind?.replace(/_/g, " ")}: ${r.symbolName})` : "";
+      const symbol =
+        r.symbolName !== null ? ` (${r.symbolKind?.replace(/_/g, " ")}: ${r.symbolName})` : "";
       const header = `### [${i + 1}] ${location}${symbol}`;
       return `${header}\n\n${r.text}`;
     })

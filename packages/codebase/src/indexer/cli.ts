@@ -133,11 +133,7 @@ try {
     }
   }
 
-  if (
-    result.indexed.length === 0 &&
-    result.skipped.length === 0 &&
-    result.deleted.length === 0
-  ) {
+  if (result.indexed.length === 0 && result.skipped.length === 0 && result.deleted.length === 0) {
     console.log("\n⚠️   No files found. Is the repo empty or is git ls-files returning nothing?");
   }
 

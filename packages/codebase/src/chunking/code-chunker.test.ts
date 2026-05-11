@@ -62,7 +62,12 @@ function treeWithFunction(source: string): Tree {
           firstNamedChild: null,
           childForFieldName: (name: string) =>
             name === "name"
-              ? { type: "identifier", text: "myFunc", childForFieldName: () => null, firstNamedChild: null }
+              ? {
+                  type: "identifier",
+                  text: "myFunc",
+                  childForFieldName: () => null,
+                  firstNamedChild: null,
+                }
               : null,
         },
       ],
