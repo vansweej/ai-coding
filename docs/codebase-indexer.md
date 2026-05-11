@@ -75,8 +75,11 @@ graph TD
   paragraph splitter, so markdown, TOML, YAML, and other text files are still
   indexed.
 - **Single LanceDB table** — all repos share the `codebase` table, keyed by
-  `repo_id` (= absolute repo root path). Multi-repo global search is a single
-  vector query.
+  `repo_id` (= canonical repo root path, resolved via `realpathSync()`). Multi-repo
+  global search is a single vector query.
+- **Symlink canonicalization** — all repo paths are resolved to their real path
+  via `realpathSync()` at every entry point (CLI, library, and retrieval). This
+  means `/via/symlink` and `/real/path` always resolve to the same `repo_id`.
 
 ---
 
@@ -175,7 +178,7 @@ erDiagram
     CODEBASE_TABLE {
         FixedSizeList vector       "Embedding vector (Ollama dimensions)"
         string        text         "Chunk text with context prefix"
-        string        repo_id      "Absolute repo root path (= repoPath)"
+        string        repo_id      "Canonical real path (realpathSync) of repo root"
         string        file_path    "Path relative to repo root"
         string        symbol_name  "Function/class name or empty string"
         string        symbol_kind  "AST node type or empty string"
@@ -288,14 +291,19 @@ indexed rows are never swept away immediately after indexing.
 
 ```bash
 # Via bun run (from ai-coding monorepo)
-bun run index-codebase /path/to/repo --purge-only
+bun run index-codebase /path/to/repo --purge-only      # TTL + dead-repo sweep
+bun run index-codebase /path/to/repo --purge-repo /path/to/repo  # remove one specific repo
 
 # Via shell wrapper (from any directory)
-index-codebase --purge-only
+index-codebase --purge-only                 # TTL + dead-repo sweep (no Ollama needed)
+index-codebase --purge-repo /path/to/repo  # remove one specific repo (no Ollama needed)
 
 # Adjust TTL
 index-codebase --ttl 7
 ```
+
+> **Offline use:** `--purge-only` and `--purge-repo` do not require Ollama to be
+> running — they exit before the Ollama reachability check.
 
 ---
 
@@ -310,7 +318,8 @@ bun run index-codebase <repo-path> [options]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--force` | off | Re-index all files, bypassing the hash check |
-| `--purge-only` | off | Run only the purge step, no indexing |
+| `--purge-only` | off | Run TTL + dead-repo purge only; no indexing. Does not require Ollama |
+| `--purge-repo <path>` | — | Remove all indexed chunks for a specific repo. Does not require Ollama |
 | `--ttl <days>` | `30` | TTL for the post-index purge sweep |
 | `--db-path <path>` | `~/.local/share/ai-coding/codebase.lance` | LanceDB path |
 | `--model <name>` | `nomic-embed-text` | Ollama embedding model |
@@ -325,6 +334,9 @@ bun run index-codebase /path/to/my-project --force --model mxbai-embed-large
 
 # Nightly cron (large repo, skip TTL purge of freshly indexed rows)
 bun run index-codebase /path/to/poky --ttl 90
+
+# Remove one specific repo from the index (no Ollama needed)
+bun run index-codebase --purge-repo /path/to/old-project
 ```
 
 ### Search the index
@@ -378,11 +390,14 @@ index-codebase --force
 # Custom TTL
 index-codebase --ttl 7
 
-# Purge only — no repo path needed
+# TTL + dead-repo purge only (no Ollama needed)
 index-codebase --purge-only
+
+# Remove a specific repo from the index (no Ollama needed)
+index-codebase --purge-repo /path/to/old-project
 ```
 
-All flags (`--force`, `--ttl`, `--db-path`, `--model`, `--grammars`) are
+All flags (`--force`, `--ttl`, `--purge-only`, `--purge-repo`, `--db-path`, `--model`, `--grammars`) are
 forwarded verbatim to the underlying CLI.
 
 ### `codebase-retrieval`
@@ -543,6 +558,26 @@ By default the `CodebaseBackend` runs an incremental re-index on every search
 
 ```bash
 bun run index-codebase <repo-path>
+```
+
+### Symlink migration — search returns no results after upgrading
+
+All repo paths are now canonicalized with `realpathSync()`. If you previously
+indexed a repo via a symlink path (e.g. `/via/link/my-repo` instead of
+`/real/path/my-repo`), the old rows are keyed under the symlink path and won't
+match queries that resolve to the canonical path.
+
+Fix: re-index the repo to write canonical-path rows:
+
+```bash
+index-codebase /path/to/repo --force
+```
+
+The old symlink-keyed rows will be cleaned up by the TTL purge (default 30
+days). To remove them immediately:
+
+```bash
+index-codebase --purge-only --ttl 0
 ```
 
 ---

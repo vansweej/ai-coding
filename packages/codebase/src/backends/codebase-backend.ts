@@ -1,3 +1,5 @@
+import { realpathSync } from "node:fs";
+
 import type { Embedder } from "@ai-coding/embeddings";
 
 import type { ParserPool } from "../chunking/parser-pool";
@@ -85,11 +87,12 @@ export class CodebaseBackend {
     options: CodebaseSearchOptions = {},
   ): Promise<readonly CodebaseResult[]> {
     const { limit = 10, refresh = true } = options;
+    const canonicalRepo = repoPath !== undefined ? realpathSync(repoPath) : undefined;
 
-    if (refresh && repoPath !== undefined) {
+    if (refresh && canonicalRepo !== undefined) {
       // Incremental re-index — only changed files are re-embedded.
       // TTL is set high so no freshly indexed rows are purged.
-      await indexCodebase(this.embedder, this.store, this.pool, repoPath, {
+      await indexCodebase(this.embedder, this.store, this.pool, canonicalRepo, {
         ttlDays: 3650,
       });
     } else {
@@ -101,8 +104,8 @@ export class CodebaseBackend {
     const { vector } = await this.embedder.embed(query);
 
     const raw =
-      repoPath !== undefined
-        ? await this.store.searchInRepo(vector, repoPath, limit)
+      canonicalRepo !== undefined
+        ? await this.store.searchInRepo(vector, canonicalRepo, limit)
         : await this.store.search(vector, limit);
 
     return raw.map((r) => ({

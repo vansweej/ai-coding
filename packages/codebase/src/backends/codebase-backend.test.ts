@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -122,7 +123,7 @@ describe("CodebaseBackend.search()", () => {
     const results = await backend.search("variable", repoDir, { refresh: true });
 
     for (const r of results) {
-      expect(r.repoId).toBe(repoDir);
+      expect(r.repoId).toBe(realpathSync(repoDir));
     }
   });
 

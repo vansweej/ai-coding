@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile, unlink } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -103,7 +104,7 @@ describe("indexCodebase", () => {
       ttlDays: 3650,
     });
 
-    expect(result.repoId).toBe(repoDir);
+    expect(result.repoId).toBe(realpathSync(repoDir));
   });
 
   it("indexed file names are relative to the repo root", async () => {
@@ -147,7 +148,7 @@ describe("indexCodebase", () => {
     const file = Bun.file(metaPath);
     expect(await file.exists()).toBe(true);
     const meta = (await file.json()) as { repos: Record<string, unknown> };
-    expect(meta.repos[repoDir]).toBeDefined();
+    expect(meta.repos[realpathSync(repoDir)]).toBeDefined();
   });
 
   // ── staleness detection ──────────────────────────────────────────────────────

@@ -21,6 +21,7 @@
  */
 
 /* v8 ignore start */
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { OllamaEmbedder, isOllamaReachable } from "@ai-coding/embeddings";
@@ -52,7 +53,7 @@ if (query === undefined) {
 }
 
 const workspaceArg = option("--workspace", "");
-const repoPath = workspaceArg.length > 0 ? resolve(workspaceArg) : undefined;
+const repoPath = workspaceArg.length > 0 ? realpathSync(resolve(workspaceArg)) : undefined;
 const limitRaw = option("--limit", "10");
 const limit = Number.parseInt(limitRaw, 10);
 const noRefresh = flag("--no-refresh");

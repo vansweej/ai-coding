@@ -3,6 +3,8 @@ import type { Embedder } from "@ai-coding/embeddings";
 import { chunkFile } from "../chunking/code-chunker";
 import type { ParserPool } from "../chunking/parser-pool";
 import { detectLanguage } from "../discovery/detect-language";
+import { realpathSync } from "node:fs";
+
 import { discoverFiles, resolveFilePath } from "../discovery/discover-files";
 import type { CodebaseStore } from "../store/codebase-store";
 import { type PurgeResult, runPostIndexPurge } from "./purge";
@@ -98,7 +100,7 @@ export async function indexCodebase(
 ): Promise<IndexCodebaseResult> {
   const { force = false, ttlDays } = options;
   const metaPath = options.metaPath ?? `${store.dbPath}.meta.json`;
-  const repoId = repoPath;
+  const repoId = realpathSync(repoPath);
 
   // Load existing meta (empty on first run or when force=true)
   const globalMeta: GlobalMeta = force ? { repos: {} } : await loadGlobalMeta(metaPath);

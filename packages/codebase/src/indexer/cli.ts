@@ -9,23 +9,25 @@
  *                   to the git repository root to index.
  *
  * Options:
- *   --force         Re-index all files, ignoring staleness hashes.
- *   --purge-only    Run only the TTL + dead-repo purge; skip indexing.
- *   --ttl <days>    TTL in days for stale-row purging (default: 30).
- *   --db-path <p>   Override the LanceDB path.
- *   --model <name>  Ollama embedding model (default: nomic-embed-text).
- *   --grammars <p>  Override the tree-sitter grammars directory.
+ *   --force              Re-index all files, ignoring staleness hashes.
+ *   --purge-only         Run only the TTL + dead-repo purge; skip indexing.
+ *   --purge-repo <path>  Remove all indexed chunks for a specific repo.
+ *   --ttl <days>         TTL in days for stale-row purging (default: 30).
+ *   --db-path <p>        Override the LanceDB path.
+ *   --model <name>       Ollama embedding model (default: nomic-embed-text).
+ *   --grammars <p>       Override the tree-sitter grammars directory.
  */
 
 /* v8 ignore start */
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { OllamaEmbedder, isOllamaReachable } from "@ai-coding/embeddings";
 
-import { ParserPool, DEFAULT_GRAMMARS_DIR } from "../chunking/parser-pool";
-import { DEFAULT_CODEBASE_DB_PATH, DEFAULT_TTL_DAYS, CodebaseStore } from "../store/codebase-store";
+import { DEFAULT_GRAMMARS_DIR, ParserPool } from "../chunking/parser-pool";
+import { CodebaseStore, DEFAULT_CODEBASE_DB_PATH, DEFAULT_TTL_DAYS } from "../store/codebase-store";
 import { indexCodebase } from "./index-codebase";
-import { runPostIndexPurge } from "./purge";
+import { purgeRepo, runPostIndexPurge } from "./purge";
 
 const args = process.argv.slice(2);
 
@@ -41,15 +43,16 @@ function option(name: string, fallback: string): string {
 const repoArg = args.find((a) => !a.startsWith("--"));
 const force = flag("--force");
 const purgeOnly = flag("--purge-only");
+const purgeRepoArg = option("--purge-repo", "");
 const ttlRaw = option("--ttl", String(DEFAULT_TTL_DAYS));
 const ttlDays = Number.parseInt(ttlRaw, 10);
 const dbPath = option("--db-path", DEFAULT_CODEBASE_DB_PATH);
 const model = option("--model", "nomic-embed-text");
 const grammarsDir = option("--grammars", DEFAULT_GRAMMARS_DIR);
 
-if (!purgeOnly && repoArg === undefined) {
+if (!purgeOnly && !purgeRepoArg && repoArg === undefined) {
   console.error(
-    "Usage: index-codebase <repo-path> [--force] [--purge-only] [--ttl <days>]\n" +
+    "Usage: index-codebase <repo-path> [--force] [--purge-only] [--purge-repo <path>] [--ttl <days>]\n" +
       "                     [--db-path <path>] [--model <name>] [--grammars <dir>]",
   );
   process.exit(1);
@@ -60,15 +63,9 @@ if (Number.isNaN(ttlDays)) {
   process.exit(1);
 }
 
-console.log("🔍  Checking Ollama availability…");
-const reachable = await isOllamaReachable();
-if (!reachable) {
-  console.error("❌  Ollama is not reachable at http://localhost:11434");
-  console.error("    Start Ollama with: ollama serve");
-  process.exit(1);
-}
-
 const store = new CodebaseStore(dbPath);
+
+// ── offline-safe handlers (no Ollama needed) ─────────────────────────────────
 
 if (purgeOnly) {
   console.log(`💾  LanceDB path: ${dbPath}`);
@@ -90,7 +87,30 @@ if (purgeOnly) {
   process.exit(0);
 }
 
-const repoPath = resolve(repoArg as string);
+if (purgeRepoArg) {
+  const repoPath = realpathSync(resolve(purgeRepoArg));
+  console.log(`💾  LanceDB path: ${dbPath}`);
+  console.log(`🗑️   Purging repo: ${repoPath}…`);
+
+  await store.open();
+  await purgeRepo(store, repoPath);
+
+  console.log(`✅  Purged all chunks for: ${repoPath}`);
+  console.log("\n✨  Done.");
+  process.exit(0);
+}
+
+// ── indexing (requires Ollama) ────────────────────────────────────────────────
+
+console.log("🔍  Checking Ollama availability…");
+const reachable = await isOllamaReachable();
+if (!reachable) {
+  console.error("❌  Ollama is not reachable at http://localhost:11434");
+  console.error("    Start Ollama with: ollama serve");
+  process.exit(1);
+}
+
+const repoPath = realpathSync(resolve(repoArg as string));
 
 console.log(`📂  Repository: ${repoPath}`);
 console.log(`💾  LanceDB path: ${dbPath}`);

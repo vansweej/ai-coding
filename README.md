@@ -105,6 +105,7 @@ Index a git repository for semantic code search:
 ```bash
 # Via bun run (from the ai-coding monorepo directory)
 bun run index-codebase <repo-path> [--force] [--ttl <days>]
+bun run index-codebase --purge-repo <path>   # remove a specific repo (no Ollama needed)
 bun run codebase-retrieval <query> [--workspace <path>] [--limit <n>] [--no-refresh]
 ```
 
@@ -115,7 +116,8 @@ you can run from any repository directory without referencing the monorepo:
 # From inside any git repo
 index-codebase              # index current directory
 index-codebase --force      # force full re-index
-index-codebase --purge-only # purge stale rows only
+index-codebase --purge-only          # purge stale rows only (no Ollama needed)
+index-codebase --purge-repo /old/repo  # remove a specific repo (no Ollama needed)
 
 codebase-retrieval "my query"              # search current repo
 codebase-retrieval "my query" --no-refresh # skip incremental re-index
