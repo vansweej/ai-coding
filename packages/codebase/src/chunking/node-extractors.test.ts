@@ -30,7 +30,7 @@ function fakeNode(params: {
     startPosition: { row: params.startRow ?? 0, column: 0 },
     endPosition: { row: params.endRow ?? 0, column: 0 },
     startIndex: params.startIndex ?? 0,
-    endIndex: params.endIndex ?? (params.text?.length ?? 10),
+    endIndex: params.endIndex ?? params.text?.length ?? 10,
     children: params.children ?? [],
     firstNamedChild: params.firstNamedChild ?? null,
     childForFieldName: (name: string) => params.fields?.[name] ?? null,
@@ -424,6 +424,24 @@ describe("extractChunks — oversized chunk sub-splitting", () => {
     ]);
 
     const chunks = extractChunks(tree, source, REPO_ID, FILE_PATH, "typescript", 80);
+    for (const chunk of chunks) {
+      expect(chunk.text.length).toBeLessThanOrEqual(80);
+    }
+  });
+
+  it("does not exceed maxChunkChars even for a single dense node with no newlines", () => {
+    // Pathological case: no blank lines, no newlines — previously slipped through
+    const source = "z".repeat(300);
+    const tree = fakeTree([
+      fakeNode({
+        type: "function_declaration",
+        startIndex: 0,
+        endIndex: source.length,
+        fields: { name: fakeNode({ type: "identifier", text: "dense" }) },
+      }),
+    ]);
+    const chunks = extractChunks(tree, source, REPO_ID, FILE_PATH, "typescript", 80);
+    expect(chunks.length).toBeGreaterThanOrEqual(4);
     for (const chunk of chunks) {
       expect(chunk.text.length).toBeLessThanOrEqual(80);
     }

@@ -84,4 +84,14 @@ describe("fallbackChunk", () => {
     const chunks = fallbackChunk(REPO_ID, FILE_PATH, "single line");
     expect(chunks).toHaveLength(1);
   });
+
+  it("does not exceed maxChunkChars even for a single dense line with no newlines", () => {
+    // Pathological case: no blank lines, no newlines — previously slipped through
+    const content = "x".repeat(5000);
+    const chunks = fallbackChunk(REPO_ID, FILE_PATH, content, 2500);
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+    for (const chunk of chunks) {
+      expect(chunk.text.length).toBeLessThanOrEqual(2500);
+    }
+  });
 });
