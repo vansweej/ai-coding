@@ -21,7 +21,7 @@
       bunCacheHashes = {
         "aarch64-darwin" = "sha256-IhkAEL/j+YzQsk37IVRSMis4wYWxFuWetUMKtz/+NeM=";
         "x86_64-linux"   = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-        "aarch64-linux"  = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        "aarch64-linux"  = "sha256-g3TMVss4v/lZRMXhpT/0uoEFZ+91U6gD866MoM8xkSs=";
       };
     in
     {
