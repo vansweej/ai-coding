@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import type { Tree } from "web-tree-sitter";
 
-import type { ParserPool } from "./parser-pool";
 import { chunkFile } from "./code-chunker";
+import type { ParserPool } from "./parser-pool";
 
 // ── mock helpers ──────────────────────────────────────────────────────────────
 

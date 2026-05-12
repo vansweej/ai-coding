@@ -26,9 +26,9 @@ import { resolve } from "node:path";
 
 import { OllamaEmbedder, isOllamaReachable } from "@ai-coding/embeddings";
 
-import { ParserPool, DEFAULT_GRAMMARS_DIR } from "../chunking/parser-pool";
-import { DEFAULT_CODEBASE_DB_PATH, CodebaseStore } from "../store/codebase-store";
 import { CodebaseBackend } from "../backends/codebase-backend";
+import { DEFAULT_GRAMMARS_DIR, ParserPool } from "../chunking/parser-pool";
+import { CodebaseStore, DEFAULT_CODEBASE_DB_PATH } from "../store/codebase-store";
 
 const args = process.argv.slice(2);
 
