@@ -9,13 +9,14 @@
  *                   to the git repository root to index.
  *
  * Options:
- *   --force              Re-index all files, ignoring staleness hashes.
- *   --purge-only         Run only the TTL + dead-repo purge; skip indexing.
- *   --purge-repo <path>  Remove all indexed chunks for a specific repo.
- *   --ttl <days>         TTL in days for stale-row purging (default: 30).
- *   --db-path <p>        Override the LanceDB path.
- *   --model <name>       Ollama embedding model (default: nomic-embed-text).
- *   --grammars <p>       Override the tree-sitter grammars directory.
+ *   --force                  Re-index all files, ignoring staleness hashes.
+ *   --purge-only             Run only the TTL + dead-repo purge; skip indexing.
+ *   --purge-repo <path>      Remove all indexed chunks for a specific repo.
+ *   --ttl <days>             TTL in days for stale-row purging (default: 30).
+ *   --db-path <p>            Override the LanceDB path.
+ *   --model <name>           Ollama embedding model (default: nomic-embed-text).
+ *   --grammars <p>           Override the tree-sitter grammars directory.
+ *   --max-file-bytes <n>     Skip files exceeding this byte size (default: 100000).
  */
 
 /* v8 ignore start */
@@ -49,17 +50,25 @@ const ttlDays = Number.parseInt(ttlRaw, 10);
 const dbPath = option("--db-path", DEFAULT_CODEBASE_DB_PATH);
 const model = option("--model", "nomic-embed-text");
 const grammarsDir = option("--grammars", DEFAULT_GRAMMARS_DIR);
+const maxFileBytesRaw = option("--max-file-bytes", "");
+const maxFileSizeBytes = maxFileBytesRaw ? Number.parseInt(maxFileBytesRaw, 10) : undefined;
 
 if (!purgeOnly && !purgeRepoArg && repoArg === undefined) {
   console.error(
     "Usage: index-codebase <repo-path> [--force] [--purge-only] [--purge-repo <path>] [--ttl <days>]\n" +
-      "                     [--db-path <path>] [--model <name>] [--grammars <dir>]",
+      "                     [--db-path <path>] [--model <name>] [--grammars <dir>]\n" +
+      "                     [--max-file-bytes <n>]",
   );
   process.exit(1);
 }
 
 if (Number.isNaN(ttlDays)) {
   console.error(`❌  Invalid --ttl value: "${ttlRaw}" (must be an integer)`);
+  process.exit(1);
+}
+
+if (maxFileSizeBytes !== undefined && Number.isNaN(maxFileSizeBytes)) {
+  console.error(`❌  Invalid --max-file-bytes value: "${maxFileBytesRaw}" (must be an integer)`);
   process.exit(1);
 }
 
@@ -118,6 +127,7 @@ console.log(`🤖  Embedding model: ${model}`);
 console.log(`📁  Grammars dir: ${grammarsDir}`);
 if (force) console.log("⚡  Force mode: re-indexing all files");
 if (ttlDays !== DEFAULT_TTL_DAYS) console.log(`⏱️   TTL: ${ttlDays} days`);
+if (maxFileSizeBytes !== undefined) console.log(`📏  Max file size: ${maxFileSizeBytes} bytes`);
 
 const embedder = new OllamaEmbedder(model);
 const pool = new ParserPool(grammarsDir);
@@ -126,6 +136,7 @@ try {
   const result = await indexCodebase(embedder, store, pool, repoPath, {
     force,
     ttlDays,
+    maxFileSizeBytes,
   });
 
   if (result.indexed.length > 0) {
@@ -137,6 +148,13 @@ try {
 
   if (result.skipped.length > 0) {
     console.log(`\n⏭️   Skipped unchanged (${result.skipped.length})`);
+  }
+
+  if (result.oversized.length > 0) {
+    console.log(`\n⚠️   Skipped oversized files (${result.oversized.length}):`);
+    for (const f of result.oversized) {
+      console.log(`    • ${f}`);
+    }
   }
 
   if (result.deleted.length > 0) {
@@ -153,7 +171,12 @@ try {
     }
   }
 
-  if (result.indexed.length === 0 && result.skipped.length === 0 && result.deleted.length === 0) {
+  if (
+    result.indexed.length === 0 &&
+    result.skipped.length === 0 &&
+    result.deleted.length === 0 &&
+    result.oversized.length === 0
+  ) {
     console.log("\n⚠️   No files found. Is the repo empty or is git ls-files returning nothing?");
   }
 

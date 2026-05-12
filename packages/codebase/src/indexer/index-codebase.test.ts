@@ -291,6 +291,90 @@ describe("indexCodebase", () => {
     expect(result.indexed).toContain("src/app.ts");
   });
 
+  // ── file size cap ────────────────────────────────────────────────────────────
+
+  it("skips files exceeding maxFileSizeBytes and reports them in oversized", async () => {
+    await createFile(repoDir, "big.h", "x".repeat(200));
+
+    const result = await indexCodebase(embedder, store, pool, repoDir, {
+      metaPath,
+      ttlDays: 3650,
+      maxFileSizeBytes: 10,
+    });
+
+    expect(result.oversized).toContain("big.h");
+    expect(result.indexed).not.toContain("big.h");
+    expect(await store.countRows()).toBe(0);
+  });
+
+  it("indexes files at exactly the maxFileSizeBytes limit", async () => {
+    const content = "x".repeat(10);
+    await createFile(repoDir, "exact.h", content);
+
+    const result = await indexCodebase(embedder, store, pool, repoDir, {
+      metaPath,
+      ttlDays: 3650,
+      maxFileSizeBytes: 10,
+    });
+
+    expect(result.indexed).toContain("exact.h");
+    expect(result.oversized).not.toContain("exact.h");
+  });
+
+  it("preserves hash sentinel so oversized files stay skipped on re-run", async () => {
+    await createFile(repoDir, "big.h", "x".repeat(200));
+
+    await indexCodebase(embedder, store, pool, repoDir, {
+      metaPath,
+      ttlDays: 3650,
+      maxFileSizeBytes: 10,
+    });
+
+    const result = await indexCodebase(embedder, store, pool, repoDir, {
+      metaPath,
+      ttlDays: 3650,
+      maxFileSizeBytes: 10,
+    });
+
+    expect(result.oversized).toContain("big.h");
+    expect(result.indexed).not.toContain("big.h");
+  });
+
+  it("indexes a previously oversized file once it shrinks below the limit", async () => {
+    await createFile(repoDir, "shrinking.h", "x".repeat(200));
+
+    await indexCodebase(embedder, store, pool, repoDir, {
+      metaPath,
+      ttlDays: 3650,
+      maxFileSizeBytes: 10,
+    });
+
+    await writeFile(join(repoDir, "shrinking.h"), "small");
+
+    const result = await indexCodebase(embedder, store, pool, repoDir, {
+      metaPath,
+      ttlDays: 3650,
+      maxFileSizeBytes: 10,
+    });
+
+    expect(result.indexed).toContain("shrinking.h");
+    expect(result.oversized).not.toContain("shrinking.h");
+  });
+
+  it("force=true does not override maxFileSizeBytes", async () => {
+    await createFile(repoDir, "big.h", "x".repeat(200));
+
+    const result = await indexCodebase(embedder, store, pool, repoDir, {
+      metaPath,
+      ttlDays: 3650,
+      maxFileSizeBytes: 10,
+      force: true,
+    });
+
+    expect(result.oversized).toContain("big.h");
+    expect(result.indexed).not.toContain("big.h");
+  });
+
   // ── error propagation ────────────────────────────────────────────────────────
 
   it("throws when repoPath is not a git repository", async () => {

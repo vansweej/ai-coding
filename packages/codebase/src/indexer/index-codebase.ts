@@ -1,9 +1,9 @@
 import type { Embedder } from "@ai-coding/embeddings";
 
+import { realpathSync } from "node:fs";
 import { chunkFile } from "../chunking/code-chunker";
 import type { ParserPool } from "../chunking/parser-pool";
 import { detectLanguage } from "../discovery/detect-language";
-import { realpathSync } from "node:fs";
 
 import { discoverFiles, resolveFilePath } from "../discovery/discover-files";
 import type { CodebaseStore } from "../store/codebase-store";
@@ -28,6 +28,20 @@ export interface IndexCodebaseOptions {
    * Default: {@link DEFAULT_TTL_DAYS} (30).
    */
   readonly ttlDays?: number;
+  /**
+   * Maximum file size in bytes. Files exceeding this limit are skipped without
+   * reading their content into memory — they are reported in `result.oversized`.
+   *
+   * The check uses `Bun.file().size` (bytes) before calling `.text()`. For
+   * UTF-8 source code bytes >= chars, making this a safe conservative filter
+   * that avoids loading huge files into memory before discarding them.
+   *
+   * Note: `force: true` does NOT override this limit — you cannot embed a
+   * file that exceeds the embedding model's context window regardless.
+   *
+   * Default: `100_000`.
+   */
+  readonly maxFileSizeBytes?: number;
 }
 
 /** Result returned by {@link indexCodebase}. */
@@ -43,6 +57,13 @@ export interface IndexCodebaseResult {
    * (deleted or `.gitignore`d). Their chunks have been removed from the store.
    */
   readonly deleted: readonly string[];
+  /**
+   * Files skipped because their byte size exceeds `maxFileSizeBytes`.
+   * These are never read into memory. Their hash is stored as `""` so they
+   * are not re-attempted on subsequent runs unless the file shrinks below
+   * the limit (at which point the hash changes and the file is re-indexed).
+   */
+  readonly oversized: readonly string[];
   /** ISO-8601 cutoff date used for the TTL purge sweep. */
   readonly staleBefore: string;
   /** Repo IDs whose root directory no longer exists on disk and were purged. */
@@ -98,7 +119,7 @@ export async function indexCodebase(
   repoPath: string,
   options: IndexCodebaseOptions = {},
 ): Promise<IndexCodebaseResult> {
-  const { force = false, ttlDays } = options;
+  const { force = false, ttlDays, maxFileSizeBytes = 100_000 } = options;
   const metaPath = options.metaPath ?? `${store.dbPath}.meta.json`;
   const repoId = realpathSync(repoPath);
 
@@ -119,6 +140,7 @@ export async function indexCodebase(
 
   const indexed: string[] = [];
   const skipped: string[] = [];
+  const oversized: string[] = [];
   const newFileHashes: Record<string, string> = {};
 
   for (const filePath of discoveredFiles) {
@@ -126,6 +148,17 @@ export async function indexCodebase(
     const file = Bun.file(absolutePath);
 
     if (!(await file.exists())) continue;
+
+    // Check byte size before reading content into memory.
+    // For UTF-8 source code bytes >= chars, so this is a safe conservative
+    // check. The hash is preserved as "" so the file is not re-attempted on
+    // subsequent runs unless its content changes (and thus its size changes).
+    if (file.size > maxFileSizeBytes) {
+      console.warn(`⚠️   Skipping oversized file (${file.size} bytes): ${filePath}`);
+      oversized.push(filePath);
+      newFileHashes[filePath] = existingRepoMeta.fileHashes[filePath] ?? "";
+      continue;
+    }
 
     const content = await file.text();
     const hash = await sha256(content);
@@ -176,6 +209,7 @@ export async function indexCodebase(
     indexed,
     skipped,
     deleted,
+    oversized,
     staleBefore: purgeResult.staleBefore,
     deadRepos: purgeResult.deadRepos,
   };
