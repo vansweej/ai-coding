@@ -7,6 +7,16 @@
     "reserved": 10000
   },
   "permission": {
+    "edit": "ask",
+    "write": "ask",
+    "bash": {
+      "*": "deny",
+      "git log*": "allow",
+      "git diff*": "allow",
+      "git status": "allow",
+      "git show*": "allow",
+      "git branch*": "allow"
+    },
     "pipeline": "deny"
   }
 }

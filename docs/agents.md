@@ -24,13 +24,14 @@ under `~/.config/opencode/agents/`.
 
 | Name | Model | Temp | Write | Web | Purpose |
 |------|-------|------|-------|-----|---------|
+| *(top-level default)* | Sonnet 4.6 | — | ask | — | Starting point before selecting a named agent — read-only git, prompts on edit/write |
 | `plan` | Opus 4.6 | 0.3 | deny | ask | Architecture decisions and deep analysis |
 | `build` | Sonnet 4.6 | 0.5 | allow | — | Full development — implement, refactor, test, ship |
 | `local` | Sonnet 4.6 | 0.3 | allow | — | General-purpose experimentation |
 | `explore` | Sonnet 4.6 | 0.3 | deny | allow | Read-only codebase exploration and Q&A |
-| `spar` | Opus 4.6 | 0.5 | ask | allow | Socratic sparring partner for feature discussions |
+| `spar` | Opus 4.6 | 0.5 | ask | allow | Socratic sparring partner — writes only to `.spar/brief.md` |
 | `teach` | Opus 4.6 | 0.5 | deny | allow | Adaptive tutor — teaches from project context and broad knowledge |
-| `brainstorm` | Opus 4.6 | 0.6 | ask | allow | Generative brainstorming — explores new ideas, presents choices, researches prior art |
+| `brainstorm` | Opus 4.6 | 0.6 | ask | allow | Generative brainstorming — writes only to `.brainstorm/brief.md` |
 
 ### plan
 
@@ -87,6 +88,9 @@ When you signal you are ready to move to planning, `spar` produces a structured
 Decision Brief (see [The Spar → Plan Handoff](#the-spar--plan-handoff-optional)
 below) and offers to write it to `.spar/brief.md`. You confirm the write. The
 `plan` agent reads this file automatically on its next session start.
+
+`spar` may **only** write to `.spar/brief.md` — it will refuse any request to
+write, edit, or create any other file.
 
 **When to use `spar`:**
 - The feature touches multiple modules or has unclear scope
@@ -209,6 +213,9 @@ When you signal you are ready to move forward, `brainstorm` produces a
 structured Idea Brief (see [The Brainstorm → Spar Handoff](#the-brainstorm--spar-handoff-optional)
 below) and offers to write it to `.brainstorm/brief.md`. You confirm the write.
 The `spar` agent reads this file automatically on its next session start.
+
+`brainstorm` may **only** write to `.brainstorm/brief.md` — it will refuse any
+request to write, edit, or create any other file.
 
 **When to use `brainstorm`:**
 - You have a vague sense that you want to build something but no concrete idea
@@ -476,13 +483,52 @@ teach → explore → plan → build → @reviewer → commit
 
 ---
 
+## Permission Model
+
+All agents inherit from the top-level defaults set in `opencode.json`. Named
+agents override only what they need via their frontmatter `permission` block.
+
+```mermaid
+graph TD
+    TL["Top-level default<br/>edit: ask | write: ask<br/>bash: git read-only only<br/>pipeline: deny"]
+
+    RO["Read-only agents<br/>plan · explore · teach<br/>edit: deny | write: deny<br/>bash: git read-only only"]
+
+    HO["Handoff agents<br/>brainstorm · spar<br/>edit: deny | write: ask<br/>bash: git read-only only<br/>⚠ writes scoped to .brainstorm/ and .spar/ only"]
+
+    CG["Code generators<br/>build · local<br/>pipeline: allow<br/>full file and shell access"]
+
+    SA["Subagents<br/>planner · debugger · reviewer · tester<br/>edit: deny | write: deny<br/>bash: git read-only<br/>+ bun test for debugger, reviewer, tester"]
+
+    TL -->|user selects| RO
+    TL -->|user selects| HO
+    TL -->|user selects| CG
+    CG -->|"@delegates"| SA
+```
+
+Key rules:
+- **Code generators** (`build`, `local`) are the only agents with unrestricted
+  file and shell access — they are the intended code-writing agents.
+- **Handoff agents** (`brainstorm`, `spar`) may only write to their dedicated
+  brief files (`.brainstorm/brief.md` and `.spar/brief.md` respectively). Any
+  other write is a violation of their scope.
+- **All other agents** are fully read-only — no file writes under any circumstance.
+- The **top-level default** is locked down to `ask` for edit/write and denies
+  all bash except read-only git — preventing accidental writes before a named
+  agent is selected.
+
+---
+
 ## Agent Design Principles
 
 - **Clear, non-overlapping purpose** -- each agent does one thing well; if two
   agents feel interchangeable, one of them needs a sharper definition
 - **Minimal permissions** -- agents get only the access they need; read-only
   agents never have write/edit permissions (spar and brainstorm are the sole
-  exceptions, with `write: ask` for their single handoff files)
+  exceptions, with `write: ask` scoped strictly to their brief files). The
+  top-level default (`opencode.json`) is locked to `ask` for edit/write and
+  denies all bash except read-only git — the safest posture before a named
+  agent is selected.
 - **Temperature guidelines:**
   - 0.1–0.2: diagnostic (debugger) -- deterministic, precise
   - 0.2–0.3: analytical (planner, reviewer, tester, plan, explore) -- structured

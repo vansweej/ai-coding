@@ -148,6 +148,28 @@ Target **90% code coverage**. Exclude untestable code with:
 
 ---
 
+## OpenCode Permissions
+
+`opencode.json` sets locked-down defaults for the **top-level assistant** — the
+starting context before the user selects a named agent:
+
+| Permission | Default |
+|------------|---------|
+| `edit` | `ask` — prompts before editing any file |
+| `write` | `ask` — prompts before creating any file |
+| `bash` | `deny` for all commands except read-only git (`git log*`, `git diff*`, `git status`, `git show*`, `git branch*`) |
+| `pipeline` | `deny` |
+
+Named agents override these via their frontmatter `permission` block. Code
+generators (`build`, `local`) are the only agents with unrestricted access.
+Handoff agents (`brainstorm`, `spar`) may write only to their brief files.
+See `docs/agents.md` → Permission Model for the full hierarchy.
+
+When modifying `opencode.json` permissions: changes take effect for all
+machines that source it via the home-manager `ai-coding` flake input. Run
+`nix flake update ai-coding` in the home-manager repo and `home-manager switch`
+after pushing.
+
 ## Code Style & Testing
 
 Conventions for TypeScript formatting (Biome), naming, imports, type rules,
