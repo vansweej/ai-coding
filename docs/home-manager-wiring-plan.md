@@ -19,7 +19,7 @@ not just when OpenCode is launched from inside `~/Projects/ai-coding/`.
 |------|-------|--------|
 | Agent profiles | `.opencode/agents/planner.md` | Worked only in `ai-coding/` project |
 | Agent profiles | `.opencode/agents/debugger.md` | Worked only in `ai-coding/` project |
-| OpenCode config | `opencode/mappings/opencode.json` | Source for Home Manager symlink |
+| OpenCode config | `opencode.json` | Source for Home Manager symlink |
 | Home Manager config | `~/Projects/home-manager/home.nix` | No OpenCode entries yet |
 
 The `opencode/` directory was explicitly designed as a Home Manager symlink
@@ -54,7 +54,7 @@ After `home-manager switch`:
 │   ├── debugger.md   → ~/Projects/home-manager/opencode/agents/debugger.md
 │   ├── reviewer.md   → ~/Projects/home-manager/opencode/agents/reviewer.md
 │   └── tester.md     → ~/Projects/home-manager/opencode/agents/tester.md
-└── opencode.json     ⇝ ~/Projects/ai-coding/opencode/mappings/opencode.json (live symlink)
+└── opencode.json     ⇝ ~/Projects/ai-coding/opencode.json (live symlink)
 ```
 
 All subagents work in any project. `claude-sonnet-4.6` via GitHub Copilot is
@@ -86,7 +86,7 @@ home.file = {
 
   ".config/opencode/opencode.json".source =
     config.lib.file.mkOutOfStoreSymlink
-      "${config.home.homeDirectory}/Projects/ai-coding/opencode/mappings/opencode.json";
+      "${config.home.homeDirectory}/Projects/ai-coding/opencode.json";
 };
 ```
 
@@ -106,7 +106,7 @@ present:
 ```bash
 ls ~/Projects/ai-coding/opencode/profiles/planner.md
 ls ~/Projects/ai-coding/opencode/profiles/debugger.md
-ls ~/Projects/ai-coding/opencode/mappings/opencode.json
+ls ~/Projects/ai-coding/opencode.json
 ```
 
 ### Step 4 — Apply with home-manager switch
@@ -126,7 +126,7 @@ ls -la ~/.config/opencode/agents/
 Expected output:
 
 ```
-~/.config/opencode/opencode.json  ->  ~/Projects/ai-coding/opencode/mappings/opencode.json
+~/.config/opencode/opencode.json  ->  ~/Projects/ai-coding/opencode.json
 ~/.config/opencode/agents/planner.md   ->  ~/Projects/ai-coding/opencode/profiles/planner.md
 ~/.config/opencode/agents/debugger.md  ->  ~/Projects/ai-coding/opencode/profiles/debugger.md
 ```
@@ -153,10 +153,8 @@ opencode
   No manual `mkdir` needed.
 
 - The `opencode.json` at the repo root (`~/Projects/ai-coding/opencode.json`)
-  is a separate file used when running OpenCode from inside the `ai-coding`
-  project. The symlink targets `opencode/mappings/opencode.json` for the global
-  config. Both files have identical contents -- they can be kept in sync or
-  merged into one source of truth later.
+  is the single source of truth for the global OpenCode config. The symlink in
+  `~/.config/opencode/opencode.json` points directly to this file.
 
 ---
 

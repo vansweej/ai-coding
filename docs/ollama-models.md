@@ -195,7 +195,7 @@ On a completely fresh machine the sequence is:
    )
    ```
 
-3. **Declare it in `opencode/mappings/opencode.json`** under `provider.ollama.models`.
+3. **Declare it in `opencode.json`** under `provider.ollama.models`.
 
 4. **Update this file** (`docs/ollama-models.md`) with the new model's description.
 

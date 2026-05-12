@@ -47,7 +47,7 @@
 #    comment block explaining why the derivative exists.
 # 2. Add an entry to the MODELS array below:
 #      "output-name  path/to/file.Modelfile"
-# 3. Add the model ID to opencode/mappings/opencode.json.
+# 3. Add the model ID to opencode.json.
 # 4. Update docs/ollama-models.md with the new model's description.
 # 5. Commit both repos and run `home-manager switch`.
 

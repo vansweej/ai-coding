@@ -74,7 +74,7 @@
 # To add another derivative model:
 #   1. Create a new Modelfile in this directory following this pattern.
 #   2. Add its name to the MODELS array in ollama/setup.sh.
-#   3. Add the model ID to opencode/mappings/opencode.json.
+#   3. Add the model ID to opencode.json.
 #   4. Update docs/ollama-models.md with the new model's description.
 #   5. Commit both repos and run `home-manager switch`.
 #
