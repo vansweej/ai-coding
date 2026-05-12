@@ -315,6 +315,134 @@ describe("extractChunks — container node recursion", () => {
   });
 });
 
+describe("extractChunks — C++ container node recursion", () => {
+  it("recurses into namespace_definition and emits member functions as separate chunks", () => {
+    const source = "namespace Foo { void bar() {} void baz() {} }";
+    const bar = fakeNode({
+      type: "function_definition",
+      startIndex: 16,
+      endIndex: 29,
+      fields: { declarator: fakeNode({ type: "identifier", text: "bar" }) },
+    });
+    const baz = fakeNode({
+      type: "function_definition",
+      startIndex: 30,
+      endIndex: 43,
+      fields: { declarator: fakeNode({ type: "identifier", text: "baz" }) },
+    });
+    const ns = fakeNode({
+      type: "namespace_definition",
+      children: [bar, baz],
+      startIndex: 0,
+      endIndex: source.length,
+    });
+
+    const chunks = extractChunks(fakeTree([ns]), source, REPO_ID, "src/Foo.cpp", "cpp");
+    expect(chunks).toHaveLength(2);
+  });
+
+  it("recurses into class_specifier and emits member functions as separate chunks", () => {
+    const source = "class Foo { void method() {} };";
+    const method = fakeNode({
+      type: "function_definition",
+      startIndex: 12,
+      endIndex: 27,
+      fields: { declarator: fakeNode({ type: "identifier", text: "method" }) },
+    });
+    const cls = fakeNode({
+      type: "class_specifier",
+      children: [method],
+      startIndex: 0,
+      endIndex: source.length,
+    });
+
+    const chunks = extractChunks(fakeTree([cls]), source, REPO_ID, "src/Foo.h", "cpp");
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.symbolName).toBe("method");
+  });
+
+  it("recurses into struct_specifier and emits member functions as separate chunks", () => {
+    const source = "struct Vec3 { float dot() {} };";
+    const dot = fakeNode({
+      type: "function_definition",
+      startIndex: 14,
+      endIndex: 27,
+      fields: { declarator: fakeNode({ type: "identifier", text: "dot" }) },
+    });
+    const strct = fakeNode({
+      type: "struct_specifier",
+      children: [dot],
+      startIndex: 0,
+      endIndex: source.length,
+    });
+
+    const chunks = extractChunks(fakeTree([strct]), source, REPO_ID, "src/Vec3.h", "cpp");
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.symbolName).toBe("dot");
+  });
+
+  it("recurses into template_declaration and emits inner function_definition as a chunk", () => {
+    const source = "template<typename T> T identity(T x) { return x; }";
+    const fn = fakeNode({
+      type: "function_definition",
+      startIndex: 21,
+      endIndex: source.length,
+      fields: { declarator: fakeNode({ type: "identifier", text: "identity" }) },
+    });
+    const tmpl = fakeNode({
+      type: "template_declaration",
+      children: [fn],
+      startIndex: 0,
+      endIndex: source.length,
+    });
+
+    const chunks = extractChunks(fakeTree([tmpl]), source, REPO_ID, "src/Tmpl.h", "cpp");
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.symbolName).toBe("identity");
+  });
+
+  it("emits an empty class_specifier as a single chunk when it has no member functions", () => {
+    const source = "class Empty {};";
+    const cls = fakeNode({
+      type: "class_specifier",
+      children: [], // no member functions
+      startIndex: 0,
+      endIndex: source.length,
+      fields: { name: fakeNode({ type: "type_identifier", text: "Empty" }) },
+    });
+
+    const chunks = extractChunks(fakeTree([cls]), source, REPO_ID, "src/Empty.h", "cpp");
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.symbolKind).toBe("class_specifier");
+  });
+
+  it("handles a .h file with a template class containing a method (GTE-style header)", () => {
+    const source = "template<typename Real> class Matrix { Real det() {} };";
+    const det = fakeNode({
+      type: "function_definition",
+      startIndex: 39,
+      endIndex: 52,
+      fields: { declarator: fakeNode({ type: "identifier", text: "det" }) },
+    });
+    const cls = fakeNode({
+      type: "class_specifier",
+      children: [det],
+      startIndex: 24,
+      endIndex: source.length - 1,
+    });
+    const tmpl = fakeNode({
+      type: "template_declaration",
+      children: [cls],
+      startIndex: 0,
+      endIndex: source.length,
+    });
+
+    const chunks = extractChunks(fakeTree([tmpl]), source, REPO_ID, "GTE/Matrix.h", "cpp");
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.symbolName).toBe("det");
+  });
+});
+
 describe("extractChunks — declarator field (C/C++ function names)", () => {
   it("extracts name from a function_declarator child", () => {
     const source = "int compute(int x) { return x; }";

@@ -31,7 +31,7 @@ const EXT_TO_LANG: Readonly<Record<string, string>> = {
   ".rs": "rust",
   // C / C++
   ".c": "c",
-  ".h": "c",
+  ".h": "cpp", // headers use C++ grammar — superset of C, handles templates/classes/namespaces
   ".cpp": "cpp",
   ".cc": "cpp",
   ".cxx": "cpp",

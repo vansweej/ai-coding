@@ -39,8 +39,8 @@ describe("detectLanguage", () => {
     expect(detectLanguage("main.c")).toBe("c");
   });
 
-  it("detects C from .h extension", () => {
-    expect(detectLanguage("include/api.h")).toBe("c");
+  it("detects C++ from .h extension (headers use cpp grammar for template/class/namespace support)", () => {
+    expect(detectLanguage("include/api.h")).toBe("cpp");
   });
 
   it("detects C++ from .cpp extension", () => {

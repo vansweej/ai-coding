@@ -80,6 +80,7 @@ const CHUNK_NODES: Readonly<Record<string, readonly string[]>> = {
     "template_declaration",
     "preproc_include",
     "preproc_def",
+    "preproc_function_def",
   ],
   python: [
     "function_definition",
@@ -166,8 +167,15 @@ export function extractChunks(
 
 /**
  * Recursively collect chunks from a node.
- * Recurses into namespace/module container nodes rather than emitting them as
- * a single chunk (they'd be too large and not semantically useful).
+ *
+ * Uses a **container-first** strategy: if a node is a container type
+ * (namespace, template, class, struct), recurse into its children first.
+ * If recursion produced chunks, prefer the finer-grained result. If not
+ * (e.g. a class with only field declarations), fall through to emit the
+ * node itself as a single chunk (if it is a chunk type).
+ *
+ * This ensures large C++ template classes are chunked per-member-function
+ * rather than emitted as a single oversized chunk.
  */
 function collectChunks(
   node: SyntaxNode,
@@ -178,17 +186,20 @@ function collectChunks(
   chunks: CodeChunk[],
   maxChunkChars: number,
 ): void {
-  if (!nodeTypes.has(node.type)) {
-    // Recurse into container nodes (namespace, module, impl blocks)
-    if (isContainerNode(node.type)) {
-      for (const child of node.children) {
-        if (child !== null) {
-          collectChunks(child, source, repoId, filePath, nodeTypes, chunks, maxChunkChars);
-        }
+  // Container nodes: recurse first. If recursion produced child chunks,
+  // prefer the finer-grained result. Otherwise fall through to emit self.
+  if (isContainerNode(node.type)) {
+    const beforeLen = chunks.length;
+    for (const child of node.children) {
+      if (child !== null) {
+        collectChunks(child, source, repoId, filePath, nodeTypes, chunks, maxChunkChars);
       }
     }
-    return;
+    if (chunks.length > beforeLen) return;
+    // No child chunks produced → fall through to emit self as chunk (if applicable)
   }
+
+  if (!nodeTypes.has(node.type)) return;
 
   const symbolName = extractSymbolName(node);
   const symbolKind = node.type;
@@ -260,6 +271,13 @@ function extractSymbolName(node: SyntaxNode): string | null {
 /**
  * Node types that act as containers for other declarations.
  * We recurse into these rather than emitting them as a single chunk.
+ *
+ * C++ container types (`class_specifier`, `struct_specifier`,
+ * `template_declaration`) are included so that large GTE-style template
+ * headers are chunked per-member-function rather than emitted as a single
+ * oversized chunk. If recursion yields no child chunks (e.g. a struct with
+ * only field declarations), the container falls through and is emitted as a
+ * single chunk instead.
  */
 function isContainerNode(type: string): boolean {
   return (
@@ -268,7 +286,10 @@ function isContainerNode(type: string): boolean {
     type === "module_definition" ||
     type === "program" ||
     type === "source_file" ||
-    type === "translation_unit"
+    type === "translation_unit" ||
+    type === "class_specifier" ||
+    type === "struct_specifier" ||
+    type === "template_declaration"
   );
 }
 
