@@ -130,6 +130,100 @@ sequenceDiagram
 
 ---
 
+## File Filtering Pipeline
+
+Before a file reaches the chunker, it passes through two independent guards in
+`discoverFiles()` and `indexCodebase()`.
+
+```mermaid
+flowchart TD
+    A[git ls-files output] --> B{shouldSkip?\nextension in SKIP_EXTENSIONS\nor suffix in SKIP_SUFFIXES}
+    B -->|yes| SKIP1[skip — not indexed]
+    B -->|no| C{file.size\n> maxFileSizeBytes?}
+    C -->|yes| SKIP2[skip — oversized\nrecorded as hash sentinel '']
+    C -->|no| D[read content\nchunk → embed → store]
+
+    style SKIP1 fill:#c9184a,color:#fff
+    style SKIP2 fill:#c9184a,color:#fff
+    style D fill:#2d6a4f,color:#fff
+```
+
+**Skipped extensions** (`SKIP_EXTENSIONS` in `discover-files.ts`):
+
+Binary and generated file types that produce no useful text chunks:
+`.png`, `.jpg`, `.gif`, `.svg`, `.ico`, `.woff`, `.woff2`, `.ttf`, `.eot`,
+`.mp4`, `.mp3`, `.wav`, `.pdf`, `.zip`, `.tar`, `.gz`, `.bz2`, `.xz`,
+`.7z`, `.rar`, `.exe`, `.dll`, `.so`, `.dylib`, `.a`, `.lib`, `.o`, `.obj`,
+`.wasm`, `.bin`, `.dat`, `.db`, `.sqlite`, `.lock`, `.min.js`, `.min.css`,
+`.map`, `.snap`, `.pb`, `.onnx`, `.pt`, `.pth`, `.safetensors`.
+
+**Skipped suffixes** (`SKIP_SUFFIXES` in `discover-files.ts`):
+
+Compound suffixes that are not caught by extension alone:
+`.vcxproj.filters`.
+
+**Oversized file handling:**
+
+Files whose `file.size` (bytes) exceeds `maxFileSizeBytes` (default `100_000`)
+are skipped without reading their content into memory. The file's hash is
+recorded as the sentinel value `""` so that:
+
+- On re-run, the file is still skipped (sentinel ≠ real hash, but size guard
+  fires first).
+- If the file later shrinks below the limit, the sentinel `""` differs from the
+  real hash, triggering a re-index.
+- `--force` does **not** override the size cap — oversized files are always
+  skipped regardless of `--force`.
+
+---
+
+## Container Node Recursion (C++ AST)
+
+Large C++ template headers (e.g. GeometricTools / GTE) define hundreds of
+member functions inside a single `template_declaration` wrapping a
+`class_specifier`. Without container recursion, the entire class would be
+emitted as one oversized chunk, causing Ollama to reject it with a
+`400 {"error":"the input length exceeds the context length"}` error.
+
+`collectChunks()` uses a **container-first** strategy:
+
+```mermaid
+flowchart TD
+    N[AST node] --> C{isContainerNode?}
+    C -->|yes| R[recurse into children]
+    R --> G{any child chunks\nproduced?}
+    G -->|yes| DONE[return — prefer finer-grained chunks]
+    G -->|no| F{nodeTypes.has\nnode.type?}
+    C -->|no| F
+    F -->|yes| EMIT[emit node as chunk]
+    F -->|no| SKIP[skip node]
+
+    style DONE fill:#2d6a4f,color:#fff
+    style EMIT fill:#457b9d,color:#fff
+    style SKIP fill:#555,color:#fff
+```
+
+**Container node types:**
+
+| Node type | Language | Purpose |
+|-----------|----------|---------|
+| `namespace_definition` | C++ | Recurse into namespace body |
+| `class_specifier` | C++ | Recurse into class body (member functions) |
+| `struct_specifier` | C++ | Recurse into struct body |
+| `template_declaration` | C++ | Recurse into template body |
+| `mod_item` | Rust | Recurse into module body |
+| `module_definition` | Julia | Recurse into module body |
+| `program` | various | Root node alias |
+| `source_file` | various | Root node alias |
+| `translation_unit` | C/C++ | Root node alias |
+
+**Empty container fallback:** If a `class_specifier` or `struct_specifier` has
+no member functions (e.g. a forward declaration or a struct with only field
+declarations), recursion produces zero child chunks and the container is emitted
+as a single chunk instead.
+
+---
+
 ## Chunking Decision Tree
 
 Each source file passes through `chunkFile()`, which routes to tree-sitter or
@@ -318,6 +412,7 @@ bun run index-codebase <repo-path> [options]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--force` | off | Re-index all files, bypassing the hash check |
+| `--max-file-bytes <n>` | `100000` | Skip files larger than this many bytes (size check uses `file.size`, not char count) |
 | `--purge-only` | off | Run TTL + dead-repo purge only; no indexing. Does not require Ollama |
 | `--purge-repo <path>` | — | Remove all indexed chunks for a specific repo. Does not require Ollama |
 | `--ttl <days>` | `30` | TTL for the post-index purge sweep |
@@ -397,7 +492,7 @@ index-codebase --purge-only
 index-codebase --purge-repo /path/to/old-project
 ```
 
-All flags (`--force`, `--ttl`, `--purge-only`, `--purge-repo`, `--db-path`, `--model`, `--grammars`) are
+All flags (`--force`, `--max-file-bytes`, `--ttl`, `--purge-only`, `--purge-repo`, `--db-path`, `--model`, `--grammars`) are
 forwarded verbatim to the underlying CLI.
 
 ### `codebase-retrieval`
@@ -471,13 +566,18 @@ for (const r of results) {
 | TypeScript | `.ts`, `.tsx`, `.mts`, `.cts` | Deployed |
 | JavaScript | `.js`, `.mjs`, `.cjs`, `.jsx` | Deployed |
 | Rust | `.rs` | Deployed |
-| C | `.c`, `.h` | Deployed |
-| C++ | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx` | Deployed |
+| C | `.c` | Deployed |
+| C++ | `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hxx` | Deployed |
 | Python | `.py` | Deployed |
 | Haskell | `.hs`, `.lhs` | Grammar not yet deployed |
 | Lua | `.lua` | Grammar not yet deployed |
 | Julia | `.jl` | Grammar not yet deployed |
 | *Everything else* | — | Fallback paragraph chunker |
+
+> **Note on `.h` files:** Header files use the C++ grammar (a strict superset
+> of C) so that `template_declaration`, `class_specifier`, and
+> `namespace_definition` nodes are recognised. Pure C headers with no C++
+> constructs are handled correctly by the C++ grammar.
 
 Grammar files are deployed by Home Manager to `~/.local/share/ai-coding/grammars/`
 as `tree-sitter-<language>.wasm`. Run `home-manager switch` to deploy new grammars.
@@ -522,6 +622,33 @@ as `tree-sitter-<language>.wasm`. Run `home-manager switch` to deploy new gramma
 ---
 
 ## Troubleshooting
+
+### `400 {"error":"the input length exceeds the context length"}`
+
+Ollama rejected a chunk because it was too large for the embedding model's
+context window. This can happen with very large source files or C++ template
+headers that were not split correctly.
+
+**Fix 1 — Reduce the file size limit** (skip files that are too large to chunk
+usefully):
+
+```bash
+index-codebase /path/to/repo --max-file-bytes 50000
+```
+
+**Fix 2 — Force a full re-index** after upgrading to a version with container
+node recursion (which splits large C++ template classes per-member-function):
+
+```bash
+index-codebase /path/to/repo --force
+```
+
+**Fix 3 — Check which file is causing the error** by temporarily reducing
+`--max-file-bytes` until the error disappears, then identifying the culprit:
+
+```bash
+index-codebase /path/to/repo --max-file-bytes 10000
+```
 
 ### `Grammar not found for language "typescript": ...`
 
