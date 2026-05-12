@@ -9,8 +9,20 @@
       systems = [
         "aarch64-darwin"
         "x86_64-linux"
+        "aarch64-linux"
       ];
       forEachSystem = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+
+      # Per-platform hash for the bun cache FOD.
+      # Each platform downloads different native addons, producing a different output.
+      # To discover the hash for a new platform, run:
+      #   nix build .#packages.<system>.default
+      # and copy the hash from the "got:" line in the error output.
+      bunCacheHashes = {
+        "aarch64-darwin" = "sha256-IhkAEL/j+YzQsk37IVRSMis4wYWxFuWetUMKtz/+NeM=";
+        "x86_64-linux"   = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        "aarch64-linux"  = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+      };
     in
     {
       packages = forEachSystem (pkgs:
@@ -61,7 +73,7 @@
 
             outputHashAlgo = "sha256";
             outputHashMode = "recursive";
-            outputHash = "sha256-IhkAEL/j+YzQsk37IVRSMis4wYWxFuWetUMKtz/+NeM=";
+            outputHash = bunCacheHashes.${pkgs.stdenv.hostPlatform.system};
           };
 
           # Phase 2: main derivation — fully pure, no network access.
