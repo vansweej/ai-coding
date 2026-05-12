@@ -6,7 +6,7 @@ import { join } from "node:path";
  * no semantic value to the agent.
  */
 const SKIP_EXTENSIONS = new Set([
-  ".wasm",
+  // ── images ────────────────────────────────────────────────────────────────
   ".png",
   ".jpg",
   ".jpeg",
@@ -14,6 +14,16 @@ const SKIP_EXTENSIONS = new Set([
   ".svg",
   ".ico",
   ".webp",
+  // ── additional texture / HDR formats (e.g. GeometricTools samples) ────────
+  ".bmp",
+  ".tga",
+  ".dds",
+  ".hdr",
+  ".exr",
+  ".tiff",
+  ".tif",
+  // ── compiled / binary artifacts ───────────────────────────────────────────
+  ".wasm",
   ".pdf",
   ".zip",
   ".tar",
@@ -25,6 +35,31 @@ const SKIP_EXTENSIONS = new Set([
   ".dylib",
   ".a",
   ".o",
+  // ── raw binary data files (e.g. GeometricTools terrain heightmaps) ────────
+  ".binary",
+  // ── Visual Studio build system files — XML noise, no semantic value ───────
+  ".sln",
+  ".vcxproj",
+  ".natvis",
+  // ── font binaries ─────────────────────────────────────────────────────────
+  ".ttf",
+  ".otf",
+  ".woff",
+  ".woff2",
+  // ── audio / video ─────────────────────────────────────────────────────────
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".mp4",
+  ".webm",
+]);
+
+/**
+ * Compound suffixes that cannot be caught by single-extension matching.
+ * Checked against the full filename (not just the last dot segment).
+ */
+const SKIP_SUFFIXES = new Set([
+  ".vcxproj.filters", // Visual Studio project filter files
 ]);
 
 const SKIP_FILENAMES = new Set([
@@ -95,11 +130,20 @@ export async function discoverFiles(repoRoot: string): Promise<readonly string[]
 
 /**
  * Returns true if the file should be excluded from indexing.
- * Checks both the extension and the exact filename.
+ *
+ * Checks in order:
+ *   1. Exact filename match (e.g. `bun.lock`)
+ *   2. Compound suffix match (e.g. `.vcxproj.filters`)
+ *   3. Single-extension match (e.g. `.png`, `.sln`)
  */
 function shouldSkip(filePath: string): boolean {
   const filename = filePath.split("/").pop() ?? filePath;
+
   if (SKIP_FILENAMES.has(filename)) return true;
+
+  for (const suffix of SKIP_SUFFIXES) {
+    if (filename.endsWith(suffix)) return true;
+  }
 
   const dotIndex = filename.lastIndexOf(".");
   if (dotIndex === -1) return false;

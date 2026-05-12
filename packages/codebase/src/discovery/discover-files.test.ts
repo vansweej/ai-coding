@@ -114,6 +114,55 @@ describe("discoverFiles", () => {
     expect(files).toContain("README.md");
   });
 
+  it("excludes .binary files (GTE terrain heightmaps)", async () => {
+    await createFile(tmpDir, "Data/height.0.0.binary");
+    await gitAdd(tmpDir, "Data/height.0.0.binary");
+    const files = await discoverFiles(tmpDir);
+    expect(files).not.toContain("Data/height.0.0.binary");
+  });
+
+  it("excludes .sln files (Visual Studio solutions)", async () => {
+    await createFile(tmpDir, "MyProject.sln");
+    await gitAdd(tmpDir, "MyProject.sln");
+    const files = await discoverFiles(tmpDir);
+    expect(files).not.toContain("MyProject.sln");
+  });
+
+  it("excludes .vcxproj files (Visual Studio projects)", async () => {
+    await createFile(tmpDir, "MyProject.vcxproj");
+    await gitAdd(tmpDir, "MyProject.vcxproj");
+    const files = await discoverFiles(tmpDir);
+    expect(files).not.toContain("MyProject.vcxproj");
+  });
+
+  it("excludes .vcxproj.filters files (compound extension)", async () => {
+    await createFile(tmpDir, "MyProject.vcxproj.filters");
+    await gitAdd(tmpDir, "MyProject.vcxproj.filters");
+    const files = await discoverFiles(tmpDir);
+    expect(files).not.toContain("MyProject.vcxproj.filters");
+  });
+
+  it("excludes .natvis files (VS debugger visualizers)", async () => {
+    await createFile(tmpDir, "gtengine.natvis");
+    await gitAdd(tmpDir, "gtengine.natvis");
+    const files = await discoverFiles(tmpDir);
+    expect(files).not.toContain("gtengine.natvis");
+  });
+
+  it("still includes .hlsl shader files", async () => {
+    await createFile(tmpDir, "Shaders/terrain.vs.hlsl", "// hlsl shader");
+    await gitAdd(tmpDir, "Shaders/terrain.vs.hlsl");
+    const files = await discoverFiles(tmpDir);
+    expect(files).toContain("Shaders/terrain.vs.hlsl");
+  });
+
+  it("still includes .glsl shader files", async () => {
+    await createFile(tmpDir, "Shaders/terrain.ps.glsl", "// glsl shader");
+    await gitAdd(tmpDir, "Shaders/terrain.ps.glsl");
+    const files = await discoverFiles(tmpDir);
+    expect(files).toContain("Shaders/terrain.ps.glsl");
+  });
+
   it("throws when called on a non-git directory", async () => {
     // Must be a directory outside any git repo — not a child of tmpDir (which is
     // itself a git repo). Create an isolated temp directory in the system temp root.
