@@ -20,7 +20,7 @@
       # and copy the hash from the "got:" line in the error output.
       bunCacheHashes = {
         "aarch64-darwin" = "sha256-IhkAEL/j+YzQsk37IVRSMis4wYWxFuWetUMKtz/+NeM=";
-        "x86_64-linux"   = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        "x86_64-linux"   = "sha256-ja3oazefr+NFHJwjG/cy+dMfI8JRRK5uNTULnS8eSn8=";
         "aarch64-linux"  = "sha256-g3TMVss4v/lZRMXhpT/0uoEFZ+91U6gD866MoM8xkSs=";
       };
     in
