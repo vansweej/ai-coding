@@ -5,9 +5,12 @@ import type { SkillBackend } from "@ai-coding/skills";
 
 import { PIPELINE_REGISTRY } from "../config/pipeline-registry";
 import type { OrchestratorConfig } from "../core/orchestrator/orchestrate";
-import { createCMakeDevCyclePipeline } from "../core/pipeline/definitions/cmake-dev-cycle";
 import { createDevCyclePipeline } from "../core/pipeline/definitions/dev-cycle";
-import { createRustDevCyclePipeline } from "../core/pipeline/definitions/rust-dev-cycle";
+import {
+  CPP_CONFIG,
+  RUST_CONFIG,
+  TYPESCRIPT_CONFIG,
+} from "../core/pipeline/definitions/language-configs";
 import { createCppScaffoldPipeline } from "../core/pipeline/definitions/scaffold-cpp";
 import { createRustScaffoldPipeline } from "../core/pipeline/definitions/scaffold-rust";
 
@@ -41,14 +44,14 @@ export async function selectPipeline(
 
   switch (name) {
     case "dev-cycle":
-      return { ok: true, value: createDevCyclePipeline(config, workspace, backend) };
-    case "rust-dev-cycle":
-      return { ok: true, value: createRustDevCyclePipeline(config, workspace, undefined, backend) };
-    case "cmake-dev-cycle":
       return {
         ok: true,
-        value: createCMakeDevCyclePipeline(config, workspace, undefined, backend),
+        value: createDevCyclePipeline(config, workspace, TYPESCRIPT_CONFIG, backend),
       };
+    case "rust-dev-cycle":
+      return { ok: true, value: createDevCyclePipeline(config, workspace, RUST_CONFIG, backend) };
+    case "cmake-dev-cycle":
+      return { ok: true, value: createDevCyclePipeline(config, workspace, CPP_CONFIG, backend) };
     case "scaffold-rust":
       return { ok: true, value: createRustScaffoldPipeline(config, workspace) };
     case "scaffold-cpp":
