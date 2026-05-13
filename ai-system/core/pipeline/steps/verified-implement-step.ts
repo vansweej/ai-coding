@@ -5,6 +5,7 @@ import type { AIAction, AIRequestEvent } from "@ai-coding/shared";
 import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { orchestrate } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
+import type { Step } from "../plan-parser";
 
 const IMPLEMENT_RESULT_NAME = "verified-implement-output";
 
@@ -21,6 +22,7 @@ export interface VerifiedImplementStepOptions {
   readonly config: OrchestratorConfig;
   readonly workspace: string;
   readonly languageConfig: DevCycleLanguageConfig;
+  readonly steps?: readonly Step[];
   readonly retryConfig?: RetryConfig;
 }
 
@@ -55,6 +57,23 @@ function makeEvent(
     action,
     payload: { ...ctx.event.payload, input },
   };
+}
+
+function buildImplementationPrompt(
+  languageConfig: DevCycleLanguageConfig,
+  instruction: string,
+): string {
+  return `Implement this ${languageConfig.languageHint} step. Output ONLY fenced code blocks with file paths.\n\nInstruction:\n${instruction}`;
+}
+
+function formatPhaseInstruction(steps: readonly Step[], phaseFeedback?: string): string {
+  const stepInstructions = steps
+    .map((step) => [`Step ${step.number}: ${step.title}`, "", step.body].join("\n"))
+    .join("\n\n---\n\n");
+
+  if (phaseFeedback === undefined) return stepInstructions;
+
+  return [stepInstructions, "", "Phase verification feedback:", phaseFeedback].join("\n");
 }
 
 async function runImplementAttempt(
@@ -103,6 +122,37 @@ async function runVerification(
   return { ok: true, value: completed };
 }
 
+async function implementAndWrite(
+  ctx: PipelineContext<AIRequestEvent>,
+  options: VerifiedImplementStepOptions,
+  prompt: string,
+  action: AIAction,
+): Promise<Result<string>> {
+  const implementResult = await runImplementAttempt(ctx, options, prompt, action);
+  if (!implementResult.ok) return implementResult;
+
+  const writeResult = await writeImplementation(ctx, options.workspace, implementResult.value);
+  if (!writeResult.ok) return writeResult;
+  ctx.results.set(writeResult.value.stepName, writeResult.value);
+
+  return { ok: true, value: implementResult.value };
+}
+
+async function implementAllPhaseSteps(
+  ctx: PipelineContext<AIRequestEvent>,
+  options: VerifiedImplementStepOptions,
+  steps: readonly Step[],
+): Promise<Result<string>> {
+  const implementations: string[] = [];
+  for (const step of steps) {
+    const prompt = buildImplementationPrompt(options.languageConfig, step.body);
+    const result = await implementAndWrite(ctx, options, prompt, "edit");
+    if (!result.ok) return result;
+    implementations.push(result.value);
+  }
+  return { ok: true, value: implementations.join("\n\n") };
+}
+
 /** Create a composite step that implements, writes, verifies, and retries a phase step. */
 export function createVerifiedImplementStep(
   name: string,
@@ -116,6 +166,7 @@ export function createVerifiedImplementStep(
     execute: async (ctx: PipelineContext<AIRequestEvent>): Promise<Result<StepResult>> => {
       const startedAt = Date.now();
       const originalInstruction = ctx.event.payload.input ?? "";
+      const phaseSteps = options.steps;
       const verificationSteps = options.languageConfig.toolchainSteps(options.workspace);
       let prompt = originalInstruction;
       let implementation = "";
@@ -124,13 +175,19 @@ export function createVerifiedImplementStep(
 
       const totalImplementerAttempts = 1 + maxLocalRetries;
       for (; attemptNumber < totalImplementerAttempts; attemptNumber++) {
-        const implementResult = await runImplementAttempt(ctx, options, prompt, "edit");
+        const implementResult =
+          phaseSteps === undefined
+            ? await implementAndWrite(ctx, options, prompt, "edit")
+            : attemptNumber === 0
+              ? await implementAllPhaseSteps(ctx, options, phaseSteps)
+              : await implementAndWrite(
+                  ctx,
+                  options,
+                  buildImplementationPrompt(options.languageConfig, prompt),
+                  "edit",
+                );
         if (!implementResult.ok) return implementResult;
         implementation = implementResult.value;
-
-        const writeResult = await writeImplementation(ctx, options.workspace, implementation);
-        if (!writeResult.ok) return writeResult;
-        ctx.results.set(writeResult.value.stepName, writeResult.value);
 
         const verificationResult = await runVerification(ctx, verificationSteps);
         if (verificationResult.ok) {
@@ -146,7 +203,7 @@ export function createVerifiedImplementStep(
 
         lastError = verificationResult.error;
         prompt = buildVerificationFailurePrompt(
-          originalInstruction,
+          phaseSteps === undefined ? originalInstruction : formatPhaseInstruction(phaseSteps),
           implementation,
           lastError.message,
         );
@@ -158,17 +215,18 @@ export function createVerifiedImplementStep(
         escalationAttempt++
       ) {
         const fixPrompt = buildVerificationFailurePrompt(
-          originalInstruction,
+          phaseSteps === undefined ? originalInstruction : formatPhaseInstruction(phaseSteps),
           implementation,
           lastError?.message ?? "Verification failed without diagnostics",
         );
-        const fixResult = await runImplementAttempt(ctx, options, fixPrompt, "fix");
+        const fixResult = await implementAndWrite(
+          ctx,
+          options,
+          buildImplementationPrompt(options.languageConfig, fixPrompt),
+          "fix",
+        );
         if (!fixResult.ok) return fixResult;
         implementation = fixResult.value;
-
-        const writeResult = await writeImplementation(ctx, options.workspace, implementation);
-        if (!writeResult.ok) return writeResult;
-        ctx.results.set(writeResult.value.stepName, writeResult.value);
 
         const verificationResult = await runVerification(ctx, verificationSteps);
         if (verificationResult.ok) {
