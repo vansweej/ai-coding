@@ -159,7 +159,7 @@ via Home Manager). Invoke them by prefixing a message with `@<name>`:
 | `@reviewer` | claude-sonnet-4.6   | Code review (quality/security)    | read + bun test + git |
 | `@tester`   | claude-sonnet-4.6   | Test writing and coverage         | read + bun test + git |
 
-See [docs/agents.md](./agents.md) for full agent documentation.
+See [docs/agent-reference.md](./agent-reference.md) for full agent documentation.
 
 **Examples:**
 
@@ -189,7 +189,7 @@ Seven primary agents are available in the TUI (switch with **Tab**):
 | `teach`       | claude-opus-4.6        | Learning — adaptive tutor grounded in project context        |
 | `brainstorm`  | claude-opus-4.6        | Exploring new ideas — presents choices, researches prior art |
 
-See [docs/agents.md](./agents.md) for full agent documentation, design
+See [docs/agent-reference.md](./agent-reference.md) for full agent documentation, design
 principles, and the brainstorm → spar → plan handoff workflow.
 
 ---
