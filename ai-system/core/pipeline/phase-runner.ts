@@ -53,24 +53,29 @@ function buildStepEvent(stepInstruction: string): AIRequestEvent {
   };
 }
 
-/** Run every implementation step in a phase, verify each step, then auto-commit. */
+function buildPhaseInstruction(phase: Phase): string {
+  return phase.steps
+    .map((step) => [`Step ${step.number}: ${step.title}`, "", step.body].join("\n"))
+    .join("\n\n---\n\n");
+}
+
+/** Run every implementation step in a phase, verify once, then auto-commit. */
 export async function runPhase(
   phase: Phase,
   options: RunPhaseOptions,
 ): Promise<Result<PhaseRunResult>> {
-  for (const step of phase.steps) {
-    const verifiedStep = createVerifiedImplementStep(`phase-${phase.number}-step-${step.number}`, {
-      config: options.config,
-      workspace: options.workspace,
-      languageConfig: options.languageConfig,
-      retryConfig: options.retryConfig,
-    });
-    const result = await verifiedStep.execute({
-      event: buildStepEvent(step.body),
-      results: new Map(),
-    });
-    if (!result.ok) return result;
-  }
+  const verifiedStep = createVerifiedImplementStep(`phase-${phase.number}`, {
+    config: options.config,
+    workspace: options.workspace,
+    languageConfig: options.languageConfig,
+    retryConfig: options.retryConfig,
+    steps: phase.steps,
+  });
+  const result = await verifiedStep.execute({
+    event: buildStepEvent(buildPhaseInstruction(phase)),
+    results: new Map(),
+  });
+  if (!result.ok) return result;
 
   const commit = options.commitPhase ?? commitPhaseChanges;
   const commitResult = await commit(options.workspace, phase.commitMessage);

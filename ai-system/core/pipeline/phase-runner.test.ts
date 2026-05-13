@@ -22,23 +22,24 @@ function dispatcher(response: string): ModelDispatcher {
   };
 }
 
-function verifyStep(shouldFail: boolean): PipelineStep<AIRequestEvent> {
+function verifyStep(shouldFail: boolean, calls?: string[]): PipelineStep<AIRequestEvent> {
   return {
     name: "verify",
     execute: async (): Promise<Result<StepResult>> => {
+      calls?.push("verify");
       if (shouldFail) return { ok: false, error: new Error("verification failed") };
       return { ok: true, value: { stepName: "verify", output: "ok", durationMs: 0 } };
     },
   };
 }
 
-function languageConfig(shouldFail: boolean): DevCycleLanguageConfig {
+function languageConfig(shouldFail: boolean, calls?: string[]): DevCycleLanguageConfig {
   return {
     name: "typescript",
     implementSystem: "system",
     languageHint: "TypeScript",
     toolchainSteps: (_workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
-      verifyStep(shouldFail),
+      verifyStep(shouldFail, calls),
     ],
   };
 }
@@ -56,6 +57,16 @@ const PHASE: Phase = {
   title: "Core",
   commitMessage: "feat: add core",
   steps: [{ number: 1, title: "Step", body: "Do it" }],
+};
+
+const MULTI_STEP_PHASE: Phase = {
+  number: 1,
+  title: "Core",
+  commitMessage: "feat: add core",
+  steps: [
+    { number: 1, title: "Step one", body: "Do one" },
+    { number: 2, title: "Step two", body: "Do two" },
+  ],
 };
 
 let workspace: string;
@@ -100,5 +111,39 @@ describe("runPhase", () => {
 
     expect(result.ok).toBe(false);
     expect(commits).toEqual([]);
+  });
+
+  it("implements every phase step before running verification once", async () => {
+    const commits: string[] = [];
+    const verifyCalls: string[] = [];
+    const prompts: string[] = [];
+    const modelDispatcher: ModelDispatcher = {
+      dispatch: async (request: DispatchRequest): Promise<Result<string>> => {
+        prompts.push(request.prompt);
+        return {
+          ok: true,
+          value: "```typescript src/index.ts\nexport const value = 1;\n```",
+        };
+      },
+    };
+    const result = await runPhase(MULTI_STEP_PHASE, {
+      config: {
+        profile: HYBRID_PROFILE,
+        dispatchers: { "gemma4:26b": modelDispatcher, "claude-sonnet-4.6": modelDispatcher },
+      },
+      workspace,
+      languageConfig: languageConfig(false, verifyCalls),
+      commitPhase: async (_workspace, message) => {
+        commits.push(message);
+        return { ok: true, value: message };
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain("Do one");
+    expect(prompts[1]).toContain("Do two");
+    expect(verifyCalls).toEqual(["verify"]);
+    expect(commits).toEqual(["feat: add core"]);
   });
 });
