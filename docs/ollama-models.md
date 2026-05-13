@@ -99,7 +99,8 @@ endpoint.
 ### Prerequisites
 
 - Ollama installed and running (`ollama serve` or a systemd service).
-- The `ai-coding` repo cloned to `~/Projects/ai-coding`.
+- `AI_CODING_MONOREPO` set to the ai-coding package path (set automatically
+  by Home Manager; for manual setups, point it at your local clone).
 
 ### Steps
 
@@ -108,12 +109,8 @@ endpoint.
 ollama pull qwen3:8b
 
 # 2. Build all derivative models
-~/Projects/ai-coding/ollama/setup.sh
+$AI_CODING_MONOREPO/ollama/setup.sh
 ```
-
-That's it.  Step 2 is also performed automatically by the home-manager
-activation script (see below), so on a home-manager-managed machine you only
-need to do step 1 manually.
 
 ### Verifying the setup
 
@@ -134,35 +131,6 @@ print('content:  ', repr(msg.get('content', '')))
 "
 # Expected: reasoning: ''   content: 'Hi! ...'
 ```
-
----
-
-## Home Manager Activation Script
-
-`~/Projects/home-manager/home.nix` contains an activation block:
-
-```nix
-home.activation.ensureOllamaModels = lib.hm.dag.entryAfter [ "cloneAiCoding" ] ''
-  SETUP="$HOME/Projects/ai-coding/ollama/setup.sh"
-  if [ -x "$SETUP" ]; then
-    $DRY_RUN_CMD "$SETUP"
-  fi
-'';
-```
-
-This runs `ollama/setup.sh` on every `home-manager switch`.  The script is
-guarded: if Ollama is not installed or the daemon is not running, it exits
-cleanly with a warning rather than aborting the switch.
-
-On a completely fresh machine the sequence is:
-
-1. `home-manager switch --flake ~/Projects/home-manager#oryp6`
-   - Clones the `ai-coding` repo (via `cloneAiCoding` activation).
-   - Runs `ollama/setup.sh` -- which exits with a warning if `qwen3:8b`
-     has not been pulled yet.
-2. `ollama pull qwen3:8b`
-3. `home-manager switch --flake ~/Projects/home-manager#oryp6` again
-   - This time `setup.sh` finds the base model and builds `qwen3:8b-fast`.
 
 ---
 
