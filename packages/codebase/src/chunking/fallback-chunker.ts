@@ -2,7 +2,7 @@ import type { CodeChunk } from "../chunk-types";
 import { splitOversized } from "./split-oversized";
 
 /** Maximum characters per chunk before sub-splitting on blank lines. */
-const DEFAULT_MAX_CHUNK_CHARS = 3000;
+const DEFAULT_MAX_CHUNK_CHARS = 2000;
 
 /**
  * Fallback chunker for files with no tree-sitter grammar.

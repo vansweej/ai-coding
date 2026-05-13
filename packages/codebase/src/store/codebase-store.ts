@@ -167,15 +167,48 @@ export class CodebaseStore {
   }
 
   /**
-   * Delete all rows indexed before `cutoffDate`.
-   * Used for TTL-based purging of stale repos.
+   * Delete rows for one repository that were indexed before `cutoffDate`.
    *
-   * @param cutoffDate - ISO-8601 date string. Rows with `indexed_at` before
-   *                     this date are deleted.
+   * TTL purging is intentionally scoped to the repo being indexed so an index
+   * run for repo B cannot evict stale rows from repo A. `exemptPrefixes` are
+   * relative directory prefixes, including a trailing slash, that should survive
+   * the TTL sweep (for example: `GeometricTools/`).
+   *
+   * @param cutoffDate     - ISO-8601 date string. Rows with `indexed_at` before
+   *                         this date are deleted.
+   * @param repoId         - Canonical repo identifier to scope the purge to.
+   * @param exemptPrefixes - File path prefixes to keep even when older than the cutoff.
    */
-  async purgeOlderThan(cutoffDate: string): Promise<void> {
+  async purgeOlderThan(
+    cutoffDate: string,
+    repoId: string,
+    exemptPrefixes: readonly string[] = [],
+  ): Promise<void> {
     const table = await this.table();
-    await table.delete(`indexed_at < '${escapeStr(cutoffDate)}'`);
+    const clauses = [
+      `repo_id = '${escapeStr(repoId)}'`,
+      `indexed_at < '${escapeStr(cutoffDate)}'`,
+      ...exemptPrefixes.map((prefix) => `file_path NOT LIKE '${escapeStr(prefix)}%'`),
+    ];
+
+    await table.delete(clauses.join(" AND "));
+  }
+
+  /**
+   * Refresh `indexed_at` for all currently stored rows in a repository.
+   *
+   * Called after indexing and deleted-file cleanup so hash-skipped files remain
+   * fresh for TTL purposes without issuing one update per skipped file.
+   *
+   * @param repoId    - Canonical repo identifier whose rows should be touched.
+   * @param indexedAt - ISO-8601 timestamp to write to `indexed_at`.
+   */
+  async touchRepo(repoId: string, indexedAt: string): Promise<void> {
+    const table = await this.table();
+    await table.update({
+      where: `repo_id = '${escapeStr(repoId)}'`,
+      values: { indexed_at: indexedAt },
+    });
   }
 
   /**

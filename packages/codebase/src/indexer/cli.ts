@@ -10,7 +10,7 @@
  *
  * Options:
  *   --force                  Re-index all files, ignoring staleness hashes.
- *   --purge-only             Run only the TTL + dead-repo purge; skip indexing.
+ *   --purge-only             Run only dead-repo purge; skip indexing and TTL sweep.
  *   --purge-repo <path>      Remove all indexed chunks for a specific repo.
  *   --ttl <days>             TTL in days for stale-row purging (default: 30).
  *   --db-path <p>            Override the LanceDB path.
@@ -28,7 +28,7 @@ import { OllamaEmbedder, isOllamaReachable } from "@ai-coding/embeddings";
 import { DEFAULT_GRAMMARS_DIR, ParserPool } from "../chunking/parser-pool";
 import { CodebaseStore, DEFAULT_CODEBASE_DB_PATH, DEFAULT_TTL_DAYS } from "../store/codebase-store";
 import { indexCodebase } from "./index-codebase";
-import { purgeRepo, runPostIndexPurge } from "./purge";
+import { purgeDeadRepos, purgeRepo } from "./purge";
 
 const args = process.argv.slice(2);
 
@@ -78,15 +78,14 @@ const store = new CodebaseStore(dbPath);
 
 if (purgeOnly) {
   console.log(`💾  LanceDB path: ${dbPath}`);
-  console.log(`🧹  Running purge only (TTL = ${ttlDays} days)…`);
+  console.log("🧹  Running purge only (dead repos)…");
 
   await store.open();
-  const purgeResult = await runPostIndexPurge(store, ttlDays);
+  const deadRepos = await purgeDeadRepos(store);
 
-  console.log(`✅  Purged rows older than: ${purgeResult.staleBefore}`);
-  if (purgeResult.deadRepos.length > 0) {
-    console.log(`🗑️   Removed dead repos (${purgeResult.deadRepos.length}):`);
-    for (const repo of purgeResult.deadRepos) {
+  if (deadRepos.length > 0) {
+    console.log(`🗑️   Removed dead repos (${deadRepos.length}):`);
+    for (const repo of deadRepos) {
       console.log(`    • ${repo}`);
     }
   } else {
@@ -154,6 +153,13 @@ try {
     console.log(`\n⚠️   Skipped oversized files (${result.oversized.length}):`);
     for (const f of result.oversized) {
       console.log(`    • ${f}`);
+    }
+  }
+
+  if (result.keepDirs.length > 0) {
+    console.log(`\n🔒  TTL-exempt dirs (${result.keepDirs.length}):`);
+    for (const dir of result.keepDirs) {
+      console.log(`    • ${dir}`);
     }
   }
 

@@ -262,6 +262,47 @@ describe("indexCodebase", () => {
     expect(Array.isArray(result.deadRepos)).toBe(true);
   });
 
+  it("result includes keepDirs from discovered keep markers", async () => {
+    await createFile(repoDir, "GeometricTools/.ai-coding-keep", "");
+    await createFile(repoDir, "GeometricTools/GTE/file.h", "class Example {};\n");
+
+    const result = await indexCodebase(embedder, store, pool, repoDir, {
+      metaPath,
+      ttlDays: 3650,
+    });
+
+    expect(result.keepDirs).toEqual(["GeometricTools/"]);
+  });
+
+  it("result keepDirs is empty when no markers are discovered", async () => {
+    await createFile(repoDir, "src/main.ts", "const x = 1;\n");
+
+    const result = await indexCodebase(embedder, store, pool, repoDir, {
+      metaPath,
+      ttlDays: 3650,
+    });
+
+    expect(result.keepDirs).toEqual([]);
+  });
+
+  it("refreshes skipped files so they survive the TTL purge", async () => {
+    await createFile(repoDir, "stable.ts", "export const stable = true;\n");
+
+    await indexCodebase(embedder, store, pool, repoDir, { metaPath, ttlDays: 3650 });
+    await store.touchRepo(
+      realpathSync(repoDir),
+      new Date(Date.now() - 3 * 86400_000).toISOString(),
+    );
+
+    const result = await indexCodebase(embedder, store, pool, repoDir, {
+      metaPath,
+      ttlDays: 1,
+    });
+
+    expect(result.skipped).toContain("stable.ts");
+    expect(await store.countRows()).toBeGreaterThan(0);
+  });
+
   // ── meta persistence ─────────────────────────────────────────────────────────
 
   it("persists file hashes so the third run also skips unchanged files", async () => {

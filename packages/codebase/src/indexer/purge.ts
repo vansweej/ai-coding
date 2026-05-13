@@ -14,20 +14,24 @@ export interface PurgeResult {
 }
 
 /**
- * Delete all rows whose `indexed_at` timestamp is older than `ttlDays` ago.
+ * Delete rows in one repo whose `indexed_at` timestamp is older than `ttlDays` ago.
  *
- * @param store   - Opened CodebaseStore.
- * @param ttlDays - Rows older than this many days are deleted. Default: 30.
+ * @param store          - Opened CodebaseStore.
+ * @param repoId         - Canonical repo identifier to scope the purge to.
+ * @param exemptPrefixes - File path prefixes to keep even when older than the cutoff.
+ * @param ttlDays        - Rows older than this many days are deleted. Default: 30.
  * @returns ISO-8601 cutoff date string that was used.
  */
 export async function purgeStale(
   store: CodebaseStore,
+  repoId: string,
+  exemptPrefixes: readonly string[] = [],
   ttlDays: number = DEFAULT_TTL_DAYS,
 ): Promise<string> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - ttlDays);
   const cutoffIso = cutoff.toISOString();
-  await store.purgeOlderThan(cutoffIso);
+  await store.purgeOlderThan(cutoffIso, repoId, exemptPrefixes);
   return cutoffIso;
 }
 
@@ -70,19 +74,23 @@ export async function purgeRepo(store: CodebaseStore, repoId: string): Promise<v
 
 /**
  * Run the full post-index purge pipeline:
- *   1. TTL sweep — delete rows older than `ttlDays`.
+ *   1. TTL sweep — delete current-repo rows older than `ttlDays`.
  *   2. Dead-repo sweep — delete rows for repos whose directory no longer exists.
  *
  * Called automatically by `indexCodebase()` after every indexing run.
  *
- * @param store   - Opened CodebaseStore.
- * @param ttlDays - TTL in days (default: {@link DEFAULT_TTL_DAYS}).
+ * @param store          - Opened CodebaseStore.
+ * @param repoId         - Canonical repo identifier to scope the TTL purge to.
+ * @param exemptPrefixes - Current-repo file path prefixes to exempt from TTL purge.
+ * @param ttlDays        - TTL in days (default: {@link DEFAULT_TTL_DAYS}).
  */
 export async function runPostIndexPurge(
   store: CodebaseStore,
+  repoId: string,
+  exemptPrefixes: readonly string[] = [],
   ttlDays: number = DEFAULT_TTL_DAYS,
 ): Promise<PurgeResult> {
-  const staleBefore = await purgeStale(store, ttlDays);
+  const staleBefore = await purgeStale(store, repoId, exemptPrefixes, ttlDays);
   const deadRepos = await purgeDeadRepos(store);
   return { staleBefore, deadRepos };
 }

@@ -5,7 +5,7 @@ import { chunkFile } from "../chunking/code-chunker";
 import type { ParserPool } from "../chunking/parser-pool";
 import { detectLanguage } from "../discovery/detect-language";
 
-import { discoverFiles, resolveFilePath } from "../discovery/discover-files";
+import { discoverFiles, discoverKeepDirs, resolveFilePath } from "../discovery/discover-files";
 import type { CodebaseStore } from "../store/codebase-store";
 import { type PurgeResult, runPostIndexPurge } from "./purge";
 
@@ -64,6 +64,8 @@ export interface IndexCodebaseResult {
    * the limit (at which point the hash changes and the file is re-indexed).
    */
   readonly oversized: readonly string[];
+  /** Directory prefixes exempt from TTL purge due to `.ai-coding-keep` markers. */
+  readonly keepDirs: readonly string[];
   /** ISO-8601 cutoff date used for the TTL purge sweep. */
   readonly staleBefore: string;
   /** Repo IDs whose root directory no longer exists on disk and were purged. */
@@ -132,6 +134,7 @@ export async function indexCodebase(
 
   // Discover all current indexable files (throws if not a git repo)
   const discoveredFiles = await discoverFiles(repoPath);
+  const keepDirs = discoverKeepDirs(discoveredFiles);
   const discoveredSet = new Set(discoveredFiles);
 
   // Open the store (idempotent)
@@ -189,15 +192,20 @@ export async function indexCodebase(
     }
   }
 
-  // Post-index purge (TTL sweep + dead-repo cleanup)
-  const purgeResult: PurgeResult = await runPostIndexPurge(store, ttlDays);
+  const now = new Date().toISOString();
+
+  // Refresh rows that survived the index/delete loop, including hash-skipped files.
+  await store.touchRepo(repoId, now);
+
+  // Post-index purge (current-repo TTL sweep + global dead-repo cleanup)
+  const purgeResult: PurgeResult = await runPostIndexPurge(store, repoId, keepDirs, ttlDays);
 
   // Persist updated meta
   const updatedMeta: GlobalMeta = {
     repos: {
       ...globalMeta.repos,
       [repoId]: {
-        lastIndexedAt: new Date().toISOString(),
+        lastIndexedAt: now,
         fileHashes: newFileHashes,
       },
     },
@@ -210,6 +218,7 @@ export async function indexCodebase(
     skipped,
     deleted,
     oversized,
+    keepDirs,
     staleBefore: purgeResult.staleBefore,
     deadRepos: purgeResult.deadRepos,
   };

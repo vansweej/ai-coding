@@ -187,7 +187,7 @@ describe("CodebaseStore", () => {
     await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
     // Purge with a future date — all rows should be removed
     const future = new Date(Date.now() + 86400_000).toISOString();
-    await store.purgeOlderThan(future);
+    await store.purgeOlderThan(future, REPO_ID);
     expect(await store.countRows()).toBe(0);
   });
 
@@ -196,8 +196,119 @@ describe("CodebaseStore", () => {
     await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
     // Purge with a past date — no rows should be removed
     const past = new Date(Date.now() - 86400_000).toISOString();
-    await store.purgeOlderThan(past);
+    await store.purgeOlderThan(past, REPO_ID);
     expect(await store.countRows()).toBe(1);
+  });
+
+  it("purgeOlderThan() only removes rows for the requested repo", async () => {
+    await store.open(DIMS);
+    const repo2 = "/home/dev/repo2";
+    await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
+    await store.upsertFile(
+      repo2,
+      "src/b.ts",
+      [{ ...makeChunk("src/b.ts", 0), repoId: repo2 }],
+      [makeEmbedding(2)],
+    );
+
+    const future = new Date(Date.now() + 86400_000).toISOString();
+    await store.purgeOlderThan(future, REPO_ID);
+
+    expect(await store.countRows()).toBe(1);
+    const results = await store.searchInRepo(makeVector(2), repo2, 10);
+    expect(results.length).toBeGreaterThan(0);
+    for (const result of results) {
+      expect(result.repo_id).toBe(repo2);
+    }
+  });
+
+  it("purgeOlderThan() preserves rows under exempt prefixes", async () => {
+    await store.open(DIMS);
+    await store.upsertFile(
+      REPO_ID,
+      "GeometricTools/GTE/file.h",
+      [makeChunk("GeometricTools/GTE/file.h", 0)],
+      [makeEmbedding(1)],
+    );
+    await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(2)]);
+
+    const future = new Date(Date.now() + 86400_000).toISOString();
+    await store.purgeOlderThan(future, REPO_ID, ["GeometricTools/"]);
+
+    expect(await store.countRows()).toBe(1);
+    const results = await store.searchInRepo(makeVector(1), REPO_ID, 10);
+    expect(results.map((row) => row.file_path)).toContain("GeometricTools/GTE/file.h");
+  });
+
+  it("purgeOlderThan() supports multiple exempt prefixes", async () => {
+    await store.open(DIMS);
+    await store.upsertFile(
+      REPO_ID,
+      "vendor/a.ts",
+      [makeChunk("vendor/a.ts", 0)],
+      [makeEmbedding(1)],
+    );
+    await store.upsertFile(
+      REPO_ID,
+      "third_party/b.ts",
+      [makeChunk("third_party/b.ts", 0)],
+      [makeEmbedding(2)],
+    );
+    await store.upsertFile(REPO_ID, "src/c.ts", [makeChunk("src/c.ts", 0)], [makeEmbedding(3)]);
+
+    const future = new Date(Date.now() + 86400_000).toISOString();
+    await store.purgeOlderThan(future, REPO_ID, ["third_party/", "vendor/"]);
+
+    expect(await store.countRows()).toBe(2);
+    const results = await store.searchInRepo(makeVector(1), REPO_ID, 10);
+    const paths = results.map((row) => row.file_path);
+    expect(paths).toContain("vendor/a.ts");
+    expect(paths).toContain("third_party/b.ts");
+  });
+
+  // ── touchRepo ────────────────────────────────────────────────────────────────
+
+  it("touchRepo() refreshes indexed_at for stale rows in a repo", async () => {
+    await store.open(DIMS);
+    await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
+
+    const touchedAt = new Date(Date.now() + 86400_000).toISOString();
+    await store.touchRepo(REPO_ID, touchedAt);
+
+    const afterTouchedAt = new Date(Date.now() + 3600_000).toISOString();
+    await store.purgeOlderThan(afterTouchedAt, REPO_ID);
+
+    expect(await store.countRows()).toBe(1);
+  });
+
+  it("touchRepo() does not affect other repos", async () => {
+    await store.open(DIMS);
+    const repo2 = "/home/dev/repo2";
+    await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
+    await store.upsertFile(
+      repo2,
+      "src/b.ts",
+      [{ ...makeChunk("src/b.ts", 0), repoId: repo2 }],
+      [makeEmbedding(2)],
+    );
+
+    const touchedAt = new Date(Date.now() + 86400_000).toISOString();
+    await store.touchRepo(REPO_ID, touchedAt);
+
+    const future = new Date(Date.now() + 3600_000).toISOString();
+    await store.purgeOlderThan(future, repo2);
+
+    expect(await store.countRows()).toBe(1);
+    const results = await store.searchInRepo(makeVector(1), REPO_ID, 10);
+    expect(results.length).toBeGreaterThan(0);
+  });
+
+  it("touchRepo() is a no-op for a repo with no rows", async () => {
+    await store.open(DIMS);
+    await expect(
+      store.touchRepo("/missing/repo", new Date().toISOString()),
+    ).resolves.toBeUndefined();
+    expect(await store.countRows()).toBe(0);
   });
 
   // ── search ──────────────────────────────────────────────────────────────────
