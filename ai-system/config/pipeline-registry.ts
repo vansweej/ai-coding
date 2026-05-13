@@ -19,18 +19,23 @@ export interface PipelineEntry {
 export const PIPELINE_REGISTRY: readonly PipelineEntry[] = [
   {
     name: "dev-cycle",
-    description: "plan → implement → write-files → test",
-    stack: "TypeScript",
+    description: "plan file → per-step implement → verify/retry → phase commit",
+    stack: "TypeScript/Rust/C++",
   },
   {
     name: "rust-dev-cycle",
-    description: "plan → implement → write-files → fmt → clippy → test → coverage",
+    description: "alias for dev-cycle --language rust",
     stack: "Rust",
   },
   {
     name: "cmake-dev-cycle",
-    description: "plan → implement → write-files → configure → build → test",
+    description: "alias for dev-cycle --language cpp",
     stack: "C++",
+  },
+  {
+    name: "doc-cycle",
+    description: "placeholder for documentation-focused plan phases",
+    stack: "Documentation",
   },
   {
     name: "scaffold-rust",

@@ -1,8 +1,19 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { runPipeline } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
-import { findProfile } from "../config/model-profiles";
+import {
+  CPP_CONFIG,
+  DEV_CYCLE_LANGUAGE_CONFIGS,
+  RUST_CONFIG,
+  TYPESCRIPT_CONFIG,
+} from "../core/pipeline/definitions/language-configs";
+import type { DevCycleLanguageConfig } from "../core/pipeline/definitions/language-configs";
+import { runFeature } from "../core/pipeline/feature-runner";
 import { loadConfig } from "./load-config";
+import type { CliLanguage } from "./parse-args";
 import { parseArgs } from "./parse-args";
 import { selectPipeline } from "./select-pipeline";
 
@@ -25,6 +36,46 @@ function buildEvent(input: string): AIRequestEvent {
   };
 }
 
+function detectLanguage(workspace: string, override?: CliLanguage): DevCycleLanguageConfig {
+  if (override !== undefined) return DEV_CYCLE_LANGUAGE_CONFIGS[override];
+  if (existsSync(join(workspace, "Cargo.toml"))) return RUST_CONFIG;
+  if (existsSync(join(workspace, "CMakeLists.txt"))) return CPP_CONFIG;
+  return TYPESCRIPT_CONFIG;
+}
+
+function languageForPipeline(
+  pipelineName: string,
+  workspace: string,
+  override?: CliLanguage,
+): DevCycleLanguageConfig {
+  if (pipelineName === "rust-dev-cycle") return RUST_CONFIG;
+  if (pipelineName === "cmake-dev-cycle") return CPP_CONFIG;
+  return detectLanguage(workspace, override);
+}
+
+function isDevCyclePipeline(pipelineName: string): boolean {
+  return (
+    pipelineName === "dev-cycle" ||
+    pipelineName === "rust-dev-cycle" ||
+    pipelineName === "cmake-dev-cycle"
+  );
+}
+
+function buildSingleStepPlan(input: string): string {
+  return [
+    "# Feature: CLI input request",
+    "",
+    "## Phase 1: Implement request",
+    "",
+    "Commit message: feat: implement CLI request",
+    "",
+    "### Step 1: Implement request",
+    "",
+    input,
+    "",
+  ].join("\n");
+}
+
 /* v8 ignore start */
 async function main(): Promise<void> {
   const argsResult = parseArgs(process.argv.slice(2));
@@ -32,23 +83,42 @@ async function main(): Promise<void> {
     console.error(`Error: ${argsResult.error.message}`);
     process.exit(1);
   }
-  const { pipelineName, workspace, input, profileName } = argsResult.value;
+  const { pipelineName, workspace, input, planPath, language, maxRetries, profileName } =
+    argsResult.value;
 
-  const configResult = loadConfig();
+  const configResult = loadConfig(undefined, profileName);
   if (!configResult.ok) {
     console.error(`Error: ${configResult.error.message}`);
     process.exit(1);
   }
 
-  const profile = findProfile(profileName);
-  if (!profile) {
-    console.error(`Error: Unknown profile "${profileName}". Available: copilot-default`);
-    process.exit(1);
+  const languageConfig = languageForPipeline(pipelineName, workspace, language);
+
+  if (isDevCyclePipeline(pipelineName) && (planPath !== undefined || input !== "")) {
+    const planContent =
+      planPath !== undefined ? readFileSync(planPath, "utf8") : buildSingleStepPlan(input);
+    const outcome = await runFeature(planContent, {
+      config: configResult.value,
+      workspace,
+      languageConfig,
+      retryConfig: { maxLocalRetries: maxRetries },
+    });
+
+    if (!outcome.ok) {
+      console.error(`Feature failed: ${outcome.error.message}`);
+      process.exit(1);
+    }
+
+    console.log(`Running feature: ${outcome.value.feature}`);
+    console.log(`Workspace:       ${workspace}`);
+    console.log(`Language:        ${languageConfig.name}`);
+    for (const phase of outcome.value.phases) {
+      console.log(`[ok] Phase ${phase.phaseNumber}: ${phase.commitMessage}`);
+    }
+    return;
   }
 
-  const config = { ...configResult.value, profile };
-
-  const pipelineResult = await selectPipeline(pipelineName, config, workspace);
+  const pipelineResult = await selectPipeline(pipelineName, configResult.value, workspace);
   if (!pipelineResult.ok) {
     console.error(`Error: ${pipelineResult.error.message}`);
     process.exit(1);

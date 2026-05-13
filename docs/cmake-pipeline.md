@@ -265,3 +265,20 @@ createNixShellStep<AIRequestEvent>(
 | `build` | Compilation error | Run `cmake --build build` locally; fix errors |
 | `test` | Test failure | Run `ctest --test-dir build --output-on-failure` locally |
 | `test` | No tests registered | Add `add_test()` or `gtest_discover_tests()` to CMakeLists.txt |
+# CMake Pipeline
+
+The previous dedicated `cmake-dev-cycle` implementation has been replaced by the unified
+`dev-cycle` pipeline. Use either:
+
+```bash
+bun run pipeline dev-cycle ./my-cpp-project --language cpp --plan ./plans/feature.md --profile hybrid
+```
+
+or the compatibility alias:
+
+```bash
+bun run pipeline cmake-dev-cycle ./my-cpp-project --input "Add a matrix multiply function"
+```
+
+C++ verification still runs CMake configure, build, and CTest through the shared language
+configuration.

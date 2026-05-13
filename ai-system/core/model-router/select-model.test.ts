@@ -27,10 +27,10 @@ describe("selectModel", () => {
       expect(selectModel(makeEvent("debug"), mode)).toBe("deepseek-coder-v2");
     });
 
-    it.each(["explain", "edit", "refactor", "chat", "task", "explore"] satisfies AIAction[])(
-      "returns qwen3:8b for %s action",
+    it.each(["explain", "edit", "refactor", "fix", "chat", "task", "explore"] satisfies AIAction[])(
+      "returns gemma4:26b for %s action",
       (action) => {
-        expect(selectModel(makeEvent(action), mode)).toBe("qwen3:8b");
+        expect(selectModel(makeEvent(action), mode)).toBe("gemma4:26b");
       },
     );
   });
@@ -41,14 +41,15 @@ describe("selectModel", () => {
     it.each([
       "plan",
       "debug",
+      "fix",
       "explain",
       "edit",
       "refactor",
       "chat",
       "task",
       "explore",
-    ] satisfies AIAction[])("returns qwen3:8b for %s action regardless of action", (action) => {
-      expect(selectModel(makeEvent(action), mode)).toBe("qwen3:8b");
+    ] satisfies AIAction[])("returns gemma4:26b for %s action regardless of action", (action) => {
+      expect(selectModel(makeEvent(action), mode)).toBe("gemma4:26b");
     });
   });
 });

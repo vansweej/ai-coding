@@ -38,6 +38,42 @@ describe("parseArgs", () => {
     if (result.ok) expect(result.value.input).toBe("Add tests");
   });
 
+  it("parses --plan flag", () => {
+    const result = parseArgs(["dev-cycle", "/tmp/ws", "--plan", "plans/feature.md"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.planPath).toBe("plans/feature.md");
+  });
+
+  it("returns error when --plan flag has no value", () => {
+    const result = parseArgs(["dev-cycle", "/tmp/ws", "--plan"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("--plan flag requires a value");
+  });
+
+  it("parses --language flag", () => {
+    const result = parseArgs(["dev-cycle", "/tmp/ws", "--language", "rust"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.language).toBe("rust");
+  });
+
+  it("returns error for an unknown --language value", () => {
+    const result = parseArgs(["dev-cycle", "/tmp/ws", "--language", "python"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("--language must be one of");
+  });
+
+  it("parses --max-retries flag", () => {
+    const result = parseArgs(["dev-cycle", "/tmp/ws", "--max-retries", "2"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.maxRetries).toBe(2);
+  });
+
+  it("returns error for invalid --max-retries value", () => {
+    const result = parseArgs(["dev-cycle", "/tmp/ws", "--max-retries", "nope"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("--max-retries");
+  });
+
   it("returns error when --input flag has no value", () => {
     const result = parseArgs(["dev-cycle", "/tmp/ws", "--input"]);
     expect(result.ok).toBe(false);

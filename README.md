@@ -6,11 +6,11 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
 ## Architecture
 
 - **Model profiles** -- named configurations mapping semantic roles (planner, implementer,
-  debugger…) to model IDs. Default: `copilot-default` (all roles → `claude-sonnet-4.6` via
-  GitHub Copilot)
-- **Pipelines** -- linear step runners that chain LLM calls with shell commands (fmt, clippy,
-  cmake, tarpaulin, etc.). All dev-cycle pipelines include a `write-files` step that writes
-  generated code to disk before build/test steps run
+  debugger, fixer…) to model IDs. Default: `copilot-default` (all roles → `claude-sonnet-4.6` via
+  GitHub Copilot). `hybrid` routes normal implementation to local `gemma4:26b` and fixer escalation
+  to Copilot.
+- **Pipelines** -- plan-file driven workflows that implement steps, write files, verify with the
+  language toolchain, retry locally, escalate fixes when needed, and commit each successful phase.
 - **Scaffold pipelines** -- generate new Rust and C++ projects including a `flake.nix` dev shell
   and a lightweight `AGENTS.md` with build commands and a language-skill reference
 - **Codebase indexer** -- indexes git repositories into a local LanceDB vector store using
@@ -87,16 +87,16 @@ custom tool will return an explicit error message.
 ## Running pipelines
 
 ```bash
-bun run pipeline <name> <workspace> [--input "request text"] [--profile <name>]
+bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--language <typescript|rust|cpp>] [--max-retries <n>] [--profile <name>]
 ```
 
 | Pipeline name     | Steps                                                              | Language   |
 |-------------------|--------------------------------------------------------------------|------------|
 | `scaffold-rust`   | cargo init → generate flake.nix → write files → write AGENTS.md               | Rust       |
 | `scaffold-cpp`    | generate files → write files → cmake configure → write AGENTS.md               | C++        |
-| `dev-cycle`       | plan → implement → write-files → bun test                          | TypeScript |
-| `rust-dev-cycle`  | plan → implement → write-files → fmt → clippy → test → coverage    | Rust       |
-| `cmake-dev-cycle` | plan → implement → write-files → configure → build → ctest         | C++        |
+| `dev-cycle`       | plan file → implement steps → verify/retry → per-phase commit       | TS/Rust/C++|
+| `rust-dev-cycle`  | alias for `dev-cycle --language rust`                              | Rust       |
+| `cmake-dev-cycle` | alias for `dev-cycle --language cpp`                               | C++        |
 
 ## Codebase indexer
 
@@ -144,11 +144,11 @@ bun run pipeline scaffold-rust /tmp/my-rust-project
 mkdir /tmp/my-cpp-project
 bun run pipeline scaffold-cpp /tmp/my-cpp-project
 
-# Run the TypeScript dev cycle with a specific request
-bun run pipeline dev-cycle ./my-project --input "Add error handling to the parser"
+# Run the dev cycle from a structured plan file using local implementation + Copilot fixer escalation
+bun run pipeline dev-cycle ./my-project --plan ./plans/feature.md --profile hybrid
 
-# Run the Rust dev cycle
-bun run pipeline rust-dev-cycle ./my-rust-project --input "Add a config module"
+# Run a backward-compatible single-step Rust request
+bun run pipeline dev-cycle ./my-rust-project --language rust --input "Add a config module"
 ```
 
 All shell steps are nix-aware: if a `flake.nix` is detected in the workspace, commands are

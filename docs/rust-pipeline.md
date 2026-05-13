@@ -246,3 +246,20 @@ import { createNixShellStep } from "@ai-coding/pipeline";
 
 createNixShellStep<AIRequestEvent>("audit", ["cargo", "audit"], { cwd: workspace });
 ```
+# Rust Pipeline
+
+The previous dedicated `rust-dev-cycle` implementation has been replaced by the unified
+`dev-cycle` pipeline. Use either:
+
+```bash
+bun run pipeline dev-cycle ./my-rust-project --language rust --plan ./plans/feature.md --profile hybrid
+```
+
+or the compatibility alias:
+
+```bash
+bun run pipeline rust-dev-cycle ./my-rust-project --input "Add a config module"
+```
+
+Rust verification still runs formatting, clippy, tests, tarpaulin, and the coverage gate through
+the shared language configuration.

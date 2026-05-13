@@ -19,6 +19,7 @@ export type PipelineName =
   | "dev-cycle"
   | "rust-dev-cycle"
   | "cmake-dev-cycle"
+  | "doc-cycle"
   | "scaffold-rust"
   | "scaffold-cpp";
 

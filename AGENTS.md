@@ -22,18 +22,18 @@ ai-coding/
                              CodebaseBackend, indexCodebase, CodebaseStore, ParserPool, chunkFile
   ai-system/
     config/
-      model-profiles.ts    - ModelRole, ModelProfile, copilot-default profile
+      model-profiles.ts    - ModelRole, ModelProfile, copilot-default and hybrid profiles
       pipeline-registry.ts - Single source of truth for pipeline metadata
     core/
       model-router/        - action → ModelRole; role + profile → model ID
       mode-router/         - source → AIMode ("editor" | "agentic")
-      orchestrator/        - Single LLM call lifecycle; CopilotDispatcher
+      orchestrator/        - Single LLM call lifecycle; CopilotDispatcher, OllamaDispatcher
       pipeline/
-        steps/             - OrchestratorStep, FileWriterStep, NixShellStep
-        definitions/       - dev-cycle, rust-dev-cycle, cmake-dev-cycle, scaffold-*
+        steps/             - OrchestratorStep, SkillResolverStep, VerifiedImplementStep
+        definitions/       - unified dev-cycle language configs, scaffold-*
     cli/
-      parse-args.ts        - CLI args (--profile, --input flags)
-      load-config.ts       - Builds OrchestratorConfig with copilot-default profile
+      parse-args.ts        - CLI args (--profile, --input, --plan, --language flags)
+      load-config.ts       - Builds OrchestratorConfig with selected profile
       select-pipeline.ts   - Instantiates pipeline by name
     shared/
       event-types.ts       - Shared type definitions (AIRequestEvent, AIAction, etc.)

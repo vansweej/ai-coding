@@ -43,7 +43,7 @@ function makeConfig(overrides?: Partial<OrchestratorConfig["dispatchers"]>): Orc
     dispatchers: {
       "claude-sonnet-4.6": mockDispatcher("plan-response"),
       "deepseek-coder-v2": mockDispatcher("debug-response"),
-      "qwen3:8b": mockDispatcher("default-response"),
+      "gemma4:26b": mockDispatcher("default-response"),
       ...overrides,
     },
   };
@@ -76,21 +76,21 @@ describe("orchestrate", () => {
     expect(result.value.response).toBe("debug-response");
   });
 
-  it("routes edit action from CLI to qwen (agentic default)", async () => {
+  it("routes edit action from CLI to gemma (agentic default)", async () => {
     const result = await orchestrate(makeEvent({ source: "cli", action: "edit" }), makeConfig());
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.model).toBe("qwen3:8b");
+    expect(result.value.model).toBe("gemma4:26b");
     expect(result.value.mode).toBe("agentic");
   });
 
-  it("routes any action from nvim to qwen (editor mode)", async () => {
+  it("routes any action from nvim to gemma (editor mode)", async () => {
     const result = await orchestrate(makeEvent({ source: "nvim", action: "plan" }), makeConfig());
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.model).toBe("qwen3:8b");
+    expect(result.value.model).toBe("gemma4:26b");
     expect(result.value.mode).toBe("editor");
   });
 
@@ -135,7 +135,7 @@ describe("orchestrate", () => {
     };
 
     await orchestrate(makeEvent({ source: "nvim", action: "edit" }), {
-      dispatchers: { "qwen3:8b": capturingDispatcher },
+      dispatchers: { "gemma4:26b": capturingDispatcher },
     });
 
     expect(capturedPrompt).toBe("");
@@ -158,7 +158,7 @@ describe("orchestrate", () => {
 
     await orchestrate(
       makeEvent({ source: "nvim", action: "edit", payload: { input: "write code" } }),
-      { dispatchers: { "qwen3:8b": capturingDispatcher } },
+      { dispatchers: { "gemma4:26b": capturingDispatcher } },
       llmOptions,
     );
 
@@ -177,7 +177,7 @@ describe("orchestrate", () => {
     };
 
     await orchestrate(makeEvent({ source: "nvim", action: "edit" }), {
-      dispatchers: { "qwen3:8b": capturingDispatcher },
+      dispatchers: { "gemma4:26b": capturingDispatcher },
     });
 
     expect(capturedRequest?.system).toBeUndefined();

@@ -13,6 +13,10 @@ describe("actionToRole", () => {
     expect(actionToRole("debug")).toBe("debugger");
   });
 
+  it("maps fix to fixer", () => {
+    expect(actionToRole("fix")).toBe("fixer");
+  });
+
   it("maps edit to implementer", () => {
     expect(actionToRole("edit")).toBe("implementer");
   });
@@ -41,6 +45,7 @@ describe("actionToRole", () => {
     const allActions: AIAction[] = [
       "plan",
       "debug",
+      "fix",
       "edit",
       "refactor",
       "task",
