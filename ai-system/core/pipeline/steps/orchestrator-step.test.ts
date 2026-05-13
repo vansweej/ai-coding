@@ -32,7 +32,7 @@ function makeConfig(overrides?: Partial<OrchestratorConfig["dispatchers"]>): Orc
     dispatchers: {
       "claude-sonnet-4.6": mockDispatcher("plan-response"),
       "deepseek-coder-v2": mockDispatcher("debug-response"),
-      "qwen3:8b": mockDispatcher("default-response"),
+      "gemma4:26b": mockDispatcher("default-response"),
       ...overrides,
     },
   };
@@ -77,7 +77,7 @@ describe("createOrchestratorStep", () => {
       },
     };
 
-    const config = makeConfig({ "qwen3:8b": capturingDispatcher });
+    const config = makeConfig({ "gemma4:26b": capturingDispatcher });
     const step = createOrchestratorStep(
       "implement",
       "edit",
@@ -100,7 +100,7 @@ describe("createOrchestratorStep", () => {
       },
     };
 
-    const config = makeConfig({ "qwen3:8b": capturingDispatcher });
+    const config = makeConfig({ "gemma4:26b": capturingDispatcher });
     const step = createOrchestratorStep("edit-step", "edit", config);
     const ctx = makeCtx(makeEvent({ source: "cli", action: "plan" }));
 
@@ -118,7 +118,7 @@ describe("createOrchestratorStep", () => {
       },
     };
 
-    const config = makeConfig({ "qwen3:8b": capturingDispatcher });
+    const config = makeConfig({ "gemma4:26b": capturingDispatcher });
     const step = createOrchestratorStep("edit-step", "edit", config);
     const event: AIRequestEvent = {
       id: "t",
@@ -146,7 +146,7 @@ describe("createOrchestratorStep", () => {
       },
     };
 
-    const config = makeConfig({ "qwen3:8b": capturingDispatcher });
+    const config = makeConfig({ "gemma4:26b": capturingDispatcher });
     const step = createOrchestratorStep(
       "implement",
       "edit",
@@ -171,7 +171,7 @@ describe("createOrchestratorStep", () => {
   });
 
   it("propagates dispatcher failure", async () => {
-    const config = makeConfig({ "qwen3:8b": failingDispatcher("timeout") });
+    const config = makeConfig({ "gemma4:26b": failingDispatcher("timeout") });
     const step = createOrchestratorStep("edit-step", "edit", config);
     const ctx = makeCtx(makeEvent({ source: "cli", action: "plan" }));
 
@@ -203,7 +203,7 @@ describe("createOrchestratorStep", () => {
       },
     };
 
-    const config = makeConfig({ "qwen3:8b": capturingDispatcher });
+    const config = makeConfig({ "gemma4:26b": capturingDispatcher });
     const llmOptions: LLMOptions = {
       system: "You are a code generator.",
       temperature: 0.3,

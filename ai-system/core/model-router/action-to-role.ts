@@ -18,6 +18,8 @@ export function actionToRole(action: AIAction): ModelRole {
       return "planner";
     case "debug":
       return "debugger";
+    case "fix":
+      return "fixer";
     case "edit":
     case "refactor":
     case "task":

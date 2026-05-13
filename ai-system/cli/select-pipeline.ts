@@ -5,9 +5,13 @@ import type { SkillBackend } from "@ai-coding/skills";
 
 import { PIPELINE_REGISTRY } from "../config/pipeline-registry";
 import type { OrchestratorConfig } from "../core/orchestrator/orchestrate";
-import { createCMakeDevCyclePipeline } from "../core/pipeline/definitions/cmake-dev-cycle";
 import { createDevCyclePipeline } from "../core/pipeline/definitions/dev-cycle";
-import { createRustDevCyclePipeline } from "../core/pipeline/definitions/rust-dev-cycle";
+import { DOC_CYCLE_SKETCH } from "../core/pipeline/definitions/doc-cycle";
+import {
+  CPP_CONFIG,
+  RUST_CONFIG,
+  TYPESCRIPT_CONFIG,
+} from "../core/pipeline/definitions/language-configs";
 import { createCppScaffoldPipeline } from "../core/pipeline/definitions/scaffold-cpp";
 import { createRustScaffoldPipeline } from "../core/pipeline/definitions/scaffold-rust";
 
@@ -16,6 +20,7 @@ export type PipelineName =
   | "dev-cycle"
   | "rust-dev-cycle"
   | "cmake-dev-cycle"
+  | "doc-cycle"
   | "scaffold-rust"
   | "scaffold-cpp";
 
@@ -41,13 +46,20 @@ export async function selectPipeline(
 
   switch (name) {
     case "dev-cycle":
-      return { ok: true, value: createDevCyclePipeline(config, workspace, backend) };
-    case "rust-dev-cycle":
-      return { ok: true, value: createRustDevCyclePipeline(config, workspace, undefined, backend) };
-    case "cmake-dev-cycle":
       return {
         ok: true,
-        value: createCMakeDevCyclePipeline(config, workspace, undefined, backend),
+        value: createDevCyclePipeline(config, workspace, TYPESCRIPT_CONFIG, backend),
+      };
+    case "rust-dev-cycle":
+      return { ok: true, value: createDevCyclePipeline(config, workspace, RUST_CONFIG, backend) };
+    case "cmake-dev-cycle":
+      return { ok: true, value: createDevCyclePipeline(config, workspace, CPP_CONFIG, backend) };
+    case "doc-cycle":
+      return {
+        ok: false,
+        error: new Error(
+          `Pipeline "doc-cycle" is deferred. Planned steps: ${DOC_CYCLE_SKETCH.steps.join(" → ")}`,
+        ),
       };
     case "scaffold-rust":
       return { ok: true, value: createRustScaffoldPipeline(config, workspace) };

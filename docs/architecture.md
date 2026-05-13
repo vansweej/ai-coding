@@ -15,14 +15,15 @@ the actual model backends.
 ```mermaid
 graph TD
     subgraph Definitions["Pipeline Definitions (ai-system/core/pipeline/definitions/)"]
-        TSDev["createDevCyclePipeline\nbun test"]
-        RustDev["createRustDevCyclePipeline\ncargo fmt · clippy · test · tarpaulin"]
-        CMakeDev["createCMakeDevCyclePipeline\ncmake --build · ctest"]
+        Dev["createDevCyclePipeline\nparameterized by language config"]
+        Lang["TYPESCRIPT_CONFIG · RUST_CONFIG · CPP_CONFIG"]
+        Doc["doc-cycle sketch"]
     end
 
     subgraph PipelineSteps["Pipeline Steps (ai-system/core/pipeline/steps/)"]
         OrcStep["createOrchestratorStep"]
         SkillStep["createSkillResolverStep"]
+        VerifyStep["createVerifiedImplementStep"]
     end
 
     subgraph SkillsPkg["@ai-coding/skills (packages/skills/)"]
@@ -46,14 +47,16 @@ graph TD
 
     subgraph Dispatchers["Dispatchers (ai-system/core/orchestrator/)"]
         Copilot["CopilotDispatcher\napi.githubcopilot.com"]
+        Ollama["OllamaDispatcher\nlocalhost:11434"]
     end
 
-    TSDev --> Runner
-    RustDev --> Runner
-    CMakeDev --> Runner
+    Dev --> Lang
+    Dev --> Runner
+    Doc --> Runner
 
     Runner --> OrcStep
     Runner --> SkillStep
+    Runner --> VerifyStep
     Runner --> ShellStep
     Runner --> NixStep
     Runner --> CoverageGate
@@ -62,9 +65,11 @@ graph TD
     ResolveSkill --> FileBack
 
     OrcStep --> Orchestrator
+    VerifyStep --> Orchestrator
     Orchestrator --> ModeRouter
     Orchestrator --> ModelRouter
     Orchestrator --> Copilot
+    Orchestrator --> Ollama
 
     style SkillsPkg fill:#2d6a4f,color:#fff
     style SkillStep fill:#457b9d,color:#fff
@@ -86,7 +91,7 @@ graph LR
     Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · VectorBackend\ncreateBestBackend · LanceStore\nchunkSkill"]
     Codebase["@ai-coding/codebase\nCodebaseBackend · indexCodebase\nCodebaseStore · ParserPool\nchunkFile · discoverFiles"]
     Pipeline["@ai-coding/pipeline\nrunPipeline · PipelineStep\nShellStep · NixShellStep\nCoverageGateStep"]
-    AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep\nrust/cmake/ts definitions"]
+    AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep · VerifiedImplementStep\nunified dev-cycle definitions"]
 
     AISystem --> Pipeline
     AISystem --> Shared
@@ -229,17 +234,22 @@ ai-coding/
         select-model.ts              (event, mode) → model string
       orchestrator/
         orchestrate.ts               Single LLM call lifecycle (profile-aware routing)
-        copilot-dispatcher.ts        HTTP transport for GitHub Copilot
+          copilot-dispatcher.ts        HTTP transport for GitHub Copilot
+          ollama-dispatcher.ts         HTTP transport for local Ollama
       pipeline/
         steps/
           orchestrator-step.ts       LLM step wrapping orchestrate()
           skill-resolver-step.ts     Skill resolution step (resolves + merges skills into context)
+          verified-implement-step.ts implement → write files → verify → retry/escalate
         definitions/
-          dev-cycle.ts               TypeScript: [skills →] plan → implement → write-files → bun test
-          rust-dev-cycle.ts          Rust: [skills →] plan → implement → write-files → fmt → clippy → test → tarpaulin → gate
-          cmake-dev-cycle.ts         C++: [skills →] plan → implement → write-files → cmake build → ctest
+          dev-cycle.ts               Unified [skills →] implement → write-files factory
+          language-configs.ts        TypeScript, Rust, and C++ prompts/toolchains
+          doc-cycle.ts               Deferred documentation pipeline sketch
+        plan-parser.ts               Structured markdown plan parser
+        phase-runner.ts              Per-phase execution and auto-commit
+        feature-runner.ts            Parses plan and runs phases sequentially
     config/
-      model-profiles.ts              ModelRole, ModelProfile, copilot-default profile
+      model-profiles.ts              ModelRole, ModelProfile, copilot-default and hybrid profiles
       pipeline-registry.ts           Single source of truth for pipeline metadata
   opencode/
     mappings/                        OpenCode provider/model configs
@@ -311,8 +321,26 @@ All roles route to `claude-sonnet-4.6` via GitHub Copilot:
 | `planner`     | `claude-sonnet-4.6`  | Copilot API   |
 | `implementer` | `claude-sonnet-4.6`  | Copilot API   |
 | `debugger`    | `claude-sonnet-4.6`  | Copilot API   |
+| `fixer`       | `claude-sonnet-4.6`  | Copilot API   |
 | `reviewer`    | `claude-sonnet-4.6`  | Copilot API   |
 | `tester`      | `claude-sonnet-4.6`  | Copilot API   |
+| `scaffolder`  | `claude-sonnet-4.6`  | Copilot API   |
+| `explorer`    | `claude-sonnet-4.6`  | Copilot API   |
+| `default`     | `claude-sonnet-4.6`  | Copilot API   |
+
+### hybrid profile
+
+The `hybrid` profile keeps normal batch execution local and escalates only fixes
+to Copilot:
+
+| Role          | Model                | Backend       |
+|---------------|----------------------|---------------|
+| `planner`     | `claude-sonnet-4.6`  | Copilot API   |
+| `implementer` | `gemma4:26b`         | Ollama        |
+| `debugger`    | `gemma4:26b`         | Ollama        |
+| `fixer`       | `claude-sonnet-4.6`  | Copilot API   |
+| `reviewer`    | `claude-sonnet-4.6`  | Copilot API   |
+| `tester`      | `gemma4:26b`         | Ollama        |
 | `scaffolder`  | `claude-sonnet-4.6`  | Copilot API   |
 | `explorer`    | `claude-sonnet-4.6`  | Copilot API   |
 | `default`     | `claude-sonnet-4.6`  | Copilot API   |

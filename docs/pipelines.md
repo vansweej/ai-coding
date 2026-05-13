@@ -297,10 +297,12 @@ const config: OrchestratorConfig = {
 ### 2. Choose and create a pipeline
 
 ```typescript
-import { createRustDevCyclePipeline } from
-  "ai-system/core/pipeline/definitions/rust-dev-cycle";
+import { RUST_CONFIG } from
+  "ai-system/core/pipeline/definitions/language-configs";
+import { createDevCyclePipeline } from
+  "ai-system/core/pipeline/definitions/dev-cycle";
 
-const steps = createRustDevCyclePipeline(config, "/path/to/my-rust-project");
+const steps = createDevCyclePipeline(config, "/path/to/my-rust-project", RUST_CONFIG);
 ```
 
 ### 3. Create the event
@@ -346,16 +348,48 @@ for (const step of result.value.steps) {
 | Need to do | Use |
 |-----------|-----|
 | Resolve relevant skills for the request | `createSkillResolverStep` (first step) |
-| LLM call (plan, implement, debug) | `createOrchestratorStep` |
+| LLM call (implement, debug, fix) | `createOrchestratorStep` |
+| Implement/write/verify/retry as one unit | `createVerifiedImplementStep` |
 | Shell command, build tool, test runner | `createNixShellStep` (preferred) or `createShellStep` |
 | Validate prior output | `createCoverageGateStep` or a custom step |
 
-### Step 2 -- Create the factory in `definitions/`
+### Step 2 -- Add a new language to the unified dev-cycle
 
-Name files `<language>-<workflow>.ts`, e.g. `rust-debug-fix.ts`.
+To support a new language, add a `DevCycleLanguageConfig` constant in
+`ai-system/core/pipeline/definitions/language-configs.ts` and register it in
+`DEV_CYCLE_LANGUAGE_CONFIGS`:
 
 ```typescript
-// ai-system/core/pipeline/definitions/rust-debug-fix.ts
+// ai-system/core/pipeline/definitions/language-configs.ts
+
+import { createNixShellStep } from "@ai-coding/pipeline";
+
+export const GO_CONFIG: DevCycleLanguageConfig = {
+  name: "go",  // extend the name union type first
+  languageHint: "Go",
+  implementSystem:
+    "You are a Go coding assistant. Output ONLY implementation code in fenced code blocks. " +
+    "Each block must have the format: ```<language> <relative-file-path>. " +
+    "Use idiomatic Go patterns and include doc comments on all exported items. " +
+    "Do not include any explanation or prose outside the code blocks.",
+  toolchainSteps: (workspace: string) => [
+    createNixShellStep<AIRequestEvent>("fmt", ["gofmt", "-l", "."], { cwd: workspace }),
+    createNixShellStep<AIRequestEvent>("vet", ["go", "vet", "./..."], { cwd: workspace }),
+    createNixShellStep<AIRequestEvent>("test", ["go", "test", "./..."], { cwd: workspace }),
+  ],
+};
+```
+
+Then add `"go"` to the `DevCycleLanguageConfig["name"]` union, register it in
+`DEV_CYCLE_LANGUAGE_CONFIGS`, and add a `--language go` case in `parseLanguage()`.
+
+### Step 3 -- Create a genuinely new workflow
+
+For pipelines that are not language dev-cycles (e.g. debug-fix, documentation),
+create a new definition file:
+
+```typescript
+// ai-system/core/pipeline/definitions/debug-fix.ts
 
 import { createNixShellStep } from "@ai-coding/pipeline";
 import type { PipelineStep } from "@ai-coding/pipeline";
@@ -364,20 +398,17 @@ import type { AIRequestEvent } from "@ai-coding/shared";
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { createOrchestratorStep } from "../steps/orchestrator-step";
 
-export function createRustDebugFixPipeline(
+export function createDebugFixPipeline(
   config: OrchestratorConfig,
   workspace: string,
 ): readonly PipelineStep<AIRequestEvent>[] {
   return [
     createOrchestratorStep("debug", "debug", config),
 
-    createOrchestratorStep("fix", "edit", config, (ctx) => {
+    createOrchestratorStep("fix", "fix", config, (ctx) => {
       const diagnosis = ctx.results.get("debug")?.output ?? "";
-      const original  = ctx.event.payload.input ?? "";
-      return (
-        `A debugging agent diagnosed:\n\n${diagnosis}\n\n` +
-        `Apply a fix. Original report: ${original}`
-      );
+      const original = ctx.event.payload.input ?? "";
+      return `Fix this issue:\n\n${diagnosis}\n\nOriginal report: ${original}`;
     }),
 
     createNixShellStep<AIRequestEvent>("verify", ["cargo", "test"], { cwd: workspace }),
@@ -385,7 +416,7 @@ export function createRustDebugFixPipeline(
 }
 ```
 
-### Step 3 -- Wire context between steps
+### Step 4 -- Wire context between steps
 
 Use `buildPrompt` on `OrchestratorStep` to read prior results:
 

@@ -8,6 +8,7 @@ export type AIAction =
   | "refactor"
   | "plan"
   | "debug"
+  | "fix"
   | "chat"
   | "task"
   | "explore";

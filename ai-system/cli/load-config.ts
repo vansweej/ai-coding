@@ -4,8 +4,9 @@ import { join } from "node:path";
 
 import type { Result } from "@ai-coding/pipeline";
 
-import { COPILOT_DEFAULT_PROFILE } from "../config/model-profiles";
+import { COPILOT_DEFAULT_PROFILE, findProfile } from "../config/model-profiles";
 import { CopilotDispatcher } from "../core/orchestrator/copilot-dispatcher";
+import { OllamaDispatcher } from "../core/orchestrator/ollama-dispatcher";
 import type { OrchestratorConfig } from "../core/orchestrator/orchestrate";
 
 interface OpenCodeAuth {
@@ -62,13 +63,21 @@ export function resolveCopilotToken(
 /**
  * Build the OrchestratorConfig by wiring up real dispatchers.
  *
- * Uses the copilot-default profile: all roles route to claude-sonnet-4.6
- * via the GitHub Copilot provider.
+ * Wires the dispatchers required by the selected profile. The default profile
+ * uses GitHub Copilot only; the hybrid profile adds local Ollama for gemma4:26b.
  *
  * The Copilot token is resolved via resolveCopilotToken().
  */
 /* v8 ignore start */
-export function loadConfig(openCodeAuthPath?: string): Result<OrchestratorConfig> {
+export function loadConfig(
+  openCodeAuthPath?: string,
+  profileName: string = COPILOT_DEFAULT_PROFILE.name,
+): Result<OrchestratorConfig> {
+  const profile = findProfile(profileName);
+  if (profile === undefined) {
+    return { ok: false, error: new Error(`Unknown profile "${profileName}"`) };
+  }
+
   const tokenResult = resolveCopilotToken(openCodeAuthPath);
   /* v8 ignore stop */
   if (!tokenResult.ok) {
@@ -76,14 +85,19 @@ export function loadConfig(openCodeAuthPath?: string): Result<OrchestratorConfig
   }
 
   const copilot = new CopilotDispatcher(tokenResult.value);
+  const dispatchers: OrchestratorConfig["dispatchers"] = {
+    "claude-sonnet-4.6": copilot,
+  };
+
+  if (profile.name === "hybrid") {
+    dispatchers["gemma4:26b"] = new OllamaDispatcher();
+  }
 
   return {
     ok: true,
     value: {
-      profile: COPILOT_DEFAULT_PROFILE,
-      dispatchers: {
-        "claude-sonnet-4.6": copilot,
-      },
+      profile,
+      dispatchers,
     },
   };
 }

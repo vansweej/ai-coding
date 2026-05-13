@@ -107,9 +107,27 @@ describe("loadConfig", () => {
     if (result.ok) {
       expect(result.value.profile?.name).toBe("copilot-default");
       expect(result.value.dispatchers["claude-sonnet-4.6"]).toBeDefined();
-      expect(result.value.dispatchers["qwen3:8b"]).toBeUndefined();
+      expect(result.value.dispatchers["gemma4:26b"]).toBeUndefined();
       expect(result.value.dispatchers["deepseek-coder-v2"]).toBeUndefined();
     }
+  });
+
+  it("returns a hybrid config with Copilot and Ollama dispatchers", () => {
+    process.env.COPILOT_TOKEN = "gho_test_token";
+    const result = loadConfig("/nonexistent/auth.json", "hybrid");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.profile?.name).toBe("hybrid");
+      expect(result.value.dispatchers["claude-sonnet-4.6"]).toBeDefined();
+      expect(result.value.dispatchers["gemma4:26b"]).toBeDefined();
+    }
+  });
+
+  it("returns error for an unknown profile", () => {
+    process.env.COPILOT_TOKEN = "gho_test_token";
+    const result = loadConfig("/nonexistent/auth.json", "unknown-profile");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("Unknown profile");
   });
 
   it("returns error when no token source is available", () => {

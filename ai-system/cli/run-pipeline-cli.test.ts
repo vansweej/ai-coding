@@ -123,12 +123,17 @@ describe("selectPipeline", () => {
       "dev-cycle",
       "rust-dev-cycle",
       "cmake-dev-cycle",
+      "doc-cycle",
       "scaffold-rust",
       "scaffold-cpp",
     ];
     for (const name of names) {
       const result = await selectPipeline(name, STUB_CONFIG, "/tmp/ws", TEST_FILE_BACKEND);
-      expect(result.ok).toBe(true);
+      if (name === "doc-cycle") {
+        expect(result.ok).toBe(false);
+      } else {
+        expect(result.ok).toBe(true);
+      }
       if (result.ok) {
         expect(result.value.length).toBeGreaterThan(0);
       }

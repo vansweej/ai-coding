@@ -22,18 +22,18 @@ ai-coding/
                              CodebaseBackend, indexCodebase, CodebaseStore, ParserPool, chunkFile
   ai-system/
     config/
-      model-profiles.ts    - ModelRole, ModelProfile, copilot-default profile
+      model-profiles.ts    - ModelRole, ModelProfile, copilot-default and hybrid profiles
       pipeline-registry.ts - Single source of truth for pipeline metadata
     core/
       model-router/        - action → ModelRole; role + profile → model ID
       mode-router/         - source → AIMode ("editor" | "agentic")
-      orchestrator/        - Single LLM call lifecycle; CopilotDispatcher
+      orchestrator/        - Single LLM call lifecycle; CopilotDispatcher, OllamaDispatcher
       pipeline/
-        steps/             - OrchestratorStep, FileWriterStep, NixShellStep
-        definitions/       - dev-cycle, rust-dev-cycle, cmake-dev-cycle, scaffold-*
+        steps/             - OrchestratorStep, SkillResolverStep, VerifiedImplementStep
+        definitions/       - unified dev-cycle language configs, scaffold-*
     cli/
-      parse-args.ts        - CLI args (--profile, --input flags)
-      load-config.ts       - Builds OrchestratorConfig with copilot-default profile
+      parse-args.ts        - CLI args (--profile, --input, --plan, --language flags)
+      load-config.ts       - Builds OrchestratorConfig with selected profile
       select-pipeline.ts   - Instantiates pipeline by name
     shared/
       event-types.ts       - Shared type definitions (AIRequestEvent, AIAction, etc.)
@@ -111,21 +111,14 @@ Target **90% code coverage**. Exclude untestable code with:
 4. **Never leave `TODO` comments** — either implement the thing or open a
    tracked issue.
 5. **Never leave commented-out code** in the codebase.
-6. **Keep the Home Manager repo in sync** — when adding or modifying any
-   **agent** (`.md` in `agents/`), **skill** (`SKILL.md` in `skill/`), or
-   **command** (`.md` in `commands/`), also update the source file in
-   `~/Projects/home-manager/opencode/` and, if the file is new, add a
-   `.source` entry in `home.nix`. After changes, delete any conflicting plain
-   files under `~/.config/opencode/` and run:
-   ```bash
-   home-manager switch --flake ~/Projects/home-manager#<machine>
-   ```
-   (replace `<machine>` with your profile name, e.g. `M5`, `oryp6`, `M1`)
+6. **Keep the Home Manager repo in sync** — when modifying agents, skills, or
+   commands, update the source in `~/Projects/home-manager/opencode/` and run
+   `home-manager switch --flake ~/Projects/home-manager#<machine>`.
 7. **Update documentation with every change** — when adding, modifying, or
    removing any feature, agent, pipeline, skill, or configuration in this
    repository, update the corresponding documentation in the same commit:
-   - `docs/agents.md` — for agent changes (tables, descriptions, workflows,
-     file listings)
+   - `docs/agent-reference.md` — for agent changes (tables, descriptions, workflows,
+      file listings)
    - `docs/architecture.md` — for structural or pipeline changes
    - `docs/ai-coding-os-setup.md` — for setup-facing changes (agent tables,
      daily workflow steps)
@@ -139,7 +132,7 @@ Target **90% code coverage**. Exclude untestable code with:
 
    | Area | Doc file |
    |------|----------|
-   | Agents (tables, descriptions, workflows) | `docs/agents.md` |
+   | Agents (tables, descriptions, workflows) | `docs/agent-reference.md` |
    | Architecture or pipeline structure | `docs/architecture.md` |
    | Setup / daily workflow | `docs/ai-coding-os-setup.md` |
    | Codebase indexer | `docs/codebase-indexer.md` |
@@ -150,25 +143,8 @@ Target **90% code coverage**. Exclude untestable code with:
 
 ## OpenCode Permissions
 
-`opencode.json` sets locked-down defaults for the **top-level assistant** — the
-starting context before the user selects a named agent:
-
-| Permission | Default |
-|------------|---------|
-| `edit` | `ask` — prompts before editing any file |
-| `write` | `ask` — prompts before creating any file |
-| `bash` | `deny` for all commands except read-only git (`git log*`, `git diff*`, `git status`, `git show*`, `git branch*`) |
-| `pipeline` | `deny` |
-
-Named agents override these via their frontmatter `permission` block. Code
-generators (`build`, `local`) are the only agents with unrestricted access.
-Handoff agents (`brainstorm`, `spar`) may write only to their brief files.
-See `docs/agents.md` → Permission Model for the full hierarchy.
-
-When modifying `opencode.json` permissions: changes take effect for all
-machines that source it via the home-manager `ai-coding` flake input. Run
-`nix flake update ai-coding` in the home-manager repo and `home-manager switch`
-after pushing.
+Defaults in `opencode.json`: `edit: ask`, `write: ask`, `bash: deny` (except read-only git).
+Named agents override via frontmatter `permission` block. See `docs/agent-reference.md → Permission Model`.
 
 ## Code Style & Testing
 
@@ -180,35 +156,10 @@ automatically via `skill-retrieval` for any workspace with a `package.json`.
 
 ## Git Workflow
 
-- Create feature branches from `main` (e.g., `feat/mode-router`)
-- Use [Conventional Commits](https://www.conventionalcommits.org/):
-  `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`
-- Keep commits atomic and focused on a single change
-- Imperative mood: "add model router" not "added model router"
+Feature branches from `main` (`feat/…`, `fix/…`). [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`. Imperative mood, atomic commits.
 
 ---
 
 ## Models and Routing
 
-This project routes AI requests to different models via the role/profile system:
-
-| Action  | Role          | Model               | Where        |
-|---------|---------------|---------------------|--------------|
-| plan    | `planner`     | `claude-sonnet-4.6` | Copilot API  |
-| debug   | `debugger`    | `claude-sonnet-4.6` | Copilot API  |
-| edit    | `implementer` | `claude-sonnet-4.6` | Copilot API  |
-| explore | `explorer`    | `claude-sonnet-4.6` | Copilot API  |
-| *other* | `default`     | `claude-sonnet-4.6` | Copilot API  |
-
-All roles use `github-copilot/claude-sonnet-4.6` in the `copilot-default` profile.
-
-### OpenCode agent model
-
-OpenCode agents (defined globally in `~/.config/opencode/agents/` via Home Manager)
-use either **`github-copilot/claude-opus-4.6`** (plan, spar, teach, brainstorm) or
-**`github-copilot/claude-sonnet-4.6`** (build, local, explore, and all subagents)
-via the GitHub Copilot provider.
-
-The model-router (`ai-system/core/model-router/`) maps `AIAction` → `ModelRole`
-via `actionToRole()`, then resolves the model ID via `resolveModelForRole(role, profile)`.
-The active profile is set in `OrchestratorConfig.profile` and defaults to `copilot-default`.
+See `docs/architecture.md` for the action → role → model routing table.

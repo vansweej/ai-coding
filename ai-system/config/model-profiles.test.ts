@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import {
   COPILOT_DEFAULT_PROFILE,
   DEFAULT_PROFILE_NAME,
+  HYBRID_PROFILE,
   MODEL_PROFILES,
   findProfile,
   resolveModelForRole,
@@ -25,6 +26,10 @@ describe("COPILOT_DEFAULT_PROFILE", () => {
     expect(COPILOT_DEFAULT_PROFILE.roles.debugger).toBe("claude-sonnet-4.6");
   });
 
+  it("maps fixer to claude-sonnet-4.6", () => {
+    expect(COPILOT_DEFAULT_PROFILE.roles.fixer).toBe("claude-sonnet-4.6");
+  });
+
   it("maps reviewer to claude-sonnet-4.6", () => {
     expect(COPILOT_DEFAULT_PROFILE.roles.reviewer).toBe("claude-sonnet-4.6");
   });
@@ -42,9 +47,29 @@ describe("COPILOT_DEFAULT_PROFILE", () => {
   });
 });
 
+describe("HYBRID_PROFILE", () => {
+  it("has name hybrid", () => {
+    expect(HYBRID_PROFILE.name).toBe("hybrid");
+  });
+
+  it("maps implementer, debugger, and tester to gemma4:26b", () => {
+    expect(HYBRID_PROFILE.roles.implementer).toBe("gemma4:26b");
+    expect(HYBRID_PROFILE.roles.debugger).toBe("gemma4:26b");
+    expect(HYBRID_PROFILE.roles.tester).toBe("gemma4:26b");
+  });
+
+  it("maps fixer to claude-sonnet-4.6", () => {
+    expect(HYBRID_PROFILE.roles.fixer).toBe("claude-sonnet-4.6");
+  });
+});
+
 describe("MODEL_PROFILES", () => {
   it("contains the copilot-default profile", () => {
     expect(MODEL_PROFILES["copilot-default"]).toBeDefined();
+  });
+
+  it("contains the hybrid profile", () => {
+    expect(MODEL_PROFILES.hybrid).toBe(HYBRID_PROFILE);
   });
 
   it("copilot-default entry is the same object as COPILOT_DEFAULT_PROFILE", () => {
@@ -74,11 +99,19 @@ describe("resolveModelForRole", () => {
   it("returns claude-sonnet-4.6 for default role in copilot-default", () => {
     expect(resolveModelForRole("default", COPILOT_DEFAULT_PROFILE)).toBe("claude-sonnet-4.6");
   });
+
+  it("returns gemma4:26b for implementer in hybrid", () => {
+    expect(resolveModelForRole("implementer", HYBRID_PROFILE)).toBe("gemma4:26b");
+  });
 });
 
 describe("findProfile", () => {
   it("returns COPILOT_DEFAULT_PROFILE for 'copilot-default'", () => {
     expect(findProfile("copilot-default")).toBe(COPILOT_DEFAULT_PROFILE);
+  });
+
+  it("returns HYBRID_PROFILE for 'hybrid'", () => {
+    expect(findProfile("hybrid")).toBe(HYBRID_PROFILE);
   });
 
   it("returns undefined for an unknown profile name", () => {

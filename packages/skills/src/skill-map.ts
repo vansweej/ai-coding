@@ -17,6 +17,7 @@ export const ACTION_SKILLS: Readonly<Record<AIAction, readonly string[]>> = {
   edit: ["programmer"],
   refactor: ["programmer"],
   debug: ["debugger"],
+  fix: ["debugger"],
   plan: ["architect"],
   explore: ["explorer"],
   explain: ["analyst"],

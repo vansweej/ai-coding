@@ -5,9 +5,9 @@ export function selectModel(event: AIRequestEvent, mode: AIMode): string {
   if (mode === "agentic") {
     if (event.action === "plan") return "claude-sonnet-4.6";
     if (event.action === "debug") return "deepseek-coder-v2";
-    return "qwen3:8b";
+    return "gemma4:26b";
   }
 
   // editor mode = always local
-  return "qwen3:8b";
+  return "gemma4:26b";
 }

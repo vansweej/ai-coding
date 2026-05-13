@@ -7,7 +7,7 @@ import { OllamaDispatcher } from "./ollama-dispatcher";
 /** Build a minimal DispatchRequest. */
 function makeRequest(overrides: Partial<DispatchRequest> = {}): DispatchRequest {
   return {
-    model: "qwen3:8b",
+    model: "gemma4:26b",
     prompt: "Write a hello world function",
     ...overrides,
   };

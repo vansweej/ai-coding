@@ -3,8 +3,8 @@ import { describe, expect, it } from "bun:test";
 import { PIPELINE_NAMES, PIPELINE_REGISTRY, findPipelineEntry } from "./pipeline-registry";
 
 describe("PIPELINE_REGISTRY", () => {
-  it("contains 5 entries", () => {
-    expect(PIPELINE_REGISTRY).toHaveLength(5);
+  it("contains 6 entries", () => {
+    expect(PIPELINE_REGISTRY).toHaveLength(6);
   });
 
   it("includes dev-cycle", () => {
@@ -17,6 +17,10 @@ describe("PIPELINE_REGISTRY", () => {
 
   it("includes cmake-dev-cycle", () => {
     expect(PIPELINE_REGISTRY.some((e) => e.name === "cmake-dev-cycle")).toBe(true);
+  });
+
+  it("includes doc-cycle", () => {
+    expect(PIPELINE_REGISTRY.some((e) => e.name === "doc-cycle")).toBe(true);
   });
 
   it("includes scaffold-rust", () => {

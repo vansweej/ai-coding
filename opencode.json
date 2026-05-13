@@ -3,7 +3,7 @@
   "model": "github-copilot/claude-sonnet-4.6",
   "compaction": {
     "auto": true,
-    "prune": true,
+    "prune": false,
     "reserved": 10000
   },
   "permission": {
