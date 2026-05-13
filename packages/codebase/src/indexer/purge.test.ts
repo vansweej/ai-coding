@@ -51,7 +51,7 @@ describe("purgeStale", () => {
   });
 
   it("returns an ISO-8601 date string", async () => {
-    const cutoff = await purgeStale(store, 30);
+    const cutoff = await purgeStale(store, tmpDir, [], 30);
     expect(() => new Date(cutoff)).not.toThrow();
     expect(new Date(cutoff).toISOString()).toBe(cutoff);
   });
@@ -62,7 +62,7 @@ describe("purgeStale", () => {
     expect(await store.countRows()).toBe(1);
 
     // ttlDays = -1 makes the cutoff 1 day in the future → all rows purged
-    await purgeStale(store, -1);
+    await purgeStale(store, repoId, [], -1);
     expect(await store.countRows()).toBe(0);
   });
 
@@ -71,14 +71,38 @@ describe("purgeStale", () => {
     await store.upsertFile(repoId, "a.ts", [makeChunk(repoId, "a.ts")], [makeEmbedding()]);
 
     // ttlDays = 3650 → cutoff 10 years ago → no recently-indexed rows removed
-    await purgeStale(store, 3650);
+    await purgeStale(store, repoId, [], 3650);
     expect(await store.countRows()).toBe(1);
   });
 
   it("is a no-op on an empty table", async () => {
-    const cutoff = await purgeStale(store);
+    const cutoff = await purgeStale(store, tmpDir);
     expect(typeof cutoff).toBe("string");
     expect(await store.countRows()).toBe(0);
+  });
+
+  it("only removes stale rows for the requested repo", async () => {
+    const otherRepo = "/some/other/repo";
+    await store.upsertFile(tmpDir, "a.ts", [makeChunk(tmpDir, "a.ts")], [makeEmbedding()]);
+    await store.upsertFile(otherRepo, "b.ts", [makeChunk(otherRepo, "b.ts")], [makeEmbedding()]);
+
+    await purgeStale(store, tmpDir, [], -1);
+
+    expect(await store.countRows()).toBe(1);
+  });
+
+  it("keeps stale rows under exempt prefixes", async () => {
+    await store.upsertFile(
+      tmpDir,
+      "GeometricTools/a.h",
+      [makeChunk(tmpDir, "GeometricTools/a.h")],
+      [makeEmbedding()],
+    );
+    await store.upsertFile(tmpDir, "src/a.ts", [makeChunk(tmpDir, "src/a.ts")], [makeEmbedding()]);
+
+    await purgeStale(store, tmpDir, ["GeometricTools/"], -1);
+
+    expect(await store.countRows()).toBe(1);
   });
 });
 
@@ -194,7 +218,7 @@ describe("runPostIndexPurge", () => {
   });
 
   it("returns a PurgeResult with staleBefore and deadRepos", async () => {
-    const result = await runPostIndexPurge(store, 30);
+    const result = await runPostIndexPurge(store, tmpDir, [], 30);
     expect(result).toHaveProperty("staleBefore");
     expect(result).toHaveProperty("deadRepos");
     expect(Array.isArray(result.deadRepos)).toBe(true);
@@ -205,7 +229,7 @@ describe("runPostIndexPurge", () => {
     await store.upsertFile(repoId, "a.ts", [makeChunk(repoId, "a.ts")], [makeEmbedding()]);
     expect(await store.countRows()).toBe(1);
 
-    await runPostIndexPurge(store, -1);
+    await runPostIndexPurge(store, repoId, [], -1);
     expect(await store.countRows()).toBe(0);
   });
 
@@ -213,8 +237,36 @@ describe("runPostIndexPurge", () => {
     const deadRepo = "/nonexistent/repo/for/post/purge";
     await store.upsertFile(deadRepo, "x.ts", [makeChunk(deadRepo, "x.ts")], [makeEmbedding()]);
 
-    const result = await runPostIndexPurge(store, 3650); // keep fresh rows, only purge dead
+    const result = await runPostIndexPurge(store, tmpDir, [], 3650); // keep fresh rows, only purge dead
     expect(result.deadRepos).toContain(deadRepo);
     expect(await store.countRows()).toBe(0);
+  });
+
+  it("only TTL-purges rows for the requested repo", async () => {
+    const otherRepo = await mkdtemp(join(tmpdir(), "post-purge-live-repo-"));
+    try {
+      await store.upsertFile(tmpDir, "a.ts", [makeChunk(tmpDir, "a.ts")], [makeEmbedding()]);
+      await store.upsertFile(otherRepo, "b.ts", [makeChunk(otherRepo, "b.ts")], [makeEmbedding()]);
+
+      await runPostIndexPurge(store, tmpDir, [], -1);
+
+      expect(await store.countRows()).toBe(1);
+    } finally {
+      await rm(otherRepo, { recursive: true, force: true });
+    }
+  });
+
+  it("threads exempt prefixes through the TTL purge", async () => {
+    await store.upsertFile(
+      tmpDir,
+      "GeometricTools/a.h",
+      [makeChunk(tmpDir, "GeometricTools/a.h")],
+      [makeEmbedding()],
+    );
+    await store.upsertFile(tmpDir, "src/a.ts", [makeChunk(tmpDir, "src/a.ts")], [makeEmbedding()]);
+
+    await runPostIndexPurge(store, tmpDir, ["GeometricTools/"], -1);
+
+    expect(await store.countRows()).toBe(1);
   });
 });

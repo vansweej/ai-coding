@@ -1,5 +1,8 @@
 import { join } from "node:path";
 
+/** Marker filename that exempts its containing directory from TTL eviction. */
+export const KEEP_MARKER = ".ai-coding-keep";
+
 /**
  * Extensions and filenames that are never worth indexing for code retrieval.
  * These are binary assets, generated artifacts, or metadata files that have
@@ -124,6 +127,34 @@ export async function discoverFiles(repoRoot: string): Promise<readonly string[]
     .filter((f) => f.length > 0);
 
   return allFiles.filter((filePath) => !shouldSkip(filePath));
+}
+
+/**
+ * Discover directory prefixes that should be exempt from TTL eviction.
+ *
+ * This is a pure pass over the already-discovered file list, avoiding extra
+ * filesystem I/O. A marker at the repository root would exempt every row, so it
+ * is ignored with a warning.
+ *
+ * @param files - Relative file paths returned by {@link discoverFiles}.
+ * @returns Directory prefixes with trailing slash, e.g. `["GeometricTools/"]`.
+ */
+export function discoverKeepDirs(files: readonly string[]): readonly string[] {
+  const keepDirs = new Set<string>();
+
+  for (const filePath of files) {
+    if (!filePath.endsWith(KEEP_MARKER)) continue;
+
+    const markerIndex = filePath.lastIndexOf(`/${KEEP_MARKER}`);
+    if (markerIndex === -1) {
+      console.warn(`⚠️   Ignoring root-level ${KEEP_MARKER}; it would exempt the entire repo.`);
+      continue;
+    }
+
+    keepDirs.add(`${filePath.slice(0, markerIndex)}/`);
+  }
+
+  return Array.from(keepDirs).sort();
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

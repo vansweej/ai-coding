@@ -238,7 +238,7 @@ flowchart TD
     C -->|grammar present| D[pool.getParser\nload WASM lazy]
     D --> E[parser.parse\nsource → Tree]
     E --> F[extractChunks\nwalk AST children]
-    F --> G{chunk text\n> 3000 chars?}
+    F --> G{chunk text\n> 2000 chars?}
     G -->|yes| H[sub-split on blank lines\npreserve line attribution]
     G -->|no| I[emit CodeChunk]
     H --> I
@@ -356,8 +356,10 @@ It has two stages that together prevent unbounded store growth.
 flowchart TD
     IC[indexCodebase completes] --> PG[runPostIndexPurge]
 
-    PG --> TTL[purgeStale\ncutoff = now − ttlDays]
-    TTL --> DEL1["store.purgeOlderThan\nDELETE WHERE indexed_at < cutoff"]
+    PG --> TTL[purgeStale\nrepo_id = current repo\ncutoff = now − ttlDays]
+    TTL --> EXEMPT{file_path matches\n.ai-coding-keep dir?}
+    EXEMPT -->|yes| KEEP_TTL[skip TTL delete]
+    EXEMPT -->|no| DEL1["store.purgeOlderThan\nDELETE WHERE repo_id = current repo\nAND indexed_at < cutoff"]
 
     PG --> DEAD[purgeDeadRepos\nlist all repo_ids]
     DEAD --> LOOP{for each repo_id}
@@ -366,6 +368,7 @@ flowchart TD
     EXISTS -->|no| DEL2["store.deleteRepo\nDELETE WHERE repo_id = ..."]
     DEL2 --> LOOP
     KEEP --> LOOP
+    KEEP_TTL --> RESULT
 
     TTL --> RESULT["PurgeResult\n{ staleBefore, deadRepos }"]
     DEAD --> RESULT
@@ -378,6 +381,16 @@ flowchart TD
 **Default TTL:** 30 days (`DEFAULT_TTL_DAYS`). Override per-call via
 `IndexCodebaseOptions.ttlDays`.
 
+TTL sweeps are scoped to the repository currently being indexed, so indexing one
+repository cannot evict stale rows for another repository. After indexing and
+deleted-file cleanup, `indexCodebase()` bulk-refreshes `indexed_at` for every
+surviving row in the current repo, including files skipped by the hash check.
+
+**Directory TTL exemption:** place an empty `.ai-coding-keep` file inside a
+directory to prevent rows under that relative prefix from being TTL-evicted. For
+example, `GeometricTools/.ai-coding-keep` exempts `GeometricTools/`. A root-level
+marker is ignored because it would disable TTL for the entire repo.
+
 **Note:** Query-time refresh uses `ttlDays: 3650` (≈10 years) so that freshly
 indexed rows are never swept away immediately after indexing.
 
@@ -385,11 +398,11 @@ indexed rows are never swept away immediately after indexing.
 
 ```bash
 # Via bun run (from ai-coding monorepo)
-bun run index-codebase /path/to/repo --purge-only      # TTL + dead-repo sweep
+bun run index-codebase --purge-only                 # dead-repo sweep only
 bun run index-codebase /path/to/repo --purge-repo /path/to/repo  # remove one specific repo
 
 # Via shell wrapper (from any directory)
-index-codebase --purge-only                 # TTL + dead-repo sweep (no Ollama needed)
+index-codebase --purge-only                 # dead-repo sweep only (no Ollama needed)
 index-codebase --purge-repo /path/to/repo  # remove one specific repo (no Ollama needed)
 
 # Adjust TTL
@@ -413,7 +426,7 @@ bun run index-codebase <repo-path> [options]
 |------|---------|-------------|
 | `--force` | off | Re-index all files, bypassing the hash check |
 | `--max-file-bytes <n>` | `100000` | Skip files larger than this many bytes (size check uses `file.size`, not char count) |
-| `--purge-only` | off | Run TTL + dead-repo purge only; no indexing. Does not require Ollama |
+| `--purge-only` | off | Run dead-repo purge only; no indexing or TTL sweep. Does not require Ollama |
 | `--purge-repo <path>` | — | Remove all indexed chunks for a specific repo. Does not require Ollama |
 | `--ttl <days>` | `30` | TTL for the post-index purge sweep |
 | `--db-path <path>` | `~/.local/share/ai-coding/codebase.lance` | LanceDB path |
@@ -485,7 +498,7 @@ index-codebase --force
 # Custom TTL
 index-codebase --ttl 7
 
-# TTL + dead-repo purge only (no Ollama needed)
+# Dead-repo purge only (no Ollama needed)
 index-codebase --purge-only
 
 # Remove a specific repo from the index (no Ollama needed)
@@ -700,11 +713,11 @@ Fix: re-index the repo to write canonical-path rows:
 index-codebase /path/to/repo --force
 ```
 
-The old symlink-keyed rows will be cleaned up by the TTL purge (default 30
-days). To remove them immediately:
+The old symlink-keyed rows are treated as a separate repo ID. To remove them
+immediately, purge the old symlink path explicitly:
 
 ```bash
-index-codebase --purge-only --ttl 0
+index-codebase --purge-repo /via/link/my-repo
 ```
 
 ---

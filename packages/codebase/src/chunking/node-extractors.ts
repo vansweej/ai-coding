@@ -5,7 +5,7 @@ import type { CodeChunk } from "../chunk-types";
 import { splitOversized } from "./split-oversized";
 
 /** Maximum characters per chunk before sub-splitting. */
-const DEFAULT_MAX_CHUNK_CHARS = 3000;
+const DEFAULT_MAX_CHUNK_CHARS = 2000;
 
 /**
  * Maps language names to the AST node types that represent meaningful
