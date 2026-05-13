@@ -6,6 +6,7 @@ import type { SkillBackend } from "@ai-coding/skills";
 import { PIPELINE_REGISTRY } from "../config/pipeline-registry";
 import type { OrchestratorConfig } from "../core/orchestrator/orchestrate";
 import { createDevCyclePipeline } from "../core/pipeline/definitions/dev-cycle";
+import { DOC_CYCLE_SKETCH } from "../core/pipeline/definitions/doc-cycle";
 import {
   CPP_CONFIG,
   RUST_CONFIG,
@@ -53,6 +54,13 @@ export async function selectPipeline(
       return { ok: true, value: createDevCyclePipeline(config, workspace, RUST_CONFIG, backend) };
     case "cmake-dev-cycle":
       return { ok: true, value: createDevCyclePipeline(config, workspace, CPP_CONFIG, backend) };
+    case "doc-cycle":
+      return {
+        ok: false,
+        error: new Error(
+          `Pipeline "doc-cycle" is deferred. Planned steps: ${DOC_CYCLE_SKETCH.steps.join(" → ")}`,
+        ),
+      };
     case "scaffold-rust":
       return { ok: true, value: createRustScaffoldPipeline(config, workspace) };
     case "scaffold-cpp":

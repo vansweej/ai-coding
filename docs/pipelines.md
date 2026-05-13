@@ -297,10 +297,12 @@ const config: OrchestratorConfig = {
 ### 2. Choose and create a pipeline
 
 ```typescript
-import { createRustDevCyclePipeline } from
-  "ai-system/core/pipeline/definitions/rust-dev-cycle";
+import { RUST_CONFIG } from
+  "ai-system/core/pipeline/definitions/language-configs";
+import { createDevCyclePipeline } from
+  "ai-system/core/pipeline/definitions/dev-cycle";
 
-const steps = createRustDevCyclePipeline(config, "/path/to/my-rust-project");
+const steps = createDevCyclePipeline(config, "/path/to/my-rust-project", RUST_CONFIG);
 ```
 
 ### 3. Create the event
@@ -346,13 +348,16 @@ for (const step of result.value.steps) {
 | Need to do | Use |
 |-----------|-----|
 | Resolve relevant skills for the request | `createSkillResolverStep` (first step) |
-| LLM call (plan, implement, debug) | `createOrchestratorStep` |
+| LLM call (implement, debug, fix) | `createOrchestratorStep` |
+| Implement/write/verify/retry as one unit | `createVerifiedImplementStep` |
 | Shell command, build tool, test runner | `createNixShellStep` (preferred) or `createShellStep` |
 | Validate prior output | `createCoverageGateStep` or a custom step |
 
 ### Step 2 -- Create the factory in `definitions/`
 
-Name files `<language>-<workflow>.ts`, e.g. `rust-debug-fix.ts`.
+Prefer adding a `DevCycleLanguageConfig` when the new pipeline is another
+language-specific dev cycle. Create a new definition file only for a genuinely
+new workflow such as scaffold or documentation generation.
 
 ```typescript
 // ai-system/core/pipeline/definitions/rust-debug-fix.ts
