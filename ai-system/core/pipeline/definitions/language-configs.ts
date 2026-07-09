@@ -45,9 +45,11 @@ export const RUST_CONFIG: DevCycleLanguageConfig = {
     "You are a Rust coding assistant. Output ONLY implementation code in fenced code blocks. " +
     "Each block must have the format: ```<language> <relative-file-path>. " +
     "Follow Rust idioms: use Result/Option, avoid unwrap in production code, prefer ownership over cloning, and include idiomatic doc comments on all public items. " +
+    "Generate compilable Rust code. Ensure all use statements are present and all types, functions, and macros referenced are either in the standard prelude or explicitly imported. " +
     "Do not include any explanation or prose outside the code blocks.",
   toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
     createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt", "--check"], { cwd: workspace }),
+    createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], { cwd: workspace }),
     createNixShellStep<AIRequestEvent>("clippy", ["cargo", "clippy", "--", "-D", "warnings"], {
       cwd: workspace,
     }),
@@ -56,7 +58,13 @@ export const RUST_CONFIG: DevCycleLanguageConfig = {
       cwd: workspace,
       failOnNonZero: false,
     }),
-    createCoverageGateStep<AIRequestEvent>("coverage", "tarpaulin", DEFAULT_COVERAGE_THRESHOLD),
+    createCoverageGateStep<AIRequestEvent>(
+      "coverage",
+      "tarpaulin",
+      DEFAULT_COVERAGE_THRESHOLD,
+      undefined,
+      true,
+    ),
   ],
 };
 

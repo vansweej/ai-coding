@@ -23,7 +23,7 @@ agent) and extends it with:
 ai-coding/
   ai-system/
     config/
-      model-profiles.ts    ModelRole, ModelProfile, copilot-default profile
+      model-profiles.ts    ModelRole, ModelProfile, local and additional profiles
       pipeline-registry.ts Single source of truth for pipeline metadata
     core/
       mode-router/         source → AIMode ("editor" | "agentic")
@@ -34,7 +34,7 @@ ai-coding/
         definitions/       dev-cycle, rust-dev-cycle, cmake-dev-cycle, scaffold-*
     cli/
       parse-args.ts        CLI argument parsing (--profile, --input flags)
-      load-config.ts       Builds OrchestratorConfig with copilot-default profile
+      load-config.ts       Builds OrchestratorConfig with local profile (Ollama-only)
       select-pipeline.ts   Instantiates pipeline by name
   opencode/
     mappings/              opencode.json (provider/model config, symlinked by Home Manager)
@@ -52,19 +52,19 @@ Model selection uses the **role/profile** system:
 AIAction → ModelRole → ModelProfile → model ID → Dispatcher
 ```
 
-### copilot-default (built-in default)
+### local (built-in default)
 
-All roles route to `claude-sonnet-4.6` via GitHub Copilot:
+All roles route to `gemma4:26b` via local Ollama:
 
-| Role          | Model               | Backend     |
-|---------------|---------------------|-------------|
-| `planner`     | `claude-sonnet-4.6` | Copilot API |
-| `implementer` | `claude-sonnet-4.6` | Copilot API |
-| `debugger`    | `claude-sonnet-4.6` | Copilot API |
-| `reviewer`    | `claude-sonnet-4.6` | Copilot API |
-| `tester`      | `claude-sonnet-4.6` | Copilot API |
-| `scaffolder`  | `claude-sonnet-4.6` | Copilot API |
-| `explorer`    | `claude-sonnet-4.6` | Copilot API |
+| Role          | Model               | Backend |
+|---------------|---------------------|---------|
+| `planner`     | `gemma4:26b`        | Ollama  |
+| `implementer` | `gemma4:26b`        | Ollama  |
+| `debugger`    | `gemma4:26b`        | Ollama  |
+| `reviewer`    | `gemma4:26b`        | Ollama  |
+| `tester`      | `gemma4:26b`        | Ollama  |
+| `scaffolder`  | `gemma4:26b`        | Ollama  |
+| `explorer`    | `gemma4:26b`        | Ollama  |
 
 ### Profile selection
 
@@ -72,7 +72,7 @@ All roles route to `claude-sonnet-4.6` via GitHub Copilot:
 |----------|---------------------------------|
 | Highest  | `--profile <name>` CLI flag     |
 | Middle   | `AI_CODING_MODEL_PROFILE` env   |
-| Default  | `copilot-default`               |
+| Default  | `local`                         |
 
 ---
 
@@ -91,17 +91,22 @@ bun --version
 opencode --version
 ```
 
-### GitHub Copilot authentication
+### Ollama
 
-All pipeline LLM calls use GitHub Copilot. Authenticate once:
+All pipeline LLM calls use a local Ollama instance. Install and start it:
 
 ```bash
-opencode
-# Inside the TUI: /connect → select "GitHub Copilot" → authorize in browser
-```
+# Install Ollama (macOS / Linux)
+brew install ollama       # macOS
+# or: curl -fsSL https://ollama.com/install.sh | sh
 
-The token is stored in `~/.local/share/opencode/auth.json`. The pipeline CLI
-reads it automatically — no environment variable needed.
+# Start the server
+ollama serve
+
+# Pull required models
+ollama pull gemma4:26b       # primary pipeline model (default profile)
+ollama pull nomic-embed-text  # for codebase indexing and skill retrieval
+```
 
 ---
 
@@ -133,7 +138,7 @@ bun run pipeline scaffold-rust /tmp/my-rust-project
 bun run pipeline dev-cycle ./my-project --input "Add retry logic to the HTTP client"
 
 # Specify the model profile explicitly
-bun run pipeline dev-cycle ./my-project --profile copilot-default --input "Add error handling"
+bun run pipeline dev-cycle ./my-project --profile local --input "Add error handling"
 ```
 
 ### From OpenCode (slash command)

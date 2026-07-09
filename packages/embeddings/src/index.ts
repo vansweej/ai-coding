@@ -12,4 +12,4 @@
  */
 
 export type { Embedder, EmbeddingResult } from "./embedder-types";
-export { OllamaEmbedder, isOllamaReachable } from "./ollama-embedder";
+export { OllamaEmbedder, isOllamaReachable, isOllamaModelAvailable } from "./ollama-embedder";

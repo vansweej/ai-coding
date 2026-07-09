@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { createFileWriterStep } from "@ai-coding/pipeline";
 import type { PipelineContext, PipelineStep, Result, StepResult } from "@ai-coding/pipeline";
 import type { AIAction, AIRequestEvent } from "@ai-coding/shared";
@@ -62,8 +64,10 @@ function makeEvent(
 function buildImplementationPrompt(
   languageConfig: DevCycleLanguageConfig,
   instruction: string,
+  siblingContext?: string,
 ): string {
-  return `Implement this ${languageConfig.languageHint} step. Output ONLY fenced code blocks with file paths.\n\nInstruction:\n${instruction}`;
+  const contextBlock = siblingContext ? `${siblingContext}\n\n---\n\n` : "";
+  return `${contextBlock}Implement this ${languageConfig.languageHint} step. Output ONLY fenced code blocks with file paths.\n\nInstruction:\n${instruction}`;
 }
 
 function formatPhaseInstruction(steps: readonly Step[], phaseFeedback?: string): string {
@@ -74,6 +78,66 @@ function formatPhaseInstruction(steps: readonly Step[], phaseFeedback?: string):
   if (phaseFeedback === undefined) return stepInstructions;
 
   return [stepInstructions, "", "Phase verification feedback:", phaseFeedback].join("\n");
+}
+
+const SIBLING_MAX_FILES = 10;
+const SIBLING_MAX_BYTES = 8192;
+
+/** Map language hint to file extension for sibling discovery. */
+function languageExtension(languageHint: string): string {
+  switch (languageHint) {
+    case "Rust":
+      return ".rs";
+    case "TypeScript":
+      return ".ts";
+    case "C++":
+      return ".cpp";
+    default:
+      return ".rs";
+  }
+}
+
+/**
+ * Discover existing source files in the workspace and return their
+ * content as a formatted string that can be injected into LLM prompts.
+ *
+ * Enforces caps on both file count and total content size to keep
+ * prompt length manageable.
+ */
+export function discoverSiblingContext(workspace: string, languageHint: string): string {
+  const ext = languageExtension(languageHint);
+  const srcDir = resolve(workspace, "src");
+
+  if (!existsSync(srcDir)) return "";
+
+  const files: string[] = [];
+  const entries = readdirSync(srcDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith(ext)) {
+      files.push(join(srcDir, entry.name));
+    }
+  }
+
+  const selected = files.slice(0, SIBLING_MAX_FILES);
+  const parts: string[] = [];
+  let totalBytes = 0;
+
+  for (const file of selected) {
+    const relPath = relative(workspace, file);
+    const content = readFileSync(file, "utf8");
+    if (totalBytes + content.length > SIBLING_MAX_BYTES) {
+      const remaining = SIBLING_MAX_BYTES - totalBytes;
+      if (remaining > 50) {
+        parts.push(`// ${relPath}\n${content.slice(0, remaining)}\n// ... (truncated)`);
+      }
+      break;
+    }
+    parts.push(`// ${relPath}\n${content}`);
+    totalBytes += content.length;
+  }
+
+  if (parts.length === 0) return "";
+  return `Existing project files:\n\n${parts.join("\n\n---\n\n")}`;
 }
 
 async function runImplementAttempt(
@@ -142,10 +206,11 @@ async function implementAllPhaseSteps(
   ctx: PipelineContext<AIRequestEvent>,
   options: VerifiedImplementStepOptions,
   steps: readonly Step[],
+  siblingContext?: string,
 ): Promise<Result<string>> {
   const implementations: string[] = [];
   for (const step of steps) {
-    const prompt = buildImplementationPrompt(options.languageConfig, step.body);
+    const prompt = buildImplementationPrompt(options.languageConfig, step.body, siblingContext);
     const result = await implementAndWrite(ctx, options, prompt, "edit");
     if (!result.ok) return result;
     implementations.push(result.value);
@@ -168,7 +233,13 @@ export function createVerifiedImplementStep(
       const originalInstruction = ctx.event.payload.input ?? "";
       const phaseSteps = options.steps;
       const verificationSteps = options.languageConfig.toolchainSteps(options.workspace);
-      let prompt = originalInstruction;
+      const siblingContext = discoverSiblingContext(
+        options.workspace,
+        options.languageConfig.languageHint,
+      );
+      let prompt = siblingContext
+        ? buildImplementationPrompt(options.languageConfig, originalInstruction, siblingContext)
+        : originalInstruction;
       let implementation = "";
       let lastError: Error | undefined;
       let attemptNumber = 0;
@@ -179,7 +250,7 @@ export function createVerifiedImplementStep(
           phaseSteps === undefined
             ? await implementAndWrite(ctx, options, prompt, "edit")
             : attemptNumber === 0
-              ? await implementAllPhaseSteps(ctx, options, phaseSteps)
+              ? await implementAllPhaseSteps(ctx, options, phaseSteps, siblingContext)
               : await implementAndWrite(
                   ctx,
                   options,

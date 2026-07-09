@@ -27,46 +27,29 @@ export interface ModelProfile {
   readonly roles: Readonly<Record<ModelRole, string>>;
 }
 
-/** All roles route to GitHub Copilot Claude Sonnet 4.6. */
-export const COPILOT_DEFAULT_PROFILE: ModelProfile = {
-  name: "copilot-default",
+/** Fully-local profile: every role runs on the local Ollama model. No Copilot token required. */
+export const LOCAL_PROFILE: ModelProfile = {
+  name: "local",
   roles: {
-    planner: "claude-sonnet-4.6",
-    implementer: "claude-sonnet-4.6",
-    debugger: "claude-sonnet-4.6",
-    fixer: "claude-sonnet-4.6",
-    reviewer: "claude-sonnet-4.6",
-    tester: "claude-sonnet-4.6",
-    scaffolder: "claude-sonnet-4.6",
-    explorer: "claude-sonnet-4.6",
-    default: "claude-sonnet-4.6",
-  },
-};
-
-/** Hybrid profile: local Ollama for normal implementation, Copilot for escalation. */
-export const HYBRID_PROFILE: ModelProfile = {
-  name: "hybrid",
-  roles: {
-    planner: "claude-sonnet-4.6",
+    planner: "gemma4:26b",
     implementer: "gemma4:26b",
     debugger: "gemma4:26b",
-    fixer: "claude-sonnet-4.6",
-    reviewer: "claude-sonnet-4.6",
+    fixer: "gemma4:26b",
+    reviewer: "gemma4:26b",
     tester: "gemma4:26b",
-    scaffolder: "claude-sonnet-4.6",
-    explorer: "claude-sonnet-4.6",
-    default: "claude-sonnet-4.6",
+    scaffolder: "gemma4:26b",
+    explorer: "gemma4:26b",
+    default: "gemma4:26b",
   },
 };
 
 /** Registry of all built-in profiles, keyed by profile name. */
 export const MODEL_PROFILES: Readonly<Record<string, ModelProfile>> = {
-  [COPILOT_DEFAULT_PROFILE.name]: COPILOT_DEFAULT_PROFILE,
-  [HYBRID_PROFILE.name]: HYBRID_PROFILE,
+  [LOCAL_PROFILE.name]: LOCAL_PROFILE,
 };
 
 /** The profile name used when no explicit profile is requested. */
-export const DEFAULT_PROFILE_NAME = "copilot-default";
+export const DEFAULT_PROFILE_NAME = "local";
 
 /**
  * Resolve the model ID for a given role within a profile.

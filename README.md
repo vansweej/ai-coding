@@ -6,9 +6,8 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
 ## Architecture
 
 - **Model profiles** -- named configurations mapping semantic roles (planner, implementer,
-  debugger, fixer…) to model IDs. Default: `copilot-default` (all roles → `claude-sonnet-4.6` via
-  GitHub Copilot). `hybrid` routes normal implementation to local `gemma4:26b` and fixer escalation
-  to Copilot.
+  debugger, fixer…) to model IDs. Default: `local` (all roles → `gemma4:26b` via local Ollama).
+  No cloud dependencies or API tokens required.
 - **Pipelines** -- plan-file driven workflows that implement steps, write files, verify with the
   language toolchain, retry locally, escalate fixes when needed, and commit each successful phase.
 - **Scaffold pipelines** -- generate new Rust and C++ projects including a `flake.nix` dev shell
@@ -20,46 +19,6 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
 ---
 
 ## Configuration
-
-### Copilot token (required)
-
-All pipelines call `claude-sonnet-4.6` via the GitHub Copilot API. A bearer
-token is required.
-
-The token is resolved in this order -- the first match wins:
-
-**1. Environment variable `COPILOT_TOKEN`**
-
-```bash
-export COPILOT_TOKEN=your_token_here
-bun run pipeline scaffold-rust /tmp/my-project
-```
-
-**2. Environment variable `GITHUB_COPILOT_TOKEN`**
-
-```bash
-export GITHUB_COPILOT_TOKEN=your_token_here
-bun run pipeline scaffold-rust /tmp/my-project
-```
-
-**3. Config file `~/.config/ai-coding/config.json`**
-
-```bash
-mkdir -p ~/.config/ai-coding
-```
-
-```json
-{
-  "token": "your_token_here"
-}
-```
-
-If no token is found, the CLI exits with:
-
-```
-Error: No Copilot token found. Set COPILOT_TOKEN or GITHUB_COPILOT_TOKEN,
-or authenticate via OpenCode (opencode auth login).
-```
 
 ---
 
@@ -144,8 +103,8 @@ bun run pipeline scaffold-rust /tmp/my-rust-project
 mkdir /tmp/my-cpp-project
 bun run pipeline scaffold-cpp /tmp/my-cpp-project
 
-# Run the dev cycle from a structured plan file using local implementation + Copilot fixer escalation
-bun run pipeline dev-cycle ./my-project --plan ./plans/feature.md --profile hybrid
+# Run the dev cycle from a structured plan file (uses local profile by default)
+bun run pipeline dev-cycle ./my-project --plan ./plans/feature.md
 
 # Run a backward-compatible single-step Rust request
 bun run pipeline dev-cycle ./my-rust-project --language rust --input "Add a config module"
@@ -153,6 +112,14 @@ bun run pipeline dev-cycle ./my-rust-project --language rust --input "Add a conf
 
 All shell steps are nix-aware: if a `flake.nix` is detected in the workspace, commands are
 wrapped in `nix develop --command`.
+
+Pipelines require **Ollama** running locally with the required model:
+
+```bash
+ollama serve
+ollama pull gemma4:26b       # required for the local profile (default)
+ollama pull nomic-embed-text  # required for codebase indexing and skill retrieval
+```
 
 ---
 

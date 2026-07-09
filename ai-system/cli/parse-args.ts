@@ -26,8 +26,9 @@ Pipeline names:
   scaffold-cpp     C++: generate CMakeLists.txt + src/main.cpp + flake.nix
 
 Profile names:
-  copilot-default  All roles → github-copilot/claude-sonnet-4.6 (default)
+  local            All roles → gemma4:26b (local Ollama); no Copilot token required (default)
   hybrid           implementer/tester/debugger → gemma4:26b; fixer → claude-sonnet-4.6
+  copilot-default  All roles → github-copilot/claude-sonnet-4.6
 
 Examples:
   bun run pipeline scaffold-rust /tmp/my-rust-project

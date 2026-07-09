@@ -86,7 +86,7 @@ async function main(): Promise<void> {
   const { pipelineName, workspace, input, planPath, language, maxRetries, profileName } =
     argsResult.value;
 
-  const configResult = loadConfig(undefined, profileName);
+  const configResult = await loadConfig(profileName);
   if (!configResult.ok) {
     console.error(`Error: ${configResult.error.message}`);
     process.exit(1);

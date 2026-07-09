@@ -92,4 +92,25 @@ describe("createCoverageGateStep", () => {
     expect(result.value.stepName).toBe("my-gate");
     expect(result.value.durationMs).toBeGreaterThanOrEqual(0);
   });
+
+  it("passes with warnOnly when coverage is below the threshold", async () => {
+    const ctx = makeCtx("tarpaulin", "50.00% coverage, 20/40 lines covered");
+    const step = createCoverageGateStep<TestEvent>("coverage", "tarpaulin", 90, undefined, true);
+    const result = await step.execute(ctx);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.output).toContain("WARN:");
+    expect(result.value.output).toContain("50.00%");
+  });
+
+  it("still fails with warnOnly=false (default) when coverage is below the threshold", async () => {
+    const ctx = makeCtx("tarpaulin", "50.00% coverage, 20/40 lines covered");
+    const step = createCoverageGateStep<TestEvent>("coverage", "tarpaulin", 90, undefined, false);
+    const result = await step.execute(ctx);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("below threshold");
+  });
 });

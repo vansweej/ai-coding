@@ -31,6 +31,7 @@ describe("language configs", () => {
   it("provides Rust verification steps", () => {
     expect(RUST_CONFIG.toolchainSteps("/tmp/ws").map((step) => step.name)).toEqual([
       "fmt",
+      "check",
       "clippy",
       "test",
       "tarpaulin",

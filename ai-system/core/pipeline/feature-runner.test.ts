@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import type { PipelineStep, StepResult } from "@ai-coding/pipeline";
 import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
 
-import { HYBRID_PROFILE } from "../../config/model-profiles";
+import { LOCAL_PROFILE } from "../../config/model-profiles";
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "./definitions/language-configs";
 import { runFeature } from "./feature-runner";
@@ -35,8 +35,8 @@ function config(): OrchestratorConfig {
     }),
   };
   return {
-    profile: HYBRID_PROFILE,
-    dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    profile: LOCAL_PROFILE,
+    dispatchers: { "gemma4:26b": dispatcher },
   };
 }
 

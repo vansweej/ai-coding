@@ -6,7 +6,7 @@ import type { DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared
 import type { AIRequestEvent } from "@ai-coding/shared";
 import type { ResolvedSkill, RetrievalContext, SkillBackend } from "@ai-coding/skills";
 
-import { COPILOT_DEFAULT_PROFILE } from "../../../config/model-profiles";
+import { LOCAL_PROFILE } from "../../../config/model-profiles";
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { createDevCyclePipeline } from "./dev-cycle";
 import { TYPESCRIPT_CONFIG } from "./language-configs";
@@ -104,8 +104,8 @@ describe("createDevCyclePipeline", () => {
   it("buildPrompt includes the step instruction in the implement step", async () => {
     const dispatcher = capturingDispatcher();
     const config: OrchestratorConfig = {
-      profile: COPILOT_DEFAULT_PROFILE,
-      dispatchers: { "claude-sonnet-4.6": dispatcher },
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher },
     };
     const steps = createDevCyclePipeline(config, "/tmp/ws");
     const implementStep = steps[0];
@@ -123,8 +123,8 @@ describe("createDevCyclePipeline", () => {
   it("implement step system prompt requires fenced code blocks with file paths", async () => {
     const dispatcher = capturingDispatcher();
     const config: OrchestratorConfig = {
-      profile: COPILOT_DEFAULT_PROFILE,
-      dispatchers: { "claude-sonnet-4.6": dispatcher },
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher },
     };
     const steps = createDevCyclePipeline(config, "/tmp/ws");
     const implementStep = steps[0];
@@ -141,8 +141,8 @@ describe("createDevCyclePipeline", () => {
   it("skill content is prepended to implement system prompt when skill backend resolves skills", async () => {
     const dispatcher = capturingDispatcher();
     const config: OrchestratorConfig = {
-      profile: COPILOT_DEFAULT_PROFILE,
-      dispatchers: { "claude-sonnet-4.6": dispatcher },
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher },
     };
     const skills: ResolvedSkill[] = [{ name: "programmer", content: "Be a great programmer." }];
     const steps = createDevCyclePipeline(config, "/tmp/ws", TYPESCRIPT_CONFIG, makeBackend(skills));
@@ -165,8 +165,8 @@ describe("createDevCyclePipeline", () => {
   it("implement system prompt has no skill prefix when resolve-skills output is empty", async () => {
     const dispatcher = capturingDispatcher();
     const config: OrchestratorConfig = {
-      profile: COPILOT_DEFAULT_PROFILE,
-      dispatchers: { "claude-sonnet-4.6": dispatcher },
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher },
     };
     const steps = createDevCyclePipeline(config, "/tmp/ws", TYPESCRIPT_CONFIG, makeBackend([]));
     const implementStep = steps[1];

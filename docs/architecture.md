@@ -46,7 +46,6 @@ graph TD
     end
 
     subgraph Dispatchers["Dispatchers (ai-system/core/orchestrator/)"]
-        Copilot["CopilotDispatcher\napi.githubcopilot.com"]
         Ollama["OllamaDispatcher\nlocalhost:11434"]
     end
 
@@ -68,7 +67,6 @@ graph TD
     VerifyStep --> Orchestrator
     Orchestrator --> ModeRouter
     Orchestrator --> ModelRouter
-    Orchestrator --> Copilot
     Orchestrator --> Ollama
 
     style SkillsPkg fill:#2d6a4f,color:#fff
@@ -126,7 +124,7 @@ sequenceDiagram
     participant Orch as orchestrate()
     participant Mode as resolveMode()
     participant Model as selectModel()
-    participant Disp as Dispatcher (CopilotDispatcher)
+    participant Disp as Dispatcher (OllamaDispatcher)
     participant Nix as NixShellStep
     participant Shell as Bun.spawn
 
@@ -234,7 +232,6 @@ ai-coding/
         select-model.ts              (event, mode) → model string
       orchestrator/
         orchestrate.ts               Single LLM call lifecycle (profile-aware routing)
-          copilot-dispatcher.ts        HTTP transport for GitHub Copilot
           ollama-dispatcher.ts         HTTP transport for local Ollama
       pipeline/
         steps/
@@ -312,38 +309,21 @@ Model selection uses the **role/profile** system. Each pipeline step declares a
 semantic `ModelRole`; the active `ModelProfile` maps that role to a concrete model
 ID and the dispatcher handles the HTTP transport.
 
-### copilot-default profile (default)
+### local profile (default)
 
-All roles route to `claude-sonnet-4.6` via GitHub Copilot:
-
-| Role          | Model                | Backend       |
-|---------------|----------------------|---------------|
-| `planner`     | `claude-sonnet-4.6`  | Copilot API   |
-| `implementer` | `claude-sonnet-4.6`  | Copilot API   |
-| `debugger`    | `claude-sonnet-4.6`  | Copilot API   |
-| `fixer`       | `claude-sonnet-4.6`  | Copilot API   |
-| `reviewer`    | `claude-sonnet-4.6`  | Copilot API   |
-| `tester`      | `claude-sonnet-4.6`  | Copilot API   |
-| `scaffolder`  | `claude-sonnet-4.6`  | Copilot API   |
-| `explorer`    | `claude-sonnet-4.6`  | Copilot API   |
-| `default`     | `claude-sonnet-4.6`  | Copilot API   |
-
-### hybrid profile
-
-The `hybrid` profile keeps normal batch execution local and escalates only fixes
-to Copilot:
+All roles route to `gemma4:26b` via local Ollama:
 
 | Role          | Model                | Backend       |
 |---------------|----------------------|---------------|
-| `planner`     | `claude-sonnet-4.6`  | Copilot API   |
+| `planner`     | `gemma4:26b`         | Ollama        |
 | `implementer` | `gemma4:26b`         | Ollama        |
 | `debugger`    | `gemma4:26b`         | Ollama        |
-| `fixer`       | `claude-sonnet-4.6`  | Copilot API   |
-| `reviewer`    | `claude-sonnet-4.6`  | Copilot API   |
+| `fixer`       | `gemma4:26b`         | Ollama        |
+| `reviewer`    | `gemma4:26b`         | Ollama        |
 | `tester`      | `gemma4:26b`         | Ollama        |
-| `scaffolder`  | `claude-sonnet-4.6`  | Copilot API   |
-| `explorer`    | `claude-sonnet-4.6`  | Copilot API   |
-| `default`     | `claude-sonnet-4.6`  | Copilot API   |
+| `scaffolder`  | `gemma4:26b`         | Ollama        |
+| `explorer`    | `gemma4:26b`         | Ollama        |
+| `default`     | `gemma4:26b`         | Ollama        |
 
 ### Profile resolution
 

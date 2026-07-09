@@ -1,140 +1,41 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { afterEach, describe, expect, it } from "bun:test";
 
-import { loadConfig, resolveCopilotToken } from "./load-config";
-
-describe("resolveCopilotToken", () => {
-  const ORIG_COPILOT_TOKEN = process.env.COPILOT_TOKEN;
-  const ORIG_GITHUB_COPILOT_TOKEN = process.env.GITHUB_COPILOT_TOKEN;
-
-  beforeEach(() => {
-    const env = process.env as Record<string, string | undefined>;
-    env.COPILOT_TOKEN = undefined;
-    env.GITHUB_COPILOT_TOKEN = undefined;
-  });
-
-  afterEach(() => {
-    const env = process.env as Record<string, string | undefined>;
-    env.COPILOT_TOKEN = ORIG_COPILOT_TOKEN;
-    env.GITHUB_COPILOT_TOKEN = ORIG_GITHUB_COPILOT_TOKEN;
-  });
-
-  it("resolves COPILOT_TOKEN env var first", () => {
-    process.env.COPILOT_TOKEN = "gho_from_env";
-    const result = resolveCopilotToken("/nonexistent/auth.json");
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).toBe("gho_from_env");
-  });
-
-  it("resolves GITHUB_COPILOT_TOKEN env var when COPILOT_TOKEN is absent", () => {
-    process.env.GITHUB_COPILOT_TOKEN = "gho_github_env";
-    const result = resolveCopilotToken("/nonexistent/auth.json");
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).toBe("gho_github_env");
-  });
-
-  it("COPILOT_TOKEN takes precedence over GITHUB_COPILOT_TOKEN", () => {
-    process.env.COPILOT_TOKEN = "gho_primary";
-    process.env.GITHUB_COPILOT_TOKEN = "gho_secondary";
-    const result = resolveCopilotToken("/nonexistent/auth.json");
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).toBe("gho_primary");
-  });
-
-  it("reads token from OpenCode auth.json when env vars are absent", () => {
-    const dir = mkdtempSync(join(tmpdir(), "ai-coding-test-"));
-    try {
-      const authPath = join(dir, "auth.json");
-      writeFileSync(
-        authPath,
-        JSON.stringify({ "github-copilot": { access: "gho_from_opencode" } }),
-      );
-      const result = resolveCopilotToken(authPath);
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.value).toBe("gho_from_opencode");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("returns error when OpenCode auth.json has no github-copilot key", () => {
-    const dir = mkdtempSync(join(tmpdir(), "ai-coding-test-"));
-    try {
-      const authPath = join(dir, "auth.json");
-      writeFileSync(authPath, JSON.stringify({}));
-      const result = resolveCopilotToken(authPath);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.message).toContain("No Copilot token found");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("returns error when OpenCode auth.json is malformed JSON", () => {
-    const dir = mkdtempSync(join(tmpdir(), "ai-coding-test-"));
-    try {
-      const authPath = join(dir, "auth.json");
-      writeFileSync(authPath, "not-json{{{");
-      const result = resolveCopilotToken(authPath);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.message).toContain("Failed to parse OpenCode auth file");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("returns error when no token source is available", () => {
-    const result = resolveCopilotToken("/nonexistent/auth.json");
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.message).toContain("No Copilot token found");
-  });
-});
+import { loadConfig } from "./load-config";
 
 describe("loadConfig", () => {
-  const ORIG_COPILOT_TOKEN = process.env.COPILOT_TOKEN;
+  const ORIG_OLLAMA_URL = process.env.OLLAMA_URL;
 
   afterEach(() => {
     const env = process.env as Record<string, string | undefined>;
-    env.COPILOT_TOKEN = ORIG_COPILOT_TOKEN;
+    env.OLLAMA_URL = ORIG_OLLAMA_URL;
   });
 
-  it("returns a config with copilot-default profile and claude-sonnet-4.6 dispatcher", () => {
-    process.env.COPILOT_TOKEN = "gho_test_token";
-    const result = loadConfig("/nonexistent/auth.json");
+  it("returns a config with local profile and gemma4:26b dispatcher", async () => {
+    const result = await loadConfig("local");
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.profile?.name).toBe("copilot-default");
-      expect(result.value.dispatchers["claude-sonnet-4.6"]).toBeDefined();
-      expect(result.value.dispatchers["gemma4:26b"]).toBeUndefined();
-      expect(result.value.dispatchers["deepseek-coder-v2"]).toBeUndefined();
-    }
-  });
-
-  it("returns a hybrid config with Copilot and Ollama dispatchers", () => {
-    process.env.COPILOT_TOKEN = "gho_test_token";
-    const result = loadConfig("/nonexistent/auth.json", "hybrid");
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.profile?.name).toBe("hybrid");
-      expect(result.value.dispatchers["claude-sonnet-4.6"]).toBeDefined();
+      expect(result.value.profile?.name).toBe("local");
       expect(result.value.dispatchers["gemma4:26b"]).toBeDefined();
     }
   });
 
-  it("returns error for an unknown profile", () => {
-    process.env.COPILOT_TOKEN = "gho_test_token";
-    const result = loadConfig("/nonexistent/auth.json", "unknown-profile");
+  it("returns a config using the default profile when none specified", async () => {
+    const result = await loadConfig();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.profile?.name).toBe("local");
+    }
+  });
+
+  it("returns error for an unknown profile", async () => {
+    const result = await loadConfig("unknown-profile");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("Unknown profile");
   });
 
-  it("returns error when no token source is available", () => {
-    const env = process.env as Record<string, string | undefined>;
-    env.COPILOT_TOKEN = undefined;
-    env.GITHUB_COPILOT_TOKEN = undefined;
-    const result = loadConfig("/nonexistent/auth.json");
+  it("returns error when Ollama is not reachable", async () => {
+    const result = await loadConfig("local", "http://192.0.2.1:11434");
     expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("not reachable");
   });
 });

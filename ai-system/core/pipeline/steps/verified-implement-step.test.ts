@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { PipelineStep, StepResult } from "@ai-coding/pipeline";
 import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
 
-import { HYBRID_PROFILE } from "../../../config/model-profiles";
+import { LOCAL_PROFILE } from "../../../config/model-profiles";
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
 import {
@@ -82,7 +82,7 @@ describe("createVerifiedImplementStep", () => {
       "```typescript src/index.ts\nexport const value = 1;\n```",
     ]);
     const config: OrchestratorConfig = {
-      profile: HYBRID_PROFILE,
+      profile: LOCAL_PROFILE,
       dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {
@@ -103,7 +103,7 @@ describe("createVerifiedImplementStep", () => {
       "```typescript src/index.ts\nexport const value = 1;\n```",
     ]);
     const config: OrchestratorConfig = {
-      profile: HYBRID_PROFILE,
+      profile: LOCAL_PROFILE,
       dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {
@@ -121,15 +121,13 @@ describe("createVerifiedImplementStep", () => {
   });
 
   it("escalates to fixer after local retries are exhausted", async () => {
-    const localDispatcher = sequenceDispatcher([
+    const dispatcher = sequenceDispatcher([
       "```typescript src/index.ts\nexport const value = 'bad';\n```",
-    ]);
-    const fixerDispatcher = sequenceDispatcher([
       "```typescript src/index.ts\nexport const value = 1;\n```",
     ]);
     const config: OrchestratorConfig = {
-      profile: HYBRID_PROFILE,
-      dispatchers: { "gemma4:26b": localDispatcher, "claude-sonnet-4.6": fixerDispatcher },
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {
       config,
@@ -141,8 +139,8 @@ describe("createVerifiedImplementStep", () => {
     const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
 
     expect(result.ok).toBe(true);
-    expect(fixerDispatcher.prompts).toHaveLength(1);
-    expect(fixerDispatcher.prompts[0]).toContain("compile error 1");
+    expect(dispatcher.prompts).toHaveLength(2);
+    expect(dispatcher.prompts[1]).toContain("compile error 1");
   });
 
   it("halts with diagnostics after retry limits are exhausted", async () => {
@@ -150,7 +148,7 @@ describe("createVerifiedImplementStep", () => {
       "```typescript src/index.ts\nexport const value = 'bad';\n```",
     ]);
     const config: OrchestratorConfig = {
-      profile: HYBRID_PROFILE,
+      profile: LOCAL_PROFILE,
       dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {

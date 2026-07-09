@@ -1,97 +1,57 @@
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
+import { isOllamaModelAvailable, isOllamaReachable } from "@ai-coding/embeddings";
 import type { Result } from "@ai-coding/pipeline";
+import type { ModelDispatcher } from "@ai-coding/shared";
 
-import { COPILOT_DEFAULT_PROFILE, findProfile } from "../config/model-profiles";
-import { CopilotDispatcher } from "../core/orchestrator/copilot-dispatcher";
+import { DEFAULT_PROFILE_NAME, findProfile } from "../config/model-profiles";
 import { OllamaDispatcher } from "../core/orchestrator/ollama-dispatcher";
 import type { OrchestratorConfig } from "../core/orchestrator/orchestrate";
 
-interface OpenCodeAuth {
-  readonly "github-copilot"?: {
-    readonly access?: string;
-  };
-}
-
 /**
- * Resolve the GitHub Copilot OAuth token.
+ * Build the OrchestratorConfig by wiring an Ollama dispatcher for every
+ * model ID in the selected profile.
  *
- * Resolution order:
- *   1. COPILOT_TOKEN environment variable
- *   2. GITHUB_COPILOT_TOKEN environment variable
- *   3. OpenCode auth file (~/.local/share/opencode/auth.json)
+ * An Ollama reachability + model-availability preflight runs before wiring
+ * dispatchers.
  *
- * @param openCodeAuthPath - Override the OpenCode auth file path (for testing).
+ * @param profileName - Profile name; defaults to DEFAULT_PROFILE_NAME.
+ * @param ollamaUrl   - Override base URL for Ollama (for testing / remote).
  */
-export function resolveCopilotToken(
-  openCodeAuthPath: string = join(homedir(), ".local", "share", "opencode", "auth.json"),
-): Result<string> {
-  const fromEnv = process.env.COPILOT_TOKEN ?? process.env.GITHUB_COPILOT_TOKEN;
-  if (fromEnv) {
-    return { ok: true, value: fromEnv };
-  }
-
-  const opencodePath = openCodeAuthPath;
-  if (existsSync(opencodePath)) {
-    try {
-      const raw = readFileSync(opencodePath, "utf8");
-      const parsed = JSON.parse(raw) as OpenCodeAuth;
-      const token = parsed["github-copilot"]?.access;
-      if (token) {
-        return { ok: true, value: token };
-      }
-    } catch {
-      return {
-        ok: false,
-        error: new Error(`Failed to parse OpenCode auth file at ${opencodePath}`),
-      };
-    }
-    /* v8 ignore stop */
-  }
-
-  return {
-    ok: false,
-    error: new Error(
-      "No Copilot token found. Set COPILOT_TOKEN or GITHUB_COPILOT_TOKEN, " +
-        "or authenticate via OpenCode (opencode auth login).",
-    ),
-  };
-}
-
-/**
- * Build the OrchestratorConfig by wiring up real dispatchers.
- *
- * Wires the dispatchers required by the selected profile. The default profile
- * uses GitHub Copilot only; the hybrid profile adds local Ollama for gemma4:26b.
- *
- * The Copilot token is resolved via resolveCopilotToken().
- */
-/* v8 ignore start */
-export function loadConfig(
-  openCodeAuthPath?: string,
-  profileName: string = COPILOT_DEFAULT_PROFILE.name,
-): Result<OrchestratorConfig> {
+export async function loadConfig(
+  profileName: string = DEFAULT_PROFILE_NAME,
+  ollamaUrl: string = process.env.OLLAMA_URL ?? "http://localhost:11434",
+): Promise<Result<OrchestratorConfig>> {
   const profile = findProfile(profileName);
   if (profile === undefined) {
     return { ok: false, error: new Error(`Unknown profile "${profileName}"`) };
   }
 
-  const tokenResult = resolveCopilotToken(openCodeAuthPath);
-  /* v8 ignore stop */
-  if (!tokenResult.ok) {
-    return tokenResult;
+  const modelIds = [...new Set(Object.values(profile.roles))];
+
+  const reachable = await isOllamaReachable(ollamaUrl);
+  if (!reachable) {
+    return {
+      ok: false,
+      error: new Error(
+        `Ollama is not reachable at ${ollamaUrl}. Start it with \`ollama serve\` and pull the required model.`,
+      ),
+    };
   }
 
-  const copilot = new CopilotDispatcher(tokenResult.value);
-  const dispatchers: OrchestratorConfig["dispatchers"] = {
-    "claude-sonnet-4.6": copilot,
-  };
-
-  if (profile.name === "hybrid") {
-    dispatchers["gemma4:26b"] = new OllamaDispatcher();
+  for (const id of modelIds) {
+    const available = await isOllamaModelAvailable(id, ollamaUrl);
+    if (!available) {
+      return {
+        ok: false,
+        error: new Error(
+          `Ollama model "${id}" is not available. Pull it with \`ollama pull ${id}\`.`,
+        ),
+      };
+    }
   }
+
+  const ollama = new OllamaDispatcher(ollamaUrl);
+  const dispatchers: Record<string, ModelDispatcher> = {};
+  for (const id of modelIds) dispatchers[id] = ollama;
 
   return {
     ok: true,
@@ -101,4 +61,3 @@ export function loadConfig(
     },
   };
 }
-/* v8 ignore stop */

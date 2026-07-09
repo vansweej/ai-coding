@@ -92,3 +92,24 @@ export async function isOllamaReachable(baseUrl: string = DEFAULT_OLLAMA_URL): P
     return false;
   }
 }
+
+/**
+ * Check whether a specific model is available in the local Ollama instance.
+ *
+ * @param model   - The model tag to check (e.g. "gemma4:26b").
+ * @param baseUrl - Ollama base URL. Defaults to "http://localhost:11434".
+ * @returns True if the model is listed in Ollama's /api/tags response.
+ */
+export async function isOllamaModelAvailable(
+  model: string,
+  baseUrl: string = DEFAULT_OLLAMA_URL,
+): Promise<boolean> {
+  try {
+    const response = await fetch(`${baseUrl}/api/tags`);
+    if (!response.ok) return false;
+    const data = (await response.json()) as { models?: Array<{ name: string }> };
+    return data.models?.some((m) => m.name === model || m.name.startsWith(`${model}:`)) ?? false;
+  } catch {
+    return false;
+  }
+}
