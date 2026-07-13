@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  COPILOT_DEFAULT_PROFILE,
   DEFAULT_PROFILE_NAME,
+  HYBRID_PROFILE,
   LOCAL_PROFILE,
   MODEL_PROFILES,
   findProfile,
@@ -38,23 +40,90 @@ describe("LOCAL_PROFILE", () => {
   });
 });
 
+describe("COPILOT_DEFAULT_PROFILE", () => {
+  it("has name copilot-default", () => {
+    expect(COPILOT_DEFAULT_PROFILE.name).toBe("copilot-default");
+  });
+
+  it("maps all roles to claude-sonnet-4.6", () => {
+    const roles = Object.values(COPILOT_DEFAULT_PROFILE.roles);
+    for (const model of roles) {
+      expect(model).toBe("claude-sonnet-4.6");
+    }
+  });
+
+  it("has all nine roles defined", () => {
+    const expectedRoles = [
+      "planner",
+      "implementer",
+      "debugger",
+      "fixer",
+      "reviewer",
+      "tester",
+      "scaffolder",
+      "explorer",
+      "default",
+    ];
+    for (const role of expectedRoles) {
+      expect(COPILOT_DEFAULT_PROFILE.roles).toHaveProperty(role);
+    }
+  });
+});
+
+describe("HYBRID_PROFILE", () => {
+  it("has name hybrid", () => {
+    expect(HYBRID_PROFILE.name).toBe("hybrid");
+  });
+
+  it("maps implementer and tester to gemma4:26b", () => {
+    expect(HYBRID_PROFILE.roles.implementer).toBe("gemma4:26b");
+    expect(HYBRID_PROFILE.roles.tester).toBe("gemma4:26b");
+    expect(HYBRID_PROFILE.roles.debugger).toBe("gemma4:26b");
+  });
+
+  it("maps planner, fixer, reviewer, scaffolder, explorer to claude-sonnet-4.6", () => {
+    expect(HYBRID_PROFILE.roles.planner).toBe("claude-sonnet-4.6");
+    expect(HYBRID_PROFILE.roles.fixer).toBe("claude-sonnet-4.6");
+    expect(HYBRID_PROFILE.roles.reviewer).toBe("claude-sonnet-4.6");
+    expect(HYBRID_PROFILE.roles.scaffolder).toBe("claude-sonnet-4.6");
+    expect(HYBRID_PROFILE.roles.explorer).toBe("claude-sonnet-4.6");
+  });
+
+  it("has all nine roles defined", () => {
+    const expectedRoles = [
+      "planner",
+      "implementer",
+      "debugger",
+      "fixer",
+      "reviewer",
+      "tester",
+      "scaffolder",
+      "explorer",
+      "default",
+    ];
+    for (const role of expectedRoles) {
+      expect(HYBRID_PROFILE.roles).toHaveProperty(role);
+    }
+  });
+});
+
 describe("MODEL_PROFILES", () => {
   it("contains the local profile", () => {
     expect(MODEL_PROFILES.local).toBe(LOCAL_PROFILE);
   });
 
-  it("does not contain copilot-default", () => {
-    expect(MODEL_PROFILES["copilot-default"]).toBeUndefined();
+  it("contains copilot-default", () => {
+    expect(MODEL_PROFILES["copilot-default"]).toBe(COPILOT_DEFAULT_PROFILE);
   });
 
-  it("does not contain hybrid", () => {
-    expect(MODEL_PROFILES.hybrid).toBeUndefined();
+  it("contains hybrid", () => {
+    expect(MODEL_PROFILES.hybrid).toBe(HYBRID_PROFILE);
   });
 });
 
 describe("DEFAULT_PROFILE_NAME", () => {
-  it("is local", () => {
-    expect(DEFAULT_PROFILE_NAME).toBe("local");
+  it("is copilot-default", () => {
+    expect(DEFAULT_PROFILE_NAME).toBe("copilot-default");
   });
 
   it("resolves to an entry in MODEL_PROFILES", () => {
