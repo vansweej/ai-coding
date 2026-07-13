@@ -17,7 +17,11 @@ export interface PhaseRunResult {
 }
 
 /** Function used to commit a successful phase. */
-export type CommitPhase = (workspace: string, commitMessage: string) => Promise<Result<string>>;
+export type CommitPhase = (
+  workspace: string,
+  commitMessage: string,
+  phaseNumber: number,
+) => Promise<Result<string>>;
 
 /** Runtime dependencies for executing a phase. */
 export interface RunPhaseOptions {
@@ -28,14 +32,19 @@ export interface RunPhaseOptions {
   readonly commitPhase?: CommitPhase;
 }
 
-/** Commit all phase changes with the plan-authored commit message. */
+/** Commit all phase changes with the plan-authored commit message and Phase trailer. */
 export async function commitPhaseChanges(
   workspace: string,
   commitMessage: string,
+  phaseNumber?: number,
 ): Promise<Result<string>> {
   try {
+    // Add Phase: N trailer to the commit message for resume tracking
+    const messageWithTrailer =
+      phaseNumber !== undefined ? `${commitMessage}\n\nPhase: ${phaseNumber}` : commitMessage;
+
     await $`git add -A`.cwd(workspace).quiet();
-    await $`git commit -m ${commitMessage}`.cwd(workspace).quiet();
+    await $`git commit -m ${messageWithTrailer}`.cwd(workspace).quiet();
     return { ok: true, value: commitMessage };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
@@ -78,7 +87,7 @@ export async function runPhase(
   if (!result.ok) return result;
 
   const commit = options.commitPhase ?? commitPhaseChanges;
-  const commitResult = await commit(options.workspace, phase.commitMessage);
+  const commitResult = await commit(options.workspace, phase.commitMessage, phase.number);
   if (!commitResult.ok) return commitResult;
 
   return {
