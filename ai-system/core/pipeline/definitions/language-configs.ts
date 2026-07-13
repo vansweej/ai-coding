@@ -1,6 +1,8 @@
 import { createCoverageGateStep, createNixShellStep } from "@ai-coding/pipeline";
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
+import { resolveCoverageThreshold } from "../steps/coverage-exemption";
+import type { CoverageDirective } from "../plan-parser";
 
 const DEFAULT_COVERAGE_THRESHOLD = 90;
 const DEFAULT_CPP_BUILD_DIR = "build";
@@ -67,6 +69,71 @@ export const RUST_CONFIG: DevCycleLanguageConfig = {
     ),
   ],
 };
+
+/**
+ * Rust plan-cycle configuration with fatal coverage gate and autofix fmt.
+ *
+ * Differs from RUST_CONFIG in two ways:
+ *   1. Coverage gate is fatal (warnOnly: false) instead of warning-only
+ *   2. `cargo fmt --check` becomes `cargo fmt` (autofix) instead of check-only
+ *
+ * This configuration is used by the `rust-plan-cycle` pipeline for unattended
+ * plan execution where coverage failures should halt the phase and fmt should
+ * automatically fix formatting issues.
+ *
+ * The coverage step consults per-phase directives and auto-exempt logic via
+ * `resolveCoverageThreshold()` to determine the effective threshold and whether
+ * the gate is enforced.
+ */
+export function createRustPlanConfig(
+  phaseCoverage: CoverageDirective,
+  diff: string,
+): DevCycleLanguageConfig {
+  const { gated, percent } = resolveCoverageThreshold(phaseCoverage, diff);
+
+  return {
+    name: "rust",
+    languageHint: "Rust",
+    implementSystem:
+      "You are a Rust coding assistant. Output ONLY aider-style SEARCH/REPLACE patches for files that need changes. " +
+      "Each patch must have the format:\n" +
+      "<file-path>\n" +
+      "<<<<<<< SEARCH\n" +
+      "<exact anchor text>\n" +
+      "=======\n" +
+      "<replacement text>\n" +
+      ">>>>>>> REPLACE\n\n" +
+      "Follow Rust idioms: use Result/Option, avoid unwrap in production code, prefer ownership over cloning, and include idiomatic doc comments on all public items. " +
+      "Generate compilable Rust code. Ensure all use statements are present and all types, functions, and macros referenced are either in the standard prelude or explicitly imported. " +
+      "Do not include any explanation or prose outside the patches.",
+    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+      createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt"], { cwd: workspace }),
+      createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], { cwd: workspace }),
+      createNixShellStep<AIRequestEvent>("clippy", ["cargo", "clippy", "--", "-D", "warnings"], {
+        cwd: workspace,
+      }),
+      createNixShellStep<AIRequestEvent>("test", ["cargo", "test"], { cwd: workspace }),
+      createNixShellStep<AIRequestEvent>("tarpaulin", ["cargo", "tarpaulin"], {
+        cwd: workspace,
+        failOnNonZero: false,
+      }),
+      // Coverage gate is fatal (warnOnly: false) and respects per-phase directives
+      createCoverageGateStep<AIRequestEvent>(
+        "coverage",
+        "tarpaulin",
+        percent,
+        undefined,
+        !gated, // If gated is false, treat as warning-only; if true, make it fatal
+      ),
+    ],
+  };
+}
+
+/** Exported constant for RUST_PLAN_CONFIG with default coverage (90%, gated). */
+export const RUST_PLAN_CONFIG: DevCycleLanguageConfig = createRustPlanConfig(
+  { mode: "default" },
+  "",
+);
 
 /** C++/CMake verification and implementation rules. */
 export const CPP_CONFIG: DevCycleLanguageConfig = {

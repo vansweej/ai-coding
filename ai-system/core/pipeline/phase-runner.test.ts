@@ -57,6 +57,7 @@ const PHASE: Phase = {
   title: "Core",
   commitMessage: "feat: add core",
   steps: [{ number: 1, title: "Step", body: "Do it" }],
+  coverage: { mode: "default" },
 };
 
 const MULTI_STEP_PHASE: Phase = {
@@ -67,6 +68,7 @@ const MULTI_STEP_PHASE: Phase = {
     { number: 1, title: "Step one", body: "Do one" },
     { number: 2, title: "Step two", body: "Do two" },
   ],
+  coverage: { mode: "default" },
 };
 
 let workspace: string;
