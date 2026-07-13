@@ -10,6 +10,12 @@ export interface Step {
   readonly body: string;
 }
 
+/** Coverage directive for a phase. */
+export type CoverageDirective =
+  | { readonly mode: "skip" }
+  | { readonly mode: "threshold"; readonly percent: number }
+  | { readonly mode: "default" };
+
 /** A single phase within a plan file. */
 export interface Phase {
   /** Phase number (1-indexed). */
@@ -20,6 +26,8 @@ export interface Phase {
   readonly commitMessage: string;
   /** Ordered list of steps to execute in this phase. */
   readonly steps: readonly Step[];
+  /** Coverage directive: skip, N%, or default (90%). */
+  readonly coverage: CoverageDirective;
 }
 
 /** A fully parsed plan file. */
@@ -33,6 +41,7 @@ export interface PlanFile {
 const FEATURE_RE = /^#\s+Feature:\s*(.+)$/;
 const PHASE_RE = /^##\s+Phase\s+(\d+):\s*(.+)$/;
 const COMMIT_RE = /^Commit message:\s*(.+)$/;
+const COVERAGE_RE = /^Coverage:\s*(.+)$/;
 const STEP_RE = /^###\s+Step\s+(\d+):\s*(.+)$/;
 
 /**
@@ -45,6 +54,7 @@ const STEP_RE = /^###\s+Step\s+(\d+):\s*(.+)$/;
  * ## Phase 1: <title>
  *
  * Commit message: <conventional commit>
+ * Coverage: skip | N% | (omitted for default 90%)
  *
  * ### Step 1: <title>
  *
@@ -62,6 +72,7 @@ const STEP_RE = /^###\s+Step\s+(\d+):\s*(.+)$/;
  *   - Must have a `# Feature:` heading.
  *   - Must have at least one `## Phase N:` section.
  *   - Each phase must have a `Commit message:` line.
+ *   - Each phase may have an optional `Coverage:` line (skip, N%, or omitted for default).
  *   - Each phase must have at least one `### Step N:` section.
  *
  * @param content - Raw plan file content (UTF-8 string).
@@ -76,6 +87,7 @@ export function parsePlanFile(content: string): Result<PlanFile> {
   let currentPhaseNumber: number | undefined;
   let currentPhaseTitle: string | undefined;
   let currentCommitMessage: string | undefined;
+  let currentCoverage: CoverageDirective = { mode: "default" };
   const currentSteps: Step[] = [];
 
   let currentStepNumber: number | undefined;
@@ -116,10 +128,12 @@ export function parsePlanFile(content: string): Result<PlanFile> {
       title: currentPhaseTitle,
       commitMessage: currentCommitMessage,
       steps: [...currentSteps],
+      coverage: currentCoverage,
     });
     currentPhaseNumber = undefined;
     currentPhaseTitle = undefined;
     currentCommitMessage = undefined;
+    currentCoverage = { mode: "default" };
     currentSteps.length = 0;
     return { ok: true, value: undefined };
   }
@@ -143,6 +157,34 @@ export function parsePlanFile(content: string): Result<PlanFile> {
     const commitMatch = COMMIT_RE.exec(line);
     if (commitMatch && currentPhaseNumber !== undefined) {
       currentCommitMessage = commitMatch[1].trim();
+      continue;
+    }
+
+    const coverageMatch = COVERAGE_RE.exec(line);
+    if (coverageMatch && currentPhaseNumber !== undefined) {
+      const coverageValue = coverageMatch[1].trim();
+      if (coverageValue === "skip") {
+        currentCoverage = { mode: "skip" };
+      } else if (coverageValue.endsWith("%")) {
+        const percentStr = coverageValue.slice(0, -1);
+        const percent = Number(percentStr);
+        if (!Number.isInteger(percent) || percent < 0 || percent > 100) {
+          return {
+            ok: false,
+            error: new Error(
+              `Phase ${currentPhaseNumber} has invalid coverage percent: "${coverageValue}" (must be 0-100)`,
+            ),
+          };
+        }
+        currentCoverage = { mode: "threshold", percent };
+      } else {
+        return {
+          ok: false,
+          error: new Error(
+            `Phase ${currentPhaseNumber} has invalid coverage directive: "${coverageValue}" (must be "skip" or "N%")`,
+          ),
+        };
+      }
       continue;
     }
 
