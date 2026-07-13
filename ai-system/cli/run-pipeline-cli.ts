@@ -8,6 +8,7 @@ import {
   CPP_CONFIG,
   DEV_CYCLE_LANGUAGE_CONFIGS,
   RUST_CONFIG,
+  RUST_PLAN_CONFIG,
   TYPESCRIPT_CONFIG,
 } from "../core/pipeline/definitions/language-configs";
 import type { DevCycleLanguageConfig } from "../core/pipeline/definitions/language-configs";
@@ -48,6 +49,7 @@ function languageForPipeline(
   workspace: string,
   override?: CliLanguage,
 ): DevCycleLanguageConfig {
+  if (pipelineName === "rust-plan-cycle") return RUST_PLAN_CONFIG;
   if (pipelineName === "rust-dev-cycle") return RUST_CONFIG;
   if (pipelineName === "cmake-dev-cycle") return CPP_CONFIG;
   return detectLanguage(workspace, override);
@@ -56,6 +58,7 @@ function languageForPipeline(
 function isDevCyclePipeline(pipelineName: string): boolean {
   return (
     pipelineName === "dev-cycle" ||
+    pipelineName === "rust-plan-cycle" ||
     pipelineName === "rust-dev-cycle" ||
     pipelineName === "cmake-dev-cycle"
   );

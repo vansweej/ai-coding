@@ -5,6 +5,11 @@ dist/
 
 /target
 
+# Coverage artifacts from tarpaulin and other coverage tools
+*.profraw
+cobertura.xml
+tarpaulin-report.html*
+
 # Spar Decision Briefs -- ephemeral working artifacts, not project history
 .spar/
 
