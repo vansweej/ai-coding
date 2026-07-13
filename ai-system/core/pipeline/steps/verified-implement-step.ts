@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { createFileWriterStep } from "@ai-coding/pipeline";
+import { execSync } from "node:child_process";
 import type { PipelineContext, PipelineStep, Result, StepResult } from "@ai-coding/pipeline";
 import type { AIAction, AIRequestEvent } from "@ai-coding/shared";
 
@@ -8,6 +8,8 @@ import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestr
 import { orchestrate } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
 import type { Step } from "../plan-parser";
+import { parsePatch } from "./parse-patch";
+import { applyPatch } from "./apply-patch-step";
 
 const IMPLEMENT_RESULT_NAME = "verified-implement-output";
 
@@ -28,15 +30,23 @@ export interface VerifiedImplementStepOptions {
   readonly retryConfig?: RetryConfig;
 }
 
-/** Build the retry prompt used when verification fails. */
+/**
+ * Build the retry prompt used when verification fails.
+ *
+ * Includes the current on-disk content of all files touched by the phase,
+ * so the model computes SEARCH anchors against the file's present state
+ * (not the original bytes). This is critical for patch anchoring to work
+ * correctly across multiple retry attempts.
+ */
 export function buildVerificationFailurePrompt(
   originalInstruction: string,
   writtenCode: string,
   errorOutput: string,
+  currentFileContents?: string,
 ): string {
-  return [
+  const parts = [
     "Fix the implementation so verification passes.",
-    "Output ONLY fenced code blocks with relative file paths for files that need changes.",
+    "Output ONLY aider-style SEARCH/REPLACE patches for files that need changes.",
     "",
     "Original instruction:",
     originalInstruction,
@@ -44,9 +54,18 @@ export function buildVerificationFailurePrompt(
     "Previously written code:",
     writtenCode,
     "",
-    "Verification error output:",
-    errorOutput,
-  ].join("\n");
+  ];
+
+  if (currentFileContents) {
+    parts.push("Current file contents:");
+    parts.push(currentFileContents);
+    parts.push("");
+  }
+
+  parts.push("Verification error output:");
+  parts.push(errorOutput);
+
+  return parts.join("\n");
 }
 
 function makeEvent(
@@ -80,9 +99,6 @@ function formatPhaseInstruction(steps: readonly Step[], phaseFeedback?: string):
   return [stepInstructions, "", "Phase verification feedback:", phaseFeedback].join("\n");
 }
 
-const SIBLING_MAX_FILES = 10;
-const SIBLING_MAX_BYTES = 8192;
-
 /** Map language hint to file extension for sibling discovery. */
 function languageExtension(languageHint: string): string {
   switch (languageHint) {
@@ -98,46 +114,55 @@ function languageExtension(languageHint: string): string {
 }
 
 /**
- * Discover existing source files in the workspace and return their
- * content as a formatted string that can be injected into LLM prompts.
+ * Build a baseline context that includes relevant file contents and git diff.
  *
- * Enforces caps on both file count and total content size to keep
- * prompt length manageable.
+ * This is supplied on every attempt (not just attempt-0) and includes:
+ *   - Existing source files in the workspace
+ *   - Current git diff of the working tree
+ *
+ * This ensures the model has up-to-date context for computing SEARCH anchors
+ * and understanding what has changed so far.
  */
-export function discoverSiblingContext(workspace: string, languageHint: string): string {
+export function buildBaselineContext(workspace: string, languageHint: string): string {
   const ext = languageExtension(languageHint);
   const srcDir = resolve(workspace, "src");
 
-  if (!existsSync(srcDir)) return "";
-
-  const files: string[] = [];
-  const entries = readdirSync(srcDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.isFile() && entry.name.endsWith(ext)) {
-      files.push(join(srcDir, entry.name));
-    }
-  }
-
-  const selected = files.slice(0, SIBLING_MAX_FILES);
   const parts: string[] = [];
-  let totalBytes = 0;
 
-  for (const file of selected) {
-    const relPath = relative(workspace, file);
-    const content = readFileSync(file, "utf8");
-    if (totalBytes + content.length > SIBLING_MAX_BYTES) {
-      const remaining = SIBLING_MAX_BYTES - totalBytes;
-      if (remaining > 50) {
-        parts.push(`// ${relPath}\n${content.slice(0, remaining)}\n// ... (truncated)`);
+  // Include existing source files
+  if (existsSync(srcDir)) {
+    const files: string[] = [];
+    const entries = readdirSync(srcDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith(ext)) {
+        files.push(join(srcDir, entry.name));
       }
-      break;
     }
-    parts.push(`// ${relPath}\n${content}`);
-    totalBytes += content.length;
+
+    if (files.length > 0) {
+      const fileParts: string[] = [];
+      for (const file of files) {
+        const relPath = relative(workspace, file);
+        const content = readFileSync(file, "utf8");
+        fileParts.push(`// ${relPath}\n${content}`);
+      }
+      if (fileParts.length > 0) {
+        parts.push("Existing project files:\n\n" + fileParts.join("\n\n---\n\n"));
+      }
+    }
   }
 
-  if (parts.length === 0) return "";
-  return `Existing project files:\n\n${parts.join("\n\n---\n\n")}`;
+  // Include current git diff
+  try {
+    const gitDiff = execSync("git diff", { cwd: workspace, encoding: "utf8" });
+    if (gitDiff.trim()) {
+      parts.push("Current git diff:\n\n" + gitDiff);
+    }
+  } catch {
+    // git diff failed; continue without it
+  }
+
+  return parts.length > 0 ? parts.join("\n\n---\n\n") : "";
 }
 
 async function runImplementAttempt(
@@ -156,20 +181,30 @@ async function runImplementAttempt(
 }
 
 async function writeImplementation(
-  ctx: PipelineContext<AIRequestEvent>,
   workspace: string,
   implementation: string,
-): Promise<Result<StepResult>> {
-  ctx.results.set(IMPLEMENT_RESULT_NAME, {
-    stepName: IMPLEMENT_RESULT_NAME,
-    output: implementation,
-    durationMs: 0,
-  });
-  const writer = createFileWriterStep<AIRequestEvent>("write-files", {
-    readFrom: IMPLEMENT_RESULT_NAME,
-    baseDir: workspace,
-  });
-  return writer.execute(ctx);
+): Promise<Result<void>> {
+  // Parse the implementation as aider-style patches
+  const parseResult = parsePatch(implementation);
+  if (!parseResult.ok) {
+    return {
+      ok: false,
+      error: new Error(`Failed to parse patches: ${parseResult.error.message}`),
+    };
+  }
+
+  // Apply the patches to the workspace
+  const applyResult = await applyPatch(workspace, parseResult.value);
+  if (!applyResult.ok) {
+    return {
+      ok: false,
+      error: new Error(
+        `Failed to apply patch to "${applyResult.error.filePath}": ${applyResult.error.message}`,
+      ),
+    };
+  }
+
+  return { ok: true, value: undefined };
 }
 
 async function runVerification(
@@ -195,9 +230,8 @@ async function implementAndWrite(
   const implementResult = await runImplementAttempt(ctx, options, prompt, action);
   if (!implementResult.ok) return implementResult;
 
-  const writeResult = await writeImplementation(ctx, options.workspace, implementResult.value);
+  const writeResult = await writeImplementation(options.workspace, implementResult.value);
   if (!writeResult.ok) return writeResult;
-  ctx.results.set(writeResult.value.stepName, writeResult.value);
 
   return { ok: true, value: implementResult.value };
 }
@@ -206,16 +240,47 @@ async function implementAllPhaseSteps(
   ctx: PipelineContext<AIRequestEvent>,
   options: VerifiedImplementStepOptions,
   steps: readonly Step[],
-  siblingContext?: string,
+  baselineContext?: string,
 ): Promise<Result<string>> {
   const implementations: string[] = [];
   for (const step of steps) {
-    const prompt = buildImplementationPrompt(options.languageConfig, step.body, siblingContext);
+    const prompt = buildImplementationPrompt(options.languageConfig, step.body, baselineContext);
     const result = await implementAndWrite(ctx, options, prompt, "edit");
     if (!result.ok) return result;
     implementations.push(result.value);
   }
   return { ok: true, value: implementations.join("\n\n") };
+}
+
+/**
+ * Read the current on-disk content of all source files in the workspace.
+ * Used to refresh file contents on each retry so the model can compute
+ * SEARCH anchors against the present state.
+ */
+function readCurrentFileContents(workspace: string, languageHint: string): string {
+  const ext = languageExtension(languageHint);
+  const srcDir = resolve(workspace, "src");
+
+  if (!existsSync(srcDir)) return "";
+
+  const files: string[] = [];
+  const entries = readdirSync(srcDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith(ext)) {
+      files.push(join(srcDir, entry.name));
+    }
+  }
+
+  if (files.length === 0) return "";
+
+  const parts: string[] = [];
+  for (const file of files) {
+    const relPath = relative(workspace, file);
+    const content = readFileSync(file, "utf8");
+    parts.push(`// ${relPath}\n${content}`);
+  }
+
+  return `Current file contents:\n\n${parts.join("\n\n---\n\n")}`;
 }
 
 /** Create a composite step that implements, writes, verifies, and retries a phase step. */
@@ -233,12 +298,12 @@ export function createVerifiedImplementStep(
       const originalInstruction = ctx.event.payload.input ?? "";
       const phaseSteps = options.steps;
       const verificationSteps = options.languageConfig.toolchainSteps(options.workspace);
-      const siblingContext = discoverSiblingContext(
+      const baselineContext = buildBaselineContext(
         options.workspace,
         options.languageConfig.languageHint,
       );
-      let prompt = siblingContext
-        ? buildImplementationPrompt(options.languageConfig, originalInstruction, siblingContext)
+      let prompt = baselineContext
+        ? buildImplementationPrompt(options.languageConfig, originalInstruction, baselineContext)
         : originalInstruction;
       let implementation = "";
       let lastError: Error | undefined;
@@ -250,7 +315,7 @@ export function createVerifiedImplementStep(
           phaseSteps === undefined
             ? await implementAndWrite(ctx, options, prompt, "edit")
             : attemptNumber === 0
-              ? await implementAllPhaseSteps(ctx, options, phaseSteps, siblingContext)
+              ? await implementAllPhaseSteps(ctx, options, phaseSteps, baselineContext)
               : await implementAndWrite(
                   ctx,
                   options,
@@ -273,10 +338,16 @@ export function createVerifiedImplementStep(
         }
 
         lastError = verificationResult.error;
+        // Refresh current file contents on each retry for accurate SEARCH anchor matching
+        const currentFileContents = readCurrentFileContents(
+          options.workspace,
+          options.languageConfig.languageHint,
+        );
         prompt = buildVerificationFailurePrompt(
           phaseSteps === undefined ? originalInstruction : formatPhaseInstruction(phaseSteps),
           implementation,
           lastError.message,
+          currentFileContents,
         );
       }
 
@@ -285,10 +356,16 @@ export function createVerifiedImplementStep(
         escalationAttempt < maxEscalationRetries;
         escalationAttempt++
       ) {
+        // Refresh current file contents before escalation attempt
+        const currentFileContents = readCurrentFileContents(
+          options.workspace,
+          options.languageConfig.languageHint,
+        );
         const fixPrompt = buildVerificationFailurePrompt(
           phaseSteps === undefined ? originalInstruction : formatPhaseInstruction(phaseSteps),
           implementation,
           lastError?.message ?? "Verification failed without diagnostics",
+          currentFileContents,
         );
         const fixResult = await implementAndWrite(
           ctx,
