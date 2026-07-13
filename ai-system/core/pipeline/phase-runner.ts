@@ -73,6 +73,19 @@ export async function runPhase(
   phase: Phase,
   options: RunPhaseOptions,
 ): Promise<Result<PhaseRunResult>> {
+  // Store phase context in memory if memory client is available
+  if (options.config.memory) {
+    const phaseContext = JSON.stringify({
+      phaseNumber: phase.number,
+      title: phase.title,
+      commitMessage: phase.commitMessage,
+      stepsCount: phase.steps.length,
+      startedAt: Date.now(),
+    });
+
+    await options.config.memory.remember(phaseContext, 0.8);
+  }
+
   const verifiedStep = createVerifiedImplementStep(`phase-${phase.number}`, {
     config: options.config,
     workspace: options.workspace,
@@ -89,6 +102,18 @@ export async function runPhase(
   const commit = options.commitPhase ?? commitPhaseChanges;
   const commitResult = await commit(options.workspace, phase.commitMessage, phase.number);
   if (!commitResult.ok) return commitResult;
+
+  // Store phase completion in memory if memory client is available
+  if (options.config.memory) {
+    const completionContext = JSON.stringify({
+      phaseNumber: phase.number,
+      status: "completed",
+      stepsCompleted: phase.steps.length,
+      completedAt: Date.now(),
+    });
+
+    await options.config.memory.remember(completionContext, 0.9);
+  }
 
   return {
     ok: true,
