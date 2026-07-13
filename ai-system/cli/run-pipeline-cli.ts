@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { $ } from "bun";
 import { runPipeline } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
@@ -8,6 +9,7 @@ import {
   CPP_CONFIG,
   DEV_CYCLE_LANGUAGE_CONFIGS,
   RUST_CONFIG,
+  RUST_PLAN_CONFIG,
   TYPESCRIPT_CONFIG,
 } from "../core/pipeline/definitions/language-configs";
 import type { DevCycleLanguageConfig } from "../core/pipeline/definitions/language-configs";
@@ -48,6 +50,7 @@ function languageForPipeline(
   workspace: string,
   override?: CliLanguage,
 ): DevCycleLanguageConfig {
+  if (pipelineName === "rust-plan-cycle") return RUST_PLAN_CONFIG;
   if (pipelineName === "rust-dev-cycle") return RUST_CONFIG;
   if (pipelineName === "cmake-dev-cycle") return CPP_CONFIG;
   return detectLanguage(workspace, override);
@@ -56,6 +59,7 @@ function languageForPipeline(
 function isDevCyclePipeline(pipelineName: string): boolean {
   return (
     pipelineName === "dev-cycle" ||
+    pipelineName === "rust-plan-cycle" ||
     pipelineName === "rust-dev-cycle" ||
     pipelineName === "cmake-dev-cycle"
   );
@@ -76,12 +80,50 @@ function buildSingleStepPlan(input: string): string {
   ].join("\n");
 }
 
+/**
+ * Get the current git branch name.
+ *
+ * @param workspace - The workspace directory
+ * @returns The branch name, or undefined if unable to determine
+ */
+async function getCurrentBranch(workspace: string): Promise<string | undefined> {
+  try {
+    const result = await $`git rev-parse --abbrev-ref HEAD`.cwd(workspace).text();
+    return result.trim();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Check if the current branch is a protected branch (main, master, develop, etc.).
+ *
+ * @param branch - The branch name to check
+ * @returns true if the branch is protected, false otherwise
+ */
+function isProtectedBranch(branch: string): boolean {
+  const protectedBranches = ["main", "master", "develop", "development"];
+  return protectedBranches.includes(branch.toLowerCase());
+}
+
+/**
+ * Exit code contract for rust-plan-cycle:
+ *   - 0: all phases pass
+ *   - 2: aborted-but-resumable failure (phase exhausted repair budget)
+ *   - 3: input/environment errors (bad plan file, wrong branch, missing toolchain)
+ */
+const EXIT_CODES = {
+  SUCCESS: 0,
+  RESUMABLE_FAILURE: 2,
+  ENVIRONMENT_ERROR: 3,
+} as const;
+
 /* v8 ignore start */
 async function main(): Promise<void> {
   const argsResult = parseArgs(process.argv.slice(2));
   if (!argsResult.ok) {
     console.error(`Error: ${argsResult.error.message}`);
-    process.exit(1);
+    process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
   const { pipelineName, workspace, input, planPath, language, maxRetries, profileName } =
     argsResult.value;
@@ -89,10 +131,25 @@ async function main(): Promise<void> {
   const configResult = await loadConfig(profileName);
   if (!configResult.ok) {
     console.error(`Error: ${configResult.error.message}`);
-    process.exit(1);
+    process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
 
   const languageConfig = languageForPipeline(pipelineName, workspace, language);
+
+  // Enforce isolated run branch for plan-cycle pipelines
+  if (pipelineName === "rust-plan-cycle") {
+    const currentBranch = await getCurrentBranch(workspace);
+    if (currentBranch === undefined) {
+      console.error("Error: unable to determine current git branch");
+      process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+    }
+    if (isProtectedBranch(currentBranch)) {
+      console.error(
+        `Error: rust-plan-cycle must run on a dedicated feature branch, not "${currentBranch}"`,
+      );
+      process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+    }
+  }
 
   if (isDevCyclePipeline(pipelineName) && (planPath !== undefined || input !== "")) {
     const planContent =
@@ -106,7 +163,9 @@ async function main(): Promise<void> {
 
     if (!outcome.ok) {
       console.error(`Feature failed: ${outcome.error.message}`);
-      process.exit(1);
+      // Determine if this is a resumable failure or environment error
+      // For now, treat all feature failures as resumable (exit code 2)
+      process.exit(EXIT_CODES.RESUMABLE_FAILURE);
     }
 
     console.log(`Running feature: ${outcome.value.feature}`);
@@ -115,13 +174,13 @@ async function main(): Promise<void> {
     for (const phase of outcome.value.phases) {
       console.log(`[ok] Phase ${phase.phaseNumber}: ${phase.commitMessage}`);
     }
-    return;
+    process.exit(EXIT_CODES.SUCCESS);
   }
 
   const pipelineResult = await selectPipeline(pipelineName, configResult.value, workspace);
   if (!pipelineResult.ok) {
     console.error(`Error: ${pipelineResult.error.message}`);
-    process.exit(1);
+    process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
 
   const event = buildEvent(input);
@@ -135,7 +194,7 @@ async function main(): Promise<void> {
 
   if (!outcome.ok) {
     console.error(`Pipeline failed: ${outcome.error.message}`);
-    process.exit(1);
+    process.exit(EXIT_CODES.RESUMABLE_FAILURE);
   }
 
   for (const step of outcome.value.steps) {
@@ -146,11 +205,12 @@ async function main(): Promise<void> {
 
   console.log("");
   console.log(`Done in ${outcome.value.totalDurationMs}ms.`);
+  process.exit(EXIT_CODES.SUCCESS);
 }
 
 main().catch((err: unknown) => {
   const message = err instanceof Error ? err.message : String(err);
   console.error(`Unexpected error: ${message}`);
-  process.exit(1);
+  process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
 });
 /* v8 ignore stop */

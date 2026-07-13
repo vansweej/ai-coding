@@ -11,6 +11,7 @@ import { resolveModelForRole } from "../../config/model-profiles";
 import { resolveMode } from "../mode-router/resolve-mode";
 import { actionToRole } from "../model-router/action-to-role";
 import { selectModel } from "../model-router/select-model";
+import type { CerebrumMemory } from "./cerebrum-memory";
 
 /** Configuration for the orchestrator, mapping model names to dispatchers. */
 export interface OrchestratorConfig {
@@ -21,6 +22,11 @@ export interface OrchestratorConfig {
    * be present in the `dispatchers` map.
    */
   readonly profile?: ModelProfile;
+  /**
+   * Optional memory client for two-tier memory (Synapse + Cortex).
+   * When provided, the orchestrator can store and retrieve memories.
+   */
+  readonly memory?: CerebrumMemory;
 }
 
 /** Optional LLM-level parameters forwarded to the dispatcher. */
@@ -38,7 +44,8 @@ export interface LLMOptions {
  * 1. Resolve operating mode from event source
  * 2. Select the appropriate model
  * 3. Dispatch the prompt to the selected model's backend
- * 4. Return a structured response envelope
+ * 4. Store the response in memory (if memory client is available)
+ * 5. Return a structured response envelope
  */
 export async function orchestrate(
   event: AIRequestEvent,
@@ -77,14 +84,30 @@ export async function orchestrate(
 
   const durationMs = Date.now() - startedAt;
 
-  return {
-    ok: true,
-    value: {
+  const response: AIResponse = {
+    model,
+    mode,
+    action: event.action,
+    response: result.value,
+    timing: { startedAt, durationMs },
+  };
+
+  // Store the response in memory if memory client is available
+  if (config.memory) {
+    const memoryContent = JSON.stringify({
+      action: event.action,
       model,
       mode,
-      action: event.action,
+      prompt,
       response: result.value,
-      timing: { startedAt, durationMs },
-    },
+      timestamp: startedAt,
+    });
+
+    await config.memory.remember(memoryContent, 0.6);
+  }
+
+  return {
+    ok: true,
+    value: response,
   };
 }

@@ -56,6 +56,7 @@ bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--
 | `dev-cycle`       | plan file → implement steps → verify/retry → per-phase commit       | TS/Rust/C++|
 | `rust-dev-cycle`  | alias for `dev-cycle --language rust`                              | Rust       |
 | `cmake-dev-cycle` | alias for `dev-cycle --language cpp`                               | C++        |
+| `rust-plan-cycle` | unattended plan execution with memory tracking and resumable failures | Rust       |
 
 ## Codebase indexer
 
@@ -108,6 +109,9 @@ bun run pipeline dev-cycle ./my-project --plan ./plans/feature.md
 
 # Run a backward-compatible single-step Rust request
 bun run pipeline dev-cycle ./my-rust-project --language rust --input "Add a config module"
+
+# Run the unattended Rust plan cycle (requires feature branch)
+bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md
 ```
 
 All shell steps are nix-aware: if a `flake.nix` is detected in the workspace, commands are
@@ -120,6 +124,124 @@ ollama serve
 ollama pull gemma4:26b       # required for the local profile (default)
 ollama pull nomic-embed-text  # required for codebase indexing and skill retrieval
 ```
+
+---
+
+## Unattended Rust Plan Cycle (`rust-plan-cycle`)
+
+The `rust-plan-cycle` pipeline executes multi-phase Rust plans **unattended** with automatic
+repair, memory tracking, and resumable failures. It is designed for CI/CD workflows and
+autonomous agent execution.
+
+### Key Features
+
+- **Unattended execution**: Runs all phases without human intervention
+- **Automatic repair**: Retries failed steps locally with diagnostics; escalates to Copilot if needed
+- **Memory tracking**: Stores phase context and completion status for resumability
+- **Resumable failures**: Exit code 2 indicates a phase exhausted its repair budget but can be resumed
+- **Branch enforcement**: Must run on a dedicated feature branch (not main/master/develop)
+- **Fatal coverage gate**: Coverage threshold is enforced; failures block the phase
+- **Auto-format**: `cargo fmt` runs automatically (not just check)
+
+### Usage
+
+```bash
+# Run from a feature branch (required)
+git checkout -b feat/my-feature
+
+# Execute the plan
+bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md
+
+# Exit codes:
+#   0 = all phases passed
+#   2 = phase exhausted repair budget (resumable — run again to continue)
+#   3 = input/environment error (bad plan, wrong branch, missing toolchain)
+```
+
+### Plan File Format
+
+Create a plan file with phases and steps:
+
+```markdown
+# Feature: Add authentication module
+
+## Phase 1: Create auth module
+
+Commit message: feat: add auth module structure
+
+### Step 1: Create auth module
+
+Create src/auth/mod.rs with basic module structure.
+
+### Step 2: Add login function
+
+Add a login function to src/auth/mod.rs.
+
+## Phase 2: Add tests
+
+Commit message: feat: add auth tests
+
+### Step 1: Add unit tests
+
+Add comprehensive unit tests to src/auth/mod.rs.
+```
+
+Each phase is committed separately with a `Phase: N` trailer for resume tracking.
+
+### Resume Workflow
+
+If a phase fails and exhausts its repair budget (exit code 2):
+
+```bash
+# Fix the issue manually or wait for the next retry
+# Then resume from where it left off
+bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md
+
+# The pipeline detects the last completed phase and skips to the next one
+# No need to manually reset or specify a starting phase
+```
+
+The resume mechanism uses git commit trailers (`Phase: N`) to detect the last completed phase.
+If the working directory is dirty, the pipeline resets to the last phase commit before resuming.
+
+### Memory Client Integration
+
+Phase context and completion status are stored in a two-tier memory system (Synapse + Cortex)
+via the Cerebrum MCP server. This enables:
+
+- **Phase tracking**: Each phase stores its context (number, title, commit message, step count)
+- **Completion tracking**: Completion status with timestamp and steps completed
+- **Resumability**: Memory is consulted during resume to understand prior progress
+- **Salience-based prioritization**: Phase context (0.8) and completion (0.9) are high-priority
+
+Memory is optional — if the Cerebrum server is unavailable, the pipeline continues with
+git-based resume only.
+
+### Exit Code Contract
+
+| Exit Code | Meaning | Action |
+|-----------|---------|--------|
+| 0 | All phases passed | Feature is complete |
+| 2 | Phase exhausted repair budget | Fix the issue and run again to resume |
+| 3 | Input/environment error | Fix the error (bad plan, wrong branch, missing toolchain) and retry |
+
+### Troubleshooting
+
+**"Error: rust-plan-cycle must run on a dedicated feature branch"**
+- You are on main, master, or develop
+- Create a feature branch: `git checkout -b feat/my-feature`
+
+**"Phase exhausted repair budget (exit code 2)"**
+- The phase failed after local retries and Copilot escalation
+- Review the error message and fix the issue manually
+- Run the pipeline again to resume from the next phase
+
+**"Coverage gate failed"**
+- Test coverage is below the threshold (default 90%)
+- Add more tests or adjust the coverage directive in the plan file
+- See [`docs/rust-plan-cycle.md`](docs/rust-plan-cycle.md) for coverage directives
+
+See [`docs/rust-plan-cycle.md`](docs/rust-plan-cycle.md) for full documentation.
 
 ---
 

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { $ } from "bun";
 
 import type { PipelineStep, StepResult } from "@ai-coding/pipeline";
 import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
@@ -45,7 +46,22 @@ function languageConfig(shouldFail: boolean, calls?: string[]): DevCycleLanguage
 }
 
 function config(response: string): OrchestratorConfig {
-  const modelDispatcher = dispatcher(response);
+  // Convert code block response to aider-style patch format
+  // Input: "```typescript src/index.ts\nexport const value = 1;\n```"
+  // Output: "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE"
+  const patchResponse = response
+    .replace(/```typescript\s+/, "")
+    .replace(/```\s*$/, "")
+    .split("\n")
+    .map((line, idx, arr) => {
+      if (idx === 0) return line; // file path
+      if (idx === 1) return "<<<<<<< SEARCH\n=======";
+      if (idx === arr.length - 1) return ">>>>>>> REPLACE";
+      return line;
+    })
+    .join("\n");
+
+  const modelDispatcher = dispatcher(patchResponse);
   return {
     profile: LOCAL_PROFILE,
     dispatchers: { "gemma4:26b": modelDispatcher },
@@ -57,6 +73,7 @@ const PHASE: Phase = {
   title: "Core",
   commitMessage: "feat: add core",
   steps: [{ number: 1, title: "Step", body: "Do it" }],
+  coverage: { mode: "default" },
 };
 
 const MULTI_STEP_PHASE: Phase = {
@@ -67,12 +84,17 @@ const MULTI_STEP_PHASE: Phase = {
     { number: 1, title: "Step one", body: "Do one" },
     { number: 2, title: "Step two", body: "Do two" },
   ],
+  coverage: { mode: "default" },
 };
 
 let workspace: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   workspace = mkdtempSync(join(tmpdir(), "phase-runner-test-"));
+  // Initialize git repo for tests
+  await $`git init`.cwd(workspace).quiet();
+  await $`git config user.email "test@example.com"`.cwd(workspace).quiet();
+  await $`git config user.name "Test User"`.cwd(workspace).quiet();
 });
 
 afterEach(() => {
@@ -86,12 +108,15 @@ describe("runPhase", () => {
       config: config("```typescript src/index.ts\nexport const value = 1;\n```"),
       workspace,
       languageConfig: languageConfig(false),
-      commitPhase: async (_workspace, message) => {
+      commitPhase: async (_workspace, message, _phaseNumber) => {
         commits.push(message);
         return { ok: true, value: message };
       },
     });
 
+    if (!result.ok) {
+      console.error("Phase failed:", result.error?.message);
+    }
     expect(result.ok).toBe(true);
     expect(commits).toEqual(["feat: add core"]);
   });
@@ -103,7 +128,7 @@ describe("runPhase", () => {
       workspace,
       languageConfig: languageConfig(true),
       retryConfig: { maxLocalRetries: 0, maxEscalationRetries: 0 },
-      commitPhase: async (_workspace, message) => {
+      commitPhase: async (_workspace, message, _phaseNumber) => {
         commits.push(message);
         return { ok: true, value: message };
       },
@@ -117,13 +142,23 @@ describe("runPhase", () => {
     const commits: string[] = [];
     const verifyCalls: string[] = [];
     const prompts: string[] = [];
+    let stepCount = 0;
     const modelDispatcher: ModelDispatcher = {
       dispatch: async (request: DispatchRequest): Promise<Result<string>> => {
         prompts.push(request.prompt);
-        return {
-          ok: true,
-          value: "```typescript src/index.ts\nexport const value = 1;\n```",
-        };
+        stepCount++;
+        // First step creates the file, second step modifies it
+        if (stepCount === 1) {
+          return {
+            ok: true,
+            value: "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+          };
+        } else {
+          return {
+            ok: true,
+            value: "src/index.ts\n<<<<<<< SEARCH\nexport const value = 1;\n=======\nexport const value = 2;\n>>>>>>> REPLACE",
+          };
+        }
       },
     };
     const result = await runPhase(MULTI_STEP_PHASE, {
@@ -133,12 +168,15 @@ describe("runPhase", () => {
       },
       workspace,
       languageConfig: languageConfig(false, verifyCalls),
-      commitPhase: async (_workspace, message) => {
+      commitPhase: async (_workspace, message, _phaseNumber) => {
         commits.push(message);
         return { ok: true, value: message };
       },
     });
 
+    if (!result.ok) {
+      console.error("Phase failed:", result.error?.message);
+    }
     expect(result.ok).toBe(true);
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).toContain("Do one");
