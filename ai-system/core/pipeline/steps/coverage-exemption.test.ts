@@ -1,6 +1,6 @@
-import { describe, it, expect } from "bun:test";
-import { isAutoExempt, resolveCoverageThreshold } from "./coverage-exemption";
+import { describe, expect, it } from "bun:test";
 import type { CoverageDirective } from "../plan-parser";
+import { isAutoExempt, resolveCoverageThreshold } from "./coverage-exemption";
 
 describe("isAutoExempt", () => {
   it("returns true for pure-comment diff", () => {

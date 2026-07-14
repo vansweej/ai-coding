@@ -11,102 +11,90 @@ describe("parseArgs", () => {
   });
 
   it("returns error when only pipeline name provided", () => {
-    const result = parseArgs(["dev-cycle"]);
+    const result = parseArgs(["rust-plan-cycle"]);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("Missing workspace path");
   });
 
   it("parses pipeline name and workspace", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws"]);
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws"]);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.pipelineName).toBe("dev-cycle");
+      expect(result.value.pipelineName).toBe("rust-plan-cycle");
       expect(result.value.workspace).toBe("/tmp/ws");
       expect(result.value.input).toBe("");
     }
   });
 
   it("uses default profile when --profile is not provided", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws"]);
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws"]);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.profileName).toBe(DEFAULT_PROFILE_NAME);
   });
 
   it("parses --input flag", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws", "--input", "Add tests"]);
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws", "--input", "Add tests"]);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.input).toBe("Add tests");
   });
 
   it("parses --plan flag", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws", "--plan", "plans/feature.md"]);
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws", "--plan", "plans/feature.md"]);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.planPath).toBe("plans/feature.md");
   });
 
   it("returns error when --plan flag has no value", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws", "--plan"]);
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws", "--plan"]);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("--plan flag requires a value");
   });
 
-  it("parses --language flag", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws", "--language", "rust"]);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.language).toBe("rust");
-  });
-
-  it("returns error for an unknown --language value", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws", "--language", "python"]);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.message).toContain("--language must be one of");
-  });
-
   it("parses --max-retries flag", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws", "--max-retries", "2"]);
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws", "--max-retries", "2"]);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.maxRetries).toBe(2);
   });
 
   it("returns error for invalid --max-retries value", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws", "--max-retries", "nope"]);
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws", "--max-retries", "nope"]);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("--max-retries");
   });
 
   it("returns error when --input flag has no value", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws", "--input"]);
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws", "--input"]);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("--input flag requires a value");
   });
 
   it("returns error when --input value starts with --", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws", "--input", "--other"]);
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws", "--input", "--other"]);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("--input flag requires a value");
   });
 
   it("parses --profile flag", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws", "--profile", "copilot-default"]);
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws", "--profile", "copilot-default"]);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.profileName).toBe("copilot-default");
   });
 
   it("returns error when --profile flag has no value", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws", "--profile"]);
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws", "--profile"]);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("--profile flag requires a value");
   });
 
   it("returns error when --profile value starts with --", () => {
-    const result = parseArgs(["dev-cycle", "/tmp/ws", "--profile", "--other"]);
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws", "--profile", "--other"]);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("--profile flag requires a value");
   });
 
   it("parses both --input and --profile flags", () => {
     const result = parseArgs([
-      "dev-cycle",
+      "rust-plan-cycle",
       "/tmp/ws",
       "--profile",
       "copilot-default",

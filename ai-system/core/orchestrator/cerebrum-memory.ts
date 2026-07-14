@@ -37,8 +37,8 @@ interface MCPResponse {
  */
 export class CerebrumMemory {
   private readonly scope: MemoryScope;
-  private requestId: number = 0;
-  private useMockMode: boolean = true; // Start in mock mode, switch to real when MCP is available
+  private requestId = 0;
+  private useMockMode = true; // Start in mock mode, switch to real when MCP is available
 
   constructor(scope: MemoryScope = "global") {
     this.scope = scope;
@@ -48,10 +48,7 @@ export class CerebrumMemory {
    * Store a memory in Synapse (short-term) tier.
    * Automatically generates embeddings via Ollama.
    */
-  async remember(
-    content: string,
-    salience?: number,
-  ): Promise<Result<string>> {
+  async remember(content: string, salience?: number): Promise<Result<string>> {
     try {
       const result = await this.callMCPTool("cerebrum_remember", {
         content,
@@ -78,10 +75,7 @@ export class CerebrumMemory {
    * Search memories using semantic similarity.
    * Returns memories from both Synapse and Cortex tiers.
    */
-  async recall(
-    query: string,
-    limit?: number,
-  ): Promise<Result<MemoryEntry[]>> {
+  async recall(query: string, limit?: number): Promise<Result<MemoryEntry[]>> {
     try {
       const result = await this.callMCPTool("cerebrum_recall", {
         query,

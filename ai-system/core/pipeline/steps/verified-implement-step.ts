@@ -1,6 +1,6 @@
+import { execSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { execSync } from "node:child_process";
 import type { PipelineContext, PipelineStep, Result, StepResult } from "@ai-coding/pipeline";
 import type { AIAction, AIRequestEvent } from "@ai-coding/shared";
 
@@ -8,8 +8,8 @@ import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestr
 import { orchestrate } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
 import type { Step } from "../plan-parser";
-import { parsePatch } from "./parse-patch";
 import { applyPatch } from "./apply-patch-step";
+import { parsePatch } from "./parse-patch";
 
 const IMPLEMENT_RESULT_NAME = "verified-implement-output";
 

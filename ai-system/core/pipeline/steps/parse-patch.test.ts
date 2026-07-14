@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { parsePatch } from "./parse-patch";
 
 describe("parsePatch", () => {
@@ -65,7 +65,7 @@ const newCode = "hello";
     const edit = result.value[0];
     expect(edit?.filePath).toBe("src/new-file.ts");
     expect(edit?.search).toBe("");
-    expect(edit?.replace).toBe("const newCode = \"hello\";");
+    expect(edit?.replace).toBe('const newCode = "hello";');
     expect(edit?.isCreate).toBe(true);
   });
 

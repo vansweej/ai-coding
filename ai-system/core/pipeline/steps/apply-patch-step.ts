@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import type { PatchEdit } from "./parse-patch";
-import { assertInsideWorkspace, type PathSafetyError } from "./patch-path-guard";
+import { type PathSafetyError, assertInsideWorkspace } from "./patch-path-guard";
 
 /**
  * Details about a successfully applied patch.
@@ -102,7 +102,8 @@ export async function applyPatch(
         const currentContent = readFileSync(absolutePath, "utf8");
 
         // Count occurrences of the search anchor
-        const searchCount = (currentContent.match(new RegExp(escapeRegExp(edit.search), "g")) ?? []).length;
+        const searchCount = (currentContent.match(new RegExp(escapeRegExp(edit.search), "g")) ?? [])
+          .length;
 
         if (searchCount === 0) {
           return {

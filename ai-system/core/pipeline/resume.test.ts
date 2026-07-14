@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { $ } from "bun";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
+import { $ } from "bun";
 import { detectResumeState, resetToPhaseCommit } from "./resume";
 
 describe("resume", () => {

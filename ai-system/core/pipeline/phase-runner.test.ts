@@ -151,12 +151,14 @@ describe("runPhase", () => {
         if (stepCount === 1) {
           return {
             ok: true,
-            value: "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+            value:
+              "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
           };
         } else {
           return {
             ok: true,
-            value: "src/index.ts\n<<<<<<< SEARCH\nexport const value = 1;\n=======\nexport const value = 2;\n>>>>>>> REPLACE",
+            value:
+              "src/index.ts\n<<<<<<< SEARCH\nexport const value = 1;\n=======\nexport const value = 2;\n>>>>>>> REPLACE",
           };
         }
       },

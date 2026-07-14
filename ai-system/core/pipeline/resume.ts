@@ -34,15 +34,17 @@ async function findLastPhaseNumber(workspace: string): Promise<number | undefine
   try {
     // Get the last 50 commits with full message (including trailers)
     const log = await $`git log --format=%B -n 50`.cwd(workspace).text();
-    
+
     // Split by double newline to separate commits
-    const commits = log.split(/\n\n(?=feat:|fix:|chore:|refactor:|docs:|style:|test:|perf:|ci:|build:)/);
-    
+    const commits = log.split(
+      /\n\n(?=feat:|fix:|chore:|refactor:|docs:|style:|test:|perf:|ci:|build:)/,
+    );
+
     for (const commit of commits) {
       // Look for Phase: N trailer (can be at end of message)
       const match = commit.match(/Phase:\s*(\d+)/);
       if (match) {
-        return parseInt(match[1], 10);
+        return Number.parseInt(match[1], 10);
       }
     }
 

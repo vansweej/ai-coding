@@ -9,8 +9,8 @@ import type { PipelineStep, StepResult } from "@ai-coding/pipeline";
 import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
 
 import { LOCAL_PROFILE } from "../../config/model-profiles";
-import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import { CerebrumMemory } from "../orchestrator/cerebrum-memory";
+import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "./definitions/language-configs";
 import { RUST_PLAN_CONFIG } from "./definitions/language-configs";
 import { runFeature } from "./feature-runner";
@@ -45,7 +45,10 @@ function createMockDispatcher(responses: string[]): ModelDispatcher {
 }
 
 // Create a mock orchestrator config
-function createMockConfig(dispatcher: ModelDispatcher, memory?: CerebrumMemory): OrchestratorConfig {
+function createMockConfig(
+  dispatcher: ModelDispatcher,
+  memory?: CerebrumMemory,
+): OrchestratorConfig {
   return {
     profile: LOCAL_PROFILE,
     dispatchers: { "gemma4:26b": dispatcher },

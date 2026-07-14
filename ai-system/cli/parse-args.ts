@@ -1,8 +1,5 @@
 import type { Result } from "@ai-coding/pipeline";
 import { DEFAULT_PROFILE_NAME } from "../config/model-profiles";
-import type { DevCycleLanguageConfig } from "../core/pipeline/definitions/language-configs";
-
-export type CliLanguage = DevCycleLanguageConfig["name"];
 
 /** Parsed arguments from the command line. */
 export interface CliArgs {
@@ -10,18 +7,15 @@ export interface CliArgs {
   readonly workspace: string;
   readonly input: string;
   readonly planPath?: string;
-  readonly language?: CliLanguage;
   readonly maxRetries?: number;
   /** Profile name override. Falls back to AI_CODING_MODEL_PROFILE env var, then the default. */
   readonly profileName: string;
 }
 
-const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--language <typescript|rust|cpp>] [--max-retries <n>] [--profile <name>]
+const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--max-retries <n>] [--profile <name>]
 
 Pipeline names:
-  dev-cycle        Unified plan-file implementation pipeline
-  rust-dev-cycle   Alias for dev-cycle --language rust
-  cmake-dev-cycle  Alias for dev-cycle --language cpp
+  rust-plan-cycle  Unattended plan executor: parse plan → per-phase implement → verify/retry → commit; resumable
   scaffold-rust    Rust: cargo init + generate flake.nix
   scaffold-cpp     C++: generate CMakeLists.txt + src/main.cpp + flake.nix
 
@@ -33,8 +27,8 @@ Profile names:
 Examples:
   bun run pipeline scaffold-rust /tmp/my-rust-project
   bun run pipeline scaffold-cpp /tmp/my-cpp-project
-  bun run pipeline dev-cycle ./my-project --plan ./plans/feature.md --profile hybrid
-  bun run pipeline dev-cycle ./my-project --language rust --max-retries 3 --input "Add tests"`;
+  bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md --profile hybrid
+  bun run pipeline rust-plan-cycle ./my-project --input "Add tests" --max-retries 3`;
 
 function readFlag(args: readonly string[], flag: string): Result<string | undefined> {
   const index = args.indexOf(flag);
@@ -44,14 +38,6 @@ function readFlag(args: readonly string[], flag: string): Result<string | undefi
     return { ok: false, error: new Error(`${flag} flag requires a value`) };
   }
   return { ok: true, value };
-}
-
-function parseLanguage(value: string | undefined): Result<CliLanguage | undefined> {
-  if (value === undefined) return { ok: true, value: undefined };
-  if (value === "typescript" || value === "rust" || value === "cpp") {
-    return { ok: true, value };
-  }
-  return { ok: false, error: new Error("--language must be one of: typescript, rust, cpp") };
 }
 
 function parseMaxRetries(value: string | undefined): Result<number | undefined> {
@@ -94,11 +80,6 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
   if (!planResult.ok) return planResult;
   const planPath = planResult.value;
 
-  const rawLanguage = readFlag(args, "--language");
-  if (!rawLanguage.ok) return rawLanguage;
-  const parsedLanguage = parseLanguage(rawLanguage.value);
-  if (!parsedLanguage.ok) return parsedLanguage;
-
   const rawMaxRetries = readFlag(args, "--max-retries");
   if (!rawMaxRetries.ok) return rawMaxRetries;
   const maxRetries = parseMaxRetries(rawMaxRetries.value);
@@ -124,7 +105,6 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
       workspace,
       input,
       planPath,
-      language: parsedLanguage.value,
       maxRetries: maxRetries.value,
       profileName,
     },

@@ -1,21 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 
-import { $ } from "bun";
 import { runPipeline } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
+import { $ } from "bun";
 
-import {
-  CPP_CONFIG,
-  DEV_CYCLE_LANGUAGE_CONFIGS,
-  RUST_CONFIG,
-  RUST_PLAN_CONFIG,
-  TYPESCRIPT_CONFIG,
-} from "../core/pipeline/definitions/language-configs";
-import type { DevCycleLanguageConfig } from "../core/pipeline/definitions/language-configs";
+import { RUST_PLAN_CONFIG } from "../core/pipeline/definitions/language-configs";
 import { runFeature } from "../core/pipeline/feature-runner";
 import { loadConfig } from "./load-config";
-import type { CliLanguage } from "./parse-args";
 import { parseArgs } from "./parse-args";
 import { selectPipeline } from "./select-pipeline";
 
@@ -36,33 +27,6 @@ function buildEvent(input: string): AIRequestEvent {
     action: "task",
     payload: { input: input || undefined },
   };
-}
-
-function detectLanguage(workspace: string, override?: CliLanguage): DevCycleLanguageConfig {
-  if (override !== undefined) return DEV_CYCLE_LANGUAGE_CONFIGS[override];
-  if (existsSync(join(workspace, "Cargo.toml"))) return RUST_CONFIG;
-  if (existsSync(join(workspace, "CMakeLists.txt"))) return CPP_CONFIG;
-  return TYPESCRIPT_CONFIG;
-}
-
-function languageForPipeline(
-  pipelineName: string,
-  workspace: string,
-  override?: CliLanguage,
-): DevCycleLanguageConfig {
-  if (pipelineName === "rust-plan-cycle") return RUST_PLAN_CONFIG;
-  if (pipelineName === "rust-dev-cycle") return RUST_CONFIG;
-  if (pipelineName === "cmake-dev-cycle") return CPP_CONFIG;
-  return detectLanguage(workspace, override);
-}
-
-function isDevCyclePipeline(pipelineName: string): boolean {
-  return (
-    pipelineName === "dev-cycle" ||
-    pipelineName === "rust-plan-cycle" ||
-    pipelineName === "rust-dev-cycle" ||
-    pipelineName === "cmake-dev-cycle"
-  );
 }
 
 function buildSingleStepPlan(input: string): string {
@@ -125,8 +89,7 @@ async function main(): Promise<void> {
     console.error(`Error: ${argsResult.error.message}`);
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
-  const { pipelineName, workspace, input, planPath, language, maxRetries, profileName } =
-    argsResult.value;
+  const { pipelineName, workspace, input, planPath, maxRetries, profileName } = argsResult.value;
 
   const configResult = await loadConfig(profileName);
   if (!configResult.ok) {
@@ -134,7 +97,7 @@ async function main(): Promise<void> {
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
 
-  const languageConfig = languageForPipeline(pipelineName, workspace, language);
+  const languageConfig = RUST_PLAN_CONFIG;
 
   // Enforce isolated run branch for plan-cycle pipelines
   if (pipelineName === "rust-plan-cycle") {
@@ -149,9 +112,14 @@ async function main(): Promise<void> {
       );
       process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
     }
+    // Guard: rust-plan-cycle requires either --plan or --input
+    if (planPath === undefined && input === "") {
+      console.error('Error: rust-plan-cycle requires either --plan <file> or --input "..."');
+      process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+    }
   }
 
-  if (isDevCyclePipeline(pipelineName) && (planPath !== undefined || input !== "")) {
+  if (pipelineName === "rust-plan-cycle" && (planPath !== undefined || input !== "")) {
     const planContent =
       planPath !== undefined ? readFileSync(planPath, "utf8") : buildSingleStepPlan(input);
     const outcome = await runFeature(planContent, {

@@ -54,7 +54,9 @@ export interface PatchParseError {
  * @returns A `Result<PatchEdit[], PatchParseError>` — ok with parsed edits on success,
  *          error with a descriptive message and offending fragment on failure.
  */
-export function parsePatch(raw: string): { ok: true; value: PatchEdit[] } | { ok: false; error: PatchParseError } {
+export function parsePatch(
+  raw: string,
+): { ok: true; value: PatchEdit[] } | { ok: false; error: PatchParseError } {
   const edits: PatchEdit[] = [];
   const lines = raw.split("\n");
   let i = 0;
@@ -69,7 +71,11 @@ export function parsePatch(raw: string): { ok: true; value: PatchEdit[] } | { ok
     }
 
     // Check if this line is a marker (should not be a file path)
-    if (line.startsWith("<<<<<<< SEARCH") || line.startsWith("=======") || line.startsWith(">>>>>>> REPLACE")) {
+    if (
+      line.startsWith("<<<<<<< SEARCH") ||
+      line.startsWith("=======") ||
+      line.startsWith(">>>>>>> REPLACE")
+    ) {
       return {
         ok: false,
         error: {

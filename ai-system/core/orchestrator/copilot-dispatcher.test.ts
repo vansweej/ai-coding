@@ -77,7 +77,10 @@ describe("CopilotDispatcher", () => {
 
     expect(capturedBody).toBeDefined();
     if (capturedBody) {
-      const messages = (capturedBody as Record<string, unknown>).messages as Array<{ role: string; content: string }>;
+      const messages = (capturedBody as Record<string, unknown>).messages as Array<{
+        role: string;
+        content: string;
+      }>;
       expect(messages[0]?.role).toBe("system");
       expect(messages[0]?.content).toBe("You are a helpful assistant");
       expect(messages[1]?.role).toBe("user");
@@ -173,7 +176,9 @@ describe("CopilotDispatcher", () => {
 
     expect(capturedHeaders).toBeDefined();
     if (capturedHeaders) {
-      expect((capturedHeaders as Record<string, string>).Authorization).toBe("Bearer my-secret-token");
+      expect((capturedHeaders as Record<string, string>).Authorization).toBe(
+        "Bearer my-secret-token",
+      );
     }
   });
 
@@ -204,7 +209,9 @@ describe("CopilotDispatcher", () => {
     if (capturedHeaders) {
       expect((capturedHeaders as Record<string, unknown>)["Content-Type"]).toBe("application/json");
       expect((capturedHeaders as Record<string, unknown>)["User-Agent"]).toBe("ai-coding-os/1.0.0");
-      expect((capturedHeaders as Record<string, unknown>)["Openai-Intent"]).toBe("conversation-edits");
+      expect((capturedHeaders as Record<string, unknown>)["Openai-Intent"]).toBe(
+        "conversation-edits",
+      );
       expect((capturedHeaders as Record<string, unknown>)["x-initiator"]).toBe("user");
     }
   });
@@ -240,11 +247,12 @@ describe("CopilotDispatcher", () => {
   });
 
   it("returns error when API returns non-ok status", async () => {
-    global.fetch = (async () => ({
-      ok: false,
-      status: 401,
-      text: async () => "Unauthorized",
-    } as unknown as Response)) as unknown as typeof fetch;
+    global.fetch = (async () =>
+      ({
+        ok: false,
+        status: 401,
+        text: async () => "Unauthorized",
+      }) as unknown as Response) as unknown as typeof fetch;
 
     const dispatcher = new CopilotDispatcher("invalid-token");
     const request: DispatchRequest = {
@@ -260,11 +268,12 @@ describe("CopilotDispatcher", () => {
   });
 
   it("returns error when API returns no choices", async () => {
-    global.fetch = (async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ choices: [] }),
-    } as unknown as Response)) as unknown as typeof fetch;
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [] }),
+      }) as unknown as Response) as unknown as typeof fetch;
 
     const dispatcher = new CopilotDispatcher("test-token");
     const request: DispatchRequest = {
@@ -280,13 +289,14 @@ describe("CopilotDispatcher", () => {
   });
 
   it("returns error when API response has no content", async () => {
-    global.fetch = (async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        choices: [{ message: { content: undefined } }],
-      }),
-    } as unknown as Response)) as unknown as typeof fetch;
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: undefined } }],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
 
     const dispatcher = new CopilotDispatcher("test-token");
     const request: DispatchRequest = {
@@ -320,13 +330,14 @@ describe("CopilotDispatcher", () => {
   });
 
   it("returns error when JSON parsing fails", async () => {
-    global.fetch = (async () => ({
-      ok: true,
-      status: 200,
-      json: async () => {
-        throw new Error("Invalid JSON");
-      },
-    } as unknown as Response)) as unknown as typeof fetch;
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new Error("Invalid JSON");
+        },
+      }) as unknown as Response) as unknown as typeof fetch;
 
     const dispatcher = new CopilotDispatcher("test-token");
     const request: DispatchRequest = {

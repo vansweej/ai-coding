@@ -1,8 +1,8 @@
 import { createCoverageGateStep, createNixShellStep } from "@ai-coding/pipeline";
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
-import { resolveCoverageThreshold } from "../steps/coverage-exemption";
 import type { CoverageDirective } from "../plan-parser";
+import { resolveCoverageThreshold } from "../steps/coverage-exemption";
 
 const DEFAULT_COVERAGE_THRESHOLD = 90;
 const DEFAULT_CPP_BUILD_DIR = "build";
@@ -108,7 +108,9 @@ export function createRustPlanConfig(
       "Do not include any explanation or prose outside the patches.",
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt"], { cwd: workspace }),
-      createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], { cwd: workspace }),
+      createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], {
+        cwd: workspace,
+      }),
       createNixShellStep<AIRequestEvent>("clippy", ["cargo", "clippy", "--", "-D", "warnings"], {
         cwd: workspace,
       }),

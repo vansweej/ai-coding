@@ -76,11 +76,7 @@ describe("CerebrumMemory", () => {
 
   it("recalls memories by scope with custom limit", async () => {
     const memory = new CerebrumMemory();
-    const result = await memory.recallByScope(
-      "search query",
-      "user:alice",
-      15,
-    );
+    const result = await memory.recallByScope("search query", "user:alice", 15);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -183,12 +179,7 @@ describe("CerebrumMemory", () => {
   });
 
   it("supports different memory scopes", async () => {
-    const scopes = [
-      "global",
-      "user:alice",
-      "agent:planner",
-      "session:xyz",
-    ] as const;
+    const scopes = ["global", "user:alice", "agent:planner", "session:xyz"] as const;
 
     for (const scope of scopes) {
       const memory = new CerebrumMemory(scope);
