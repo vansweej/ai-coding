@@ -31,7 +31,7 @@ ai-coding/
       orchestrator/        Single LLM call lifecycle; CopilotDispatcher
       pipeline/
         steps/             OrchestratorStep (LLM), NixShellStep, FileWriterStep
-        definitions/       dev-cycle, rust-dev-cycle, cmake-dev-cycle, scaffold-*
+        definitions/       rust-plan-cycle, scaffold-rust, scaffold-cpp
     cli/
       parse-args.ts        CLI argument parsing (--profile, --input flags)
       load-config.ts       Builds OrchestratorConfig with local profile (Ollama-only)
@@ -120,13 +120,11 @@ bun run pipeline <name> <workspace> [--input "task description"] [--profile <nam
 
 **Pipeline names:**
 
-| Name              | Stack      | Steps                                                        |
-|-------------------|------------|--------------------------------------------------------------|
-| `dev-cycle`       | TypeScript | plan → implement → write-files → bun test                   |
-| `rust-dev-cycle`  | Rust       | plan → implement → write-files → fmt → clippy → test → coverage |
-| `cmake-dev-cycle` | C++        | plan → implement → write-files → configure → build → test   |
-| `scaffold-rust`   | Rust       | cargo init + generate flake.nix                              |
-| `scaffold-cpp`    | C++        | generate CMakeLists.txt + src/main.cpp + flake.nix           |
+| Name              | Stack | Steps                                                        |
+|-------------------|-------|--------------------------------------------------------------|
+| `rust-plan-cycle` | Rust  | plan → implement → fmt → clippy → test → coverage; resumable |
+| `scaffold-rust`   | Rust  | cargo init + generate flake.nix                              |
+| `scaffold-cpp`    | C++   | generate CMakeLists.txt + src/main.cpp + flake.nix           |
 
 **Examples:**
 
@@ -134,17 +132,17 @@ bun run pipeline <name> <workspace> [--input "task description"] [--profile <nam
 # Scaffold a new Rust project
 bun run pipeline scaffold-rust /tmp/my-rust-project
 
-# Run the TypeScript dev cycle with a task
-bun run pipeline dev-cycle ./my-project --input "Add retry logic to the HTTP client"
+# Run rust-plan-cycle with a plan file
+bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
 
 # Specify the model profile explicitly
-bun run pipeline dev-cycle ./my-project --profile local --input "Add error handling"
+bun run pipeline rust-plan-cycle ./my-project --profile local --input "Add error handling"
 ```
 
 ### From OpenCode (slash command)
 
 ```
-/pipeline rust-dev-cycle ./my-project "Add a JSON parser module"
+/rust-plan-cycle ./my-project --plan ./plans/feature.md
 ```
 
 The `/pipeline` command is installed globally via Home Manager and available in
@@ -171,7 +169,7 @@ See [docs/agent-reference.md](./agent-reference.md) for full agent documentation
 ```
 @planner I want to add retry logic to the HTTP client. What's the best approach?
 
-@debugger The rust-dev-cycle pipeline is writing files to the wrong directory. Diagnose.
+@debugger The rust-plan-cycle pipeline is writing files to the wrong directory. Diagnose.
 
 @reviewer Review the changes in the last commit for correctness and style.
 
@@ -245,7 +243,7 @@ and a pointer to the relevant language skill. Scaffold pipelines (`scaffold-rust
 3. **Explore first** — switch to the `explore` agent (Tab), ask questions about unfamiliar code
 4. **Plan** — switch to the `plan` agent, describe the change
 5. **Implement** — switch to `build`, tell it to follow the plan
-6. **Run a pipeline** — for self-contained tasks: `/pipeline dev-cycle . "Add error handling"`
+6. **Run a pipeline** — for self-contained tasks: `/rust-plan-cycle . --input "Add error handling"`
 7. **Review** — `@reviewer` checks the diff before committing
 8. **Commit** — the `build` agent commits with conventional commit messages
 

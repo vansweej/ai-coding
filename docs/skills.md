@@ -38,7 +38,7 @@ index.
 ```mermaid
 graph TD
     subgraph Consumers["Consumers"]
-        Pipelines["Pipeline Definitions\ndev-cycle · rust-dev-cycle · cmake-dev-cycle"]
+        Pipelines["Pipeline Definitions\nrust-plan-cycle · scaffold-rust · scaffold-cpp"]
         OpenCode["OpenCode Agents\nbuild · local · plan · explore\ndebugger · reviewer · tester · planner"]
     end
 
@@ -89,7 +89,7 @@ graph LR
     Shared["@ai-coding/shared\nAIAction · AIRequestEvent"]
     Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · VectorBackend\ncreateBestBackend · LanceStore\nOllamaEmbedder · chunkSkill"]
     Pipeline["@ai-coding/pipeline\nrunPipeline · PipelineStep"]
-    AISystem["ai-system/core/pipeline\nSkillResolverStep\ndev-cycle · rust-dev-cycle · cmake-dev-cycle"]
+    AISystem["ai-system/core/pipeline\nSkillResolverStep\nrust-plan-cycle · scaffold-rust · scaffold-cpp"]
 
     Skills --> Shared
     AISystem --> Skills

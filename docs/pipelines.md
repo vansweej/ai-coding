@@ -296,47 +296,41 @@ const config: OrchestratorConfig = {
 
 ### 2. Choose and create a pipeline
 
+**Note:** The `createDevCyclePipeline` API is deprecated. Use `runFeature()` with `RUST_PLAN_CONFIG` for plan-based execution instead.
+
 ```typescript
-import { RUST_CONFIG } from
+import { RUST_PLAN_CONFIG } from
   "ai-system/core/pipeline/definitions/language-configs";
-import { createDevCyclePipeline } from
-  "ai-system/core/pipeline/definitions/dev-cycle";
+import { runFeature } from
+  "ai-system/core/pipeline/feature-runner";
 
-const steps = createDevCyclePipeline(config, "/path/to/my-rust-project", RUST_CONFIG);
+const planContent = `# Feature: Add retry logic
+## Phase 1: Implement
+Commit message: feat: add retry logic
+### Step 1: Implement
+Add exponential backoff to HTTP client`;
+
+const outcome = await runFeature(planContent, {
+  config,
+  workspace: "/path/to/my-rust-project",
+  languageConfig: RUST_PLAN_CONFIG,
+  retryConfig: { maxLocalRetries: 2 },
+});
 ```
 
-### 3. Create the event
+### 3. Handle the result
 
 ```typescript
-import type { AIRequestEvent } from "@ai-coding/shared";
-
-const event: AIRequestEvent = {
-  id: crypto.randomUUID(),
-  timestamp: Date.now(),
-  source: "cli",       // determines agentic mode, which drives model selection
-  action: "plan",      // pipeline definitions override this per step internally
-  payload: {
-    input: "Add retry logic to the HTTP client with exponential backoff",
-  },
-};
-```
-
-### 4. Run and handle the result
-
-```typescript
-import { runPipeline } from "@ai-coding/pipeline";
-
-const result = await runPipeline(steps, event);
-
-if (!result.ok) {
-  console.error("Pipeline failed:", result.error.message);
+if (!outcome.ok) {
+  console.error("Feature failed:", outcome.error.message);
   process.exit(1);
 }
 
-console.log(`Completed in ${result.value.totalDurationMs}ms`);
-for (const step of result.value.steps) {
-  console.log(`\n[${step.stepName}] (${step.durationMs}ms)\n${step.output}`);
+console.log(`Running feature: ${outcome.value.feature}`);
+for (const phase of outcome.value.phases) {
+  console.log(`[ok] Phase ${phase.phaseNumber}: ${phase.commitMessage}`);
 }
+```
 ```
 
 ---
@@ -353,9 +347,11 @@ for (const step of result.value.steps) {
 | Shell command, build tool, test runner | `createNixShellStep` (preferred) or `createShellStep` |
 | Validate prior output | `createCoverageGateStep` or a custom step |
 
-### Step 2 -- Add a new language to the unified dev-cycle
+### Step 2 -- Add a new language to the unified dev-cycle (DEPRECATED — Tier B)
 
-To support a new language, add a `DevCycleLanguageConfig` constant in
+**Note:** The `dev-cycle` pipeline and `--language` flag have been retired. This section documents the old API for reference only. New language support should be added to `RUST_PLAN_CONFIG` in `language-configs.ts`.
+
+To support a new language in the legacy dev-cycle (if re-enabled), add a `DevCycleLanguageConfig` constant in
 `ai-system/core/pipeline/definitions/language-configs.ts` and register it in
 `DEV_CYCLE_LANGUAGE_CONFIGS`:
 
@@ -381,7 +377,7 @@ export const GO_CONFIG: DevCycleLanguageConfig = {
 ```
 
 Then add `"go"` to the `DevCycleLanguageConfig["name"]` union, register it in
-`DEV_CYCLE_LANGUAGE_CONFIGS`, and add a `--language go` case in `parseLanguage()`.
+`DEV_CYCLE_LANGUAGE_CONFIGS`, and add a `--language go` case in `parseLanguage()` (if re-enabling dev-cycle).
 
 ### Step 3 -- Create a genuinely new workflow
 

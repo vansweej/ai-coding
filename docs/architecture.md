@@ -89,7 +89,7 @@ graph LR
     Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · VectorBackend\ncreateBestBackend · LanceStore\nchunkSkill"]
     Codebase["@ai-coding/codebase\nCodebaseBackend · indexCodebase\nCodebaseStore · ParserPool\nchunkFile · discoverFiles"]
     Pipeline["@ai-coding/pipeline\nrunPipeline · PipelineStep\nShellStep · NixShellStep\nCoverageGateStep"]
-    AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep · VerifiedImplementStep\nunified dev-cycle definitions"]
+    AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep · VerifiedImplementStep\nrust-plan-cycle · scaffold-rust · scaffold-cpp"]
 
     AISystem --> Pipeline
     AISystem --> Shared
@@ -239,7 +239,7 @@ ai-coding/
           skill-resolver-step.ts     Skill resolution step (resolves + merges skills into context)
           verified-implement-step.ts implement → write files → verify → retry/escalate
         definitions/
-          dev-cycle.ts               Unified [skills →] implement → write-files factory
+          dev-cycle.ts               Unified [skills →] implement → write-files factory (Tier B: optional deletion)
           language-configs.ts        TypeScript, Rust, and C++ prompts/toolchains
           doc-cycle.ts               Deferred documentation pipeline sketch
         plan-parser.ts               Structured markdown plan parser
