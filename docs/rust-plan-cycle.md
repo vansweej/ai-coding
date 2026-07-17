@@ -221,7 +221,7 @@ bun run pipeline rust-plan-cycle <workspace> --plan <file> [options]
 | `--plan <file>` | Path to plan file (required) | — |
 | `--language rust` | Language (always rust for this pipeline) | rust |
 | `--max-retries <n>` | Max local retries per phase | 3 |
-| `--profile <name>` | Model profile (local, copilot-default, hybrid) | copilot-default |
+| `--profile <name>` | Model profile (local, copilot-default, hybrid, anthropic-sonnet) | copilot-default |
 
 ### Examples
 
@@ -238,7 +238,17 @@ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/auth.md --profile l
 
 # Run with hybrid profile (local for implementation, Copilot for escalation)
 bun run pipeline rust-plan-cycle ./my-project --plan ./plans/auth.md --profile hybrid
+
+# Run with Anthropic Claude Sonnet (native Messages API)
+ANTHROPIC_API_KEY=sk-ant-... bun run pipeline rust-plan-cycle ./my-project --plan ./plans/auth.md --profile anthropic-sonnet
 ```
+
+> **Note:** `rust-plan-cycle` parses its plan from the `--plan` file rather
+> than generating it via an LLM, so the `planner` role never fires on this
+> path. Only the `implementer` role (action `edit`, used for initial
+> implementation and local retries) and the `fixer` role (action `fix`, used
+> for escalation attempts) actually dispatch LLM calls — so under
+> `anthropic-sonnet` those are the two roles that run on Claude Sonnet.
 
 ### Branch Requirement
 
@@ -489,6 +499,7 @@ bun run pipeline rust-plan-cycle . --plan ../plans/feature.md
 3. Verify the plan file exists and is valid
 4. Check that Ollama is running (if using local profile)
 5. Check that GitHub Copilot token is set (if using copilot-default or hybrid profile)
+6. Check that `ANTHROPIC_API_KEY` is set (if using anthropic-sonnet profile)
 
 ---
 

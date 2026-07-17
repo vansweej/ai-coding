@@ -23,6 +23,7 @@ Profile names:
   local            All roles → gemma4:26b (local Ollama); no Copilot token required (default)
   hybrid           implementer/tester/debugger → gemma4:26b; fixer → claude-sonnet-4.6
   copilot-default  All roles → github-copilot/claude-sonnet-4.6
+  anthropic-sonnet All roles → Anthropic claude-sonnet-5 (native Messages API); requires ANTHROPIC_API_KEY
 
 Examples:
   bun run pipeline scaffold-rust /tmp/my-rust-project

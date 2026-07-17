@@ -23,12 +23,12 @@ agent) and extends it with:
 ai-coding/
   ai-system/
     config/
-      model-profiles.ts    ModelRole, ModelProfile, local and additional profiles
+      model-profiles.ts    ModelRole, ModelProfile, local, copilot-default, hybrid, and anthropic-sonnet profiles
       pipeline-registry.ts Single source of truth for pipeline metadata
     core/
       mode-router/         source → AIMode ("editor" | "agentic")
       model-router/        action → ModelRole; role + profile → model ID
-      orchestrator/        Single LLM call lifecycle; CopilotDispatcher
+      orchestrator/        Single LLM call lifecycle; CopilotDispatcher, OllamaDispatcher, AnthropicDispatcher
       pipeline/
         steps/             OrchestratorStep (LLM), NixShellStep, FileWriterStep
         definitions/       rust-plan-cycle, scaffold-rust, scaffold-cpp
@@ -65,6 +65,12 @@ All roles route to `gemma4:26b` via local Ollama:
 | `tester`      | `gemma4:26b`        | Ollama  |
 | `scaffolder`  | `gemma4:26b`        | Ollama  |
 | `explorer`    | `gemma4:26b`        | Ollama  |
+
+### anthropic-sonnet
+
+All roles route to `claude-sonnet-5` via the native Anthropic Messages API.
+Requires the `ANTHROPIC_API_KEY` environment variable. Provider selection is
+captured entirely in the profile — there is no separate model-override flag.
 
 ### Profile selection
 
@@ -137,6 +143,10 @@ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
 
 # Specify the model profile explicitly
 bun run pipeline rust-plan-cycle ./my-project --profile local --input "Add error handling"
+
+# Use Anthropic Claude Sonnet via the native Messages API
+export ANTHROPIC_API_KEY=sk-ant-...
+bun run pipeline rust-plan-cycle ./my-project --profile anthropic-sonnet --input "Add error handling"
 ```
 
 ### From OpenCode (slash command)
