@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  ANTHROPIC_SONNET_PROFILE,
   COPILOT_DEFAULT_PROFILE,
   DEFAULT_PROFILE_NAME,
   HYBRID_PROFILE,
@@ -107,6 +108,36 @@ describe("HYBRID_PROFILE", () => {
   });
 });
 
+describe("ANTHROPIC_SONNET_PROFILE", () => {
+  it("has name anthropic-sonnet", () => {
+    expect(ANTHROPIC_SONNET_PROFILE.name).toBe("anthropic-sonnet");
+  });
+
+  it("maps all roles to claude-sonnet-5", () => {
+    const roles = Object.values(ANTHROPIC_SONNET_PROFILE.roles);
+    for (const model of roles) {
+      expect(model).toBe("claude-sonnet-5");
+    }
+  });
+
+  it("has all nine roles defined", () => {
+    const expectedRoles = [
+      "planner",
+      "implementer",
+      "debugger",
+      "fixer",
+      "reviewer",
+      "tester",
+      "scaffolder",
+      "explorer",
+      "default",
+    ];
+    for (const role of expectedRoles) {
+      expect(ANTHROPIC_SONNET_PROFILE.roles).toHaveProperty(role);
+    }
+  });
+});
+
 describe("MODEL_PROFILES", () => {
   it("contains the local profile", () => {
     expect(MODEL_PROFILES.local).toBe(LOCAL_PROFILE);
@@ -118,6 +149,10 @@ describe("MODEL_PROFILES", () => {
 
   it("contains hybrid", () => {
     expect(MODEL_PROFILES.hybrid).toBe(HYBRID_PROFILE);
+  });
+
+  it("contains anthropic-sonnet", () => {
+    expect(MODEL_PROFILES["anthropic-sonnet"]).toBe(ANTHROPIC_SONNET_PROFILE);
   });
 });
 

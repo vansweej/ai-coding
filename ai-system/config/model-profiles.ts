@@ -75,11 +75,40 @@ export const HYBRID_PROFILE: ModelProfile = {
   },
 };
 
+/**
+ * All roles route to Anthropic Claude Sonnet 5 via the native Anthropic Messages API.
+ *
+ * Design principle -- the profile is the single source of truth. Per-role
+ * provider selection is expressed only through profile definitions; there is
+ * no separate model-override flag. Because the `dispatchers` map is
+ * provider-agnostic (built in load-config.ts by binding each model-ID string
+ * to its dispatcher), any role in any current or future profile selects its
+ * provider purely by which model-ID string it maps to (e.g. "claude-sonnet-5"
+ * -> Anthropic, "claude-sonnet-4.6" -> Copilot, "gemma4:26b" -> Ollama).
+ * Adding a new provider mix later is pure data: define another ModelProfile
+ * constant and register it below -- no routing, CLI, or wiring changes required.
+ */
+export const ANTHROPIC_SONNET_PROFILE: ModelProfile = {
+  name: "anthropic-sonnet",
+  roles: {
+    planner: "claude-sonnet-5",
+    implementer: "claude-sonnet-5",
+    debugger: "claude-sonnet-5",
+    fixer: "claude-sonnet-5",
+    reviewer: "claude-sonnet-5",
+    tester: "claude-sonnet-5",
+    scaffolder: "claude-sonnet-5",
+    explorer: "claude-sonnet-5",
+    default: "claude-sonnet-5",
+  },
+};
+
 /** Registry of all built-in profiles, keyed by profile name. */
 export const MODEL_PROFILES: Readonly<Record<string, ModelProfile>> = {
   [LOCAL_PROFILE.name]: LOCAL_PROFILE,
   [COPILOT_DEFAULT_PROFILE.name]: COPILOT_DEFAULT_PROFILE,
   [HYBRID_PROFILE.name]: HYBRID_PROFILE,
+  [ANTHROPIC_SONNET_PROFILE.name]: ANTHROPIC_SONNET_PROFILE,
 };
 
 /** The profile name used when no explicit profile is requested. */
