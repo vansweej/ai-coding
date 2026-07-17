@@ -5,17 +5,20 @@ import { loadConfig } from "./load-config";
 describe("loadConfig", () => {
   const ORIG_OLLAMA_URL = process.env.OLLAMA_URL;
   const ORIG_COPILOT_TOKEN = process.env.GITHUB_COPILOT_TOKEN;
+  const ORIG_ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
   beforeEach(() => {
-    // Clear Copilot token before each test
+    // Clear Copilot token and Anthropic API key before each test
     const env = process.env as Record<string, string | undefined>;
     delete env.GITHUB_COPILOT_TOKEN;
+    delete env.ANTHROPIC_API_KEY;
   });
 
   afterEach(() => {
     const env = process.env as Record<string, string | undefined>;
     env.OLLAMA_URL = ORIG_OLLAMA_URL;
     env.GITHUB_COPILOT_TOKEN = ORIG_COPILOT_TOKEN;
+    env.ANTHROPIC_API_KEY = ORIG_ANTHROPIC_API_KEY;
   });
 
   it("returns a config with local profile and gemma4:26b dispatcher", async () => {
@@ -81,6 +84,23 @@ describe("loadConfig", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.profile?.name).toBe("copilot-default");
+    }
+  });
+
+  it("returns error for anthropic-sonnet profile when ANTHROPIC_API_KEY is not set", async () => {
+    const result = await loadConfig("anthropic-sonnet");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("ANTHROPIC_API_KEY");
+  });
+
+  it("returns a config with anthropic-sonnet profile when ANTHROPIC_API_KEY is set", async () => {
+    const env = process.env as Record<string, string>;
+    env.ANTHROPIC_API_KEY = "test-api-key";
+    const result = await loadConfig("anthropic-sonnet");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.profile?.name).toBe("anthropic-sonnet");
+      expect(result.value.dispatchers["claude-sonnet-5"]).toBeDefined();
     }
   });
 });
