@@ -294,6 +294,25 @@ const config: OrchestratorConfig = {
 };
 ```
 
+To route through the native Anthropic Messages API instead, use the
+`anthropic-sonnet` profile and `AnthropicDispatcher`:
+
+```typescript
+import { AnthropicDispatcher } from
+  "ai-system/core/orchestrator/anthropic-dispatcher";
+import { ANTHROPIC_SONNET_PROFILE } from
+  "ai-system/config/model-profiles";
+import type { OrchestratorConfig } from
+  "ai-system/core/orchestrator/orchestrate";
+
+const config: OrchestratorConfig = {
+  profile: ANTHROPIC_SONNET_PROFILE,
+  dispatchers: {
+    "claude-sonnet-5": new AnthropicDispatcher(process.env.ANTHROPIC_API_KEY ?? ""),
+  },
+};
+```
+
 ### 2. Choose and create a pipeline
 
 **Note:** The `createDevCyclePipeline` API is deprecated. Use `runFeature()` with `RUST_PLAN_CONFIG` for plan-based execution instead.

@@ -7,7 +7,9 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
 
 - **Model profiles** -- named configurations mapping semantic roles (planner, implementer,
   debugger, fixer…) to model IDs. Default: `local` (all roles → `gemma4:26b` via local Ollama).
-  No cloud dependencies or API tokens required.
+  No cloud dependencies or API tokens required. Other built-in profiles: `copilot-default` and
+  `hybrid` (GitHub Copilot), and `anthropic-sonnet` (all roles → `claude-sonnet-5` via the native
+  Anthropic Messages API; requires `ANTHROPIC_API_KEY`).
 - **Pipelines** -- plan-file driven workflows that implement steps, write files, verify with the
   language toolchain, retry locally, escalate fixes when needed, and commit each successful phase.
 - **Scaffold pipelines** -- generate new Rust and C++ projects including a `flake.nix` dev shell
@@ -112,6 +114,9 @@ bun run pipeline dev-cycle ./my-rust-project --language rust --input "Add a conf
 
 # Run the unattended Rust plan cycle (requires feature branch)
 bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md
+
+# Run the unattended Rust plan cycle on Anthropic Claude Sonnet (native Messages API)
+ANTHROPIC_API_KEY=sk-ant-... bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md --profile anthropic-sonnet
 ```
 
 All shell steps are nix-aware: if a `flake.nix` is detected in the workspace, commands are

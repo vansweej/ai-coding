@@ -1,13 +1,13 @@
 # Ollama Models (Legacy)
 
-> **This document is archived.** The AI Coding OS no longer uses Ollama or local
-> models for pipeline steps. All LLM calls now route through GitHub Copilot
-> (`claude-sonnet-4.6`) via the `copilot-default` model profile.
->
-> The `OllamaDispatcher` is still present in the codebase for backward
-> compatibility but is not wired by `loadConfig`. If you need Ollama-based
-> routing, add your own profile in `ai-system/config/model-profiles.ts` and
-> register an `OllamaDispatcher` in your config.
+> **This document is archived.** LLM routing is provider-agnostic and driven by
+> the active model profile (`ai-system/config/model-profiles.ts`): `local` (and
+> the `implementer`/`tester`/`debugger` roles of `hybrid`) route through local
+> Ollama; `copilot-default` and the remaining `hybrid` roles route through
+> GitHub Copilot (`claude-sonnet-4.6`); `anthropic-sonnet` routes through the
+> native Anthropic Messages API (`claude-sonnet-5`). The `OllamaDispatcher` is
+> actively wired by `loadConfig` for any profile whose roles resolve to an
+> Ollama model ID (e.g. `gemma4:26b`).
 
 ---
 

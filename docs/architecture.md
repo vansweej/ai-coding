@@ -233,6 +233,8 @@ ai-coding/
       orchestrator/
         orchestrate.ts               Single LLM call lifecycle (profile-aware routing)
           ollama-dispatcher.ts         HTTP transport for local Ollama
+          copilot-dispatcher.ts        HTTP transport for GitHub Copilot
+          anthropic-dispatcher.ts      HTTP transport for native Anthropic Messages API
       pipeline/
         steps/
           orchestrator-step.ts       LLM step wrapping orchestrate()
@@ -246,7 +248,7 @@ ai-coding/
         phase-runner.ts              Per-phase execution and auto-commit
         feature-runner.ts            Parses plan and runs phases sequentially
     config/
-      model-profiles.ts              ModelRole, ModelProfile, copilot-default and hybrid profiles
+      model-profiles.ts              ModelRole, ModelProfile, copilot-default, hybrid, and anthropic-sonnet profiles
       pipeline-registry.ts           Single source of truth for pipeline metadata
   opencode/
     mappings/                        OpenCode provider/model configs
@@ -325,6 +327,30 @@ All roles route to `gemma4:26b` via local Ollama:
 | `explorer`    | `gemma4:26b`         | Ollama        |
 | `default`     | `gemma4:26b`         | Ollama        |
 
+### anthropic-sonnet profile
+
+All roles route to `claude-sonnet-5` via the native Anthropic Messages API
+(`https://api.anthropic.com/v1/messages`, authenticated with an `x-api-key` +
+`anthropic-version` header pair rather than Copilot's `Authorization: Bearer`
+scheme). Requires the `ANTHROPIC_API_KEY` environment variable.
+
+| Role          | Model             | Backend                          |
+|---------------|-------------------|-----------------------------------|
+| `planner`     | `claude-sonnet-5` | Anthropic (native Messages API)  |
+| `implementer` | `claude-sonnet-5` | Anthropic (native Messages API)  |
+| `debugger`    | `claude-sonnet-5` | Anthropic (native Messages API)  |
+| `fixer`       | `claude-sonnet-5` | Anthropic (native Messages API)  |
+| `reviewer`    | `claude-sonnet-5` | Anthropic (native Messages API)  |
+| `tester`      | `claude-sonnet-5` | Anthropic (native Messages API)  |
+| `scaffolder`  | `claude-sonnet-5` | Anthropic (native Messages API)  |
+| `explorer`    | `claude-sonnet-5` | Anthropic (native Messages API)  |
+| `default`     | `claude-sonnet-5` | Anthropic (native Messages API)  |
+
+The `rust-plan-cycle` pipeline parses its plan from a file rather than
+generating it via an LLM, so the `planner` role never fires on that path —
+only `implementer` (action `edit`) and `fixer` (action `fix`) roles actually
+dispatch to Sonnet during a plan-cycle run.
+
 ### Profile resolution
 
 ```
@@ -333,6 +359,12 @@ AIAction → actionToRole() → ModelRole → resolveModelForRole(role, profile)
 
 The active profile is set in `OrchestratorConfig.profile`. The CLI resolves it via
 `--profile <name>` flag, `AI_CODING_MODEL_PROFILE` env var, or the built-in default.
+
+Provider selection is captured entirely in the profile: the `dispatchers` map
+built by `load-config.ts` is provider-agnostic, binding each model-ID string to
+its dispatcher (`claude-sonnet-5` → Anthropic, `claude-sonnet-4.6` → Copilot,
+`gemma4:26b` → Ollama). There is no separate model-override flag; adding a new
+provider mix is pure data — define another `ModelProfile` and register it.
 
 ### Legacy fallback
 
