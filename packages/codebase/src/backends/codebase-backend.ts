@@ -5,6 +5,8 @@ import type { Embedder } from "@ai-coding/embeddings";
 import type { ParserPool } from "../chunking/parser-pool";
 import { indexCodebase } from "../indexer/index-codebase";
 import type { CodebaseStore } from "../store/codebase-store";
+import type { NoIndex, Result } from "./retrieval-result";
+import { noIndex, ok } from "./retrieval-result";
 
 // ── public types ──────────────────────────────────────────────────────────────
 
@@ -50,20 +52,32 @@ export interface CodebaseSearchOptions {
  * High-level retrieval backend that combines query-time incremental re-indexing
  * with LanceDB vector search.
  *
- * ## Query-time freshness
- * When `refresh: true` (default) and a `repoPath` is provided, the backend
- * calls `indexCodebase()` before searching. Because `indexCodebase` only
- * re-embeds files whose SHA-256 hash changed, this is fast for repos where
- * most files are unchanged — typically < 1 s for small-to-medium codebases.
+ * ## Cold vs warm repos
+ * The store is the single source of truth for whether a repo has been
+ * indexed (see `CodebaseStore.hasRepo`). A repo that has never been indexed
+ * ("cold") NEVER triggers an automatic full index — even when `refresh: true`
+ * (the default) — because that would silently run a potentially very slow
+ * `indexCodebase()` on a first-ever query. Cold repos return `Err(NoIndex)`
+ * instead; callers should run `index-codebase` explicitly or fall back to
+ * grep/glob.
+ *
+ * ## Query-time freshness (warm repos)
+ * When `refresh: true` (default) and a `repoPath` is provided AND the repo
+ * is already warm, the backend calls `indexCodebase()` before searching.
+ * Because `indexCodebase` only re-embeds files whose SHA-256 hash changed,
+ * this is fast for repos where most files are unchanged — typically < 1 s
+ * for small-to-medium codebases.
  *
  * For large repos (poky-scale), set `refresh: false` and rely on the nightly
  * `index-codebase` run.
  *
  * @example
  * const backend = new CodebaseBackend(embedder, store, pool);
- * const results = await backend.search("hash-based staleness check", repoPath);
- * for (const r of results) {
- *   console.log(`${r.filePath}:${r.startLine} — ${r.text.slice(0, 80)}`);
+ * const result = await backend.search("hash-based staleness check", repoPath);
+ * if (result.ok) {
+ *   for (const r of result.value) {
+ *     console.log(`${r.filePath}:${r.startLine} — ${r.text.slice(0, 80)}`);
+ *   }
  * }
  */
 export class CodebaseBackend {
@@ -76,29 +90,48 @@ export class CodebaseBackend {
   /**
    * Search the codebase index for chunks that match `query`.
    *
-   * @param query    - Natural-language or code-fragment search query.
+   * A cold repo (never indexed) — or a cold global store when `repoPath` is
+   * omitted — always returns `Err(NoIndex)`, regardless of `refresh`. This
+   * backend NEVER auto-indexes a cold repo.
+   *
+   * @param query    - Natural-language or code-fragment query.
    * @param repoPath - When supplied, restrict results to this repo and
-   *                   (if `refresh: true`) run an incremental refresh first.
+   *                   (if warm and `refresh: true`) run an incremental
+   *                   refresh first.
    * @param options  - Limit and refresh overrides.
    */
   async search(
     query: string,
     repoPath?: string,
     options: CodebaseSearchOptions = {},
-  ): Promise<readonly CodebaseResult[]> {
+  ): Promise<Result<readonly CodebaseResult[], NoIndex>> {
     const { limit = 10, refresh = true } = options;
     const canonicalRepo = repoPath !== undefined ? realpathSync(repoPath) : undefined;
 
-    if (refresh && canonicalRepo !== undefined) {
-      // Incremental re-index — only changed files are re-embedded.
-      // TTL is set high so no freshly indexed rows are purged.
-      await indexCodebase(this.embedder, this.store, this.pool, canonicalRepo, {
-        ttlDays: 3650,
-      });
+    if (canonicalRepo !== undefined) {
+      const warm = await this.store.hasRepo(canonicalRepo);
+      if (!warm) {
+        return noIndex(canonicalRepo);
+      }
+
+      if (refresh) {
+        // Incremental re-index — only changed files are re-embedded.
+        // TTL is set high so no freshly indexed rows are purged.
+        await indexCodebase(this.embedder, this.store, this.pool, canonicalRepo, {
+          ttlDays: 3650,
+        });
+      } else {
+        await this.store.open();
+      }
     } else {
-      // Ensure the store table is open.  Throws if it does not yet exist,
-      // which is the correct behaviour when no indexing has been run.
-      await this.store.open();
+      try {
+        await this.store.open();
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("dimensions required")) {
+          return noIndex(undefined);
+        }
+        throw err;
+      }
     }
 
     const { vector } = await this.embedder.embed(query);
@@ -108,15 +141,17 @@ export class CodebaseBackend {
         ? await this.store.searchInRepo(vector, canonicalRepo, limit)
         : await this.store.search(vector, limit);
 
-    return raw.map((r) => ({
-      repoId: r.repo_id,
-      filePath: r.file_path,
-      symbolName: r.symbol_name || null,
-      symbolKind: r.symbol_kind || null,
-      text: r.text,
-      startLine: r.start_line,
-      endLine: r.end_line,
-      score: 1 - r._distance,
-    }));
+    return ok(
+      raw.map((r) => ({
+        repoId: r.repo_id,
+        filePath: r.file_path,
+        symbolName: r.symbol_name || null,
+        symbolKind: r.symbol_kind || null,
+        text: r.text,
+        startLine: r.start_line,
+        endLine: r.end_line,
+        score: 1 - r._distance,
+      })),
+    );
   }
 }

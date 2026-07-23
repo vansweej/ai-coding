@@ -157,6 +157,31 @@ describe("CodebaseStore", () => {
     expect(await store.countRows()).toBe(1);
   });
 
+  // ── hasRepo ─────────────────────────────────────────────────────────────────
+
+  it("hasRepo() returns false when the store has never been opened (cold DB)", async () => {
+    expect(await store.hasRepo(REPO_ID)).toBe(false);
+  });
+
+  it("hasRepo() returns true after upsertFile() for that repo", async () => {
+    await store.open(DIMS);
+    await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
+    expect(await store.hasRepo(REPO_ID)).toBe(true);
+  });
+
+  it("hasRepo() returns false for a different repo not present in the table", async () => {
+    await store.open(DIMS);
+    await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
+    expect(await store.hasRepo("/home/dev/otherrepo")).toBe(false);
+  });
+
+  it("hasRepo() returns false after deleteRepo()", async () => {
+    await store.open(DIMS);
+    await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
+    await store.deleteRepo(REPO_ID);
+    expect(await store.hasRepo(REPO_ID)).toBe(false);
+  });
+
   // ── listRepoIds ─────────────────────────────────────────────────────────────
 
   it("listRepoIds() returns all distinct repo IDs", async () => {

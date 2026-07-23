@@ -79,10 +79,18 @@ const pool = new ParserPool(grammarsDir);
 const backend = new CodebaseBackend(embedder, store, pool);
 
 try {
-  const results = await backend.search(query, repoPath, {
+  const result = await backend.search(query, repoPath, {
     limit,
     refresh: !noRefresh,
   });
+
+  if (!result.ok) {
+    const label = result.error.repoId ?? "(global)";
+    process.stdout.write(`NO_INDEX: ${label} not vectorized — use grep or run index-codebase`);
+    process.exit(0);
+  }
+
+  const results = result.value;
 
   if (results.length === 0) {
     process.stdout.write("");
