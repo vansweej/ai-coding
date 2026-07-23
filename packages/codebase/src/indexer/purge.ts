@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs";
 
+import type { Ignore } from "ignore";
+
 import type { CodebaseStore } from "../store/codebase-store";
 import { DEFAULT_TTL_DAYS } from "../store/codebase-store";
 
@@ -14,24 +16,31 @@ export interface PurgeResult {
 }
 
 /**
- * Delete rows in one repo whose `indexed_at` timestamp is older than `ttlDays` ago.
+ * Delete rows in one repo whose `indexed_at` timestamp is older than `ttlDays`
+ * ago, except rows matching `keepMatcher`.
  *
- * @param store          - Opened CodebaseStore.
- * @param repoId         - Canonical repo identifier to scope the purge to.
- * @param exemptPrefixes - File path prefixes to keep even when older than the cutoff.
- * @param ttlDays        - Rows older than this many days are deleted. Default: 30.
+ * @param store       - Opened CodebaseStore.
+ * @param repoId      - Canonical repo identifier to scope the purge to.
+ * @param keepMatcher - Matcher built from `.ai-coding-keep`; matched file
+ *                      paths are exempt from the TTL sweep. `null` means no
+ *                      exemptions.
+ * @param ttlDays     - Rows older than this many days are deleted. Default: 30.
  * @returns ISO-8601 cutoff date string that was used.
  */
 export async function purgeStale(
   store: CodebaseStore,
   repoId: string,
-  exemptPrefixes: readonly string[] = [],
+  keepMatcher: Ignore | null = null,
   ttlDays: number = DEFAULT_TTL_DAYS,
 ): Promise<string> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - ttlDays);
   const cutoffIso = cutoff.toISOString();
-  await store.purgeOlderThan(cutoffIso, repoId, exemptPrefixes);
+
+  const stalePaths = await store.queryStalePaths(repoId, cutoffIso);
+  const toDelete = keepMatcher ? stalePaths.filter((p) => !keepMatcher.ignores(p)) : stalePaths;
+  await store.deleteFilesByPaths(repoId, toDelete);
+
   return cutoffIso;
 }
 
@@ -74,23 +83,26 @@ export async function purgeRepo(store: CodebaseStore, repoId: string): Promise<v
 
 /**
  * Run the full post-index purge pipeline:
- *   1. TTL sweep — delete current-repo rows older than `ttlDays`.
+ *   1. TTL sweep — delete current-repo rows older than `ttlDays`, except rows
+ *      matching `keepMatcher`.
  *   2. Dead-repo sweep — delete rows for repos whose directory no longer exists.
  *
  * Called automatically by `indexCodebase()` after every indexing run.
  *
- * @param store          - Opened CodebaseStore.
- * @param repoId         - Canonical repo identifier to scope the TTL purge to.
- * @param exemptPrefixes - Current-repo file path prefixes to exempt from TTL purge.
- * @param ttlDays        - TTL in days (default: {@link DEFAULT_TTL_DAYS}).
+ * @param store       - Opened CodebaseStore.
+ * @param repoId      - Canonical repo identifier to scope the TTL purge to.
+ * @param keepMatcher - Matcher built from `.ai-coding-keep`; matched file
+ *                      paths are exempt from the TTL sweep. `null` means no
+ *                      exemptions.
+ * @param ttlDays     - TTL in days (default: {@link DEFAULT_TTL_DAYS}).
  */
 export async function runPostIndexPurge(
   store: CodebaseStore,
   repoId: string,
-  exemptPrefixes: readonly string[] = [],
+  keepMatcher: Ignore | null = null,
   ttlDays: number = DEFAULT_TTL_DAYS,
 ): Promise<PurgeResult> {
-  const staleBefore = await purgeStale(store, repoId, exemptPrefixes, ttlDays);
+  const staleBefore = await purgeStale(store, repoId, keepMatcher, ttlDays);
   const deadRepos = await purgeDeadRepos(store);
   return { staleBefore, deadRepos };
 }

@@ -180,27 +180,23 @@ describe("CodebaseStore", () => {
     expect(await store.listRepoIds()).toHaveLength(0);
   });
 
-  // ── purgeOlderThan ──────────────────────────────────────────────────────────
+  // ── queryStalePaths / deleteFilesByPaths ────────────────────────────────────
 
-  it("purgeOlderThan() removes rows indexed before the cutoff", async () => {
+  it("queryStalePaths() returns paths indexed before the cutoff", async () => {
     await store.open(DIMS);
     await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
-    // Purge with a future date — all rows should be removed
     const future = new Date(Date.now() + 86400_000).toISOString();
-    await store.purgeOlderThan(future, REPO_ID);
-    expect(await store.countRows()).toBe(0);
+    expect(await store.queryStalePaths(REPO_ID, future)).toEqual(["src/a.ts"]);
   });
 
-  it("purgeOlderThan() keeps rows indexed after the cutoff", async () => {
+  it("queryStalePaths() excludes paths indexed after the cutoff", async () => {
     await store.open(DIMS);
     await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
-    // Purge with a past date — no rows should be removed
     const past = new Date(Date.now() - 86400_000).toISOString();
-    await store.purgeOlderThan(past, REPO_ID);
-    expect(await store.countRows()).toBe(1);
+    expect(await store.queryStalePaths(REPO_ID, past)).toEqual([]);
   });
 
-  it("purgeOlderThan() only removes rows for the requested repo", async () => {
+  it("queryStalePaths() only returns paths for the requested repo", async () => {
     await store.open(DIMS);
     const repo2 = "/home/dev/repo2";
     await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
@@ -212,59 +208,60 @@ describe("CodebaseStore", () => {
     );
 
     const future = new Date(Date.now() + 86400_000).toISOString();
-    await store.purgeOlderThan(future, REPO_ID);
+    expect(await store.queryStalePaths(REPO_ID, future)).toEqual(["src/a.ts"]);
+  });
+
+  it("deleteFilesByPaths() removes rows for the given paths", async () => {
+    await store.open(DIMS);
+    await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
+    await store.upsertFile(REPO_ID, "src/b.ts", [makeChunk("src/b.ts", 0)], [makeEmbedding(2)]);
+
+    await store.deleteFilesByPaths(REPO_ID, ["src/a.ts"]);
+
+    expect(await store.countRows()).toBe(1);
+    const results = await store.searchInRepo(makeVector(2), REPO_ID, 10);
+    expect(results.map((r) => r.file_path)).toContain("src/b.ts");
+  });
+
+  it("deleteFilesByPaths() is a no-op for an empty paths array", async () => {
+    await store.open(DIMS);
+    await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
+
+    await store.deleteFilesByPaths(REPO_ID, []);
+
+    expect(await store.countRows()).toBe(1);
+  });
+
+  it("deleteFilesByPaths() only removes rows for the requested repo", async () => {
+    await store.open(DIMS);
+    const repo2 = "/home/dev/repo2";
+    await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(1)]);
+    await store.upsertFile(
+      repo2,
+      "src/a.ts",
+      [{ ...makeChunk("src/a.ts", 0), repoId: repo2 }],
+      [makeEmbedding(2)],
+    );
+
+    await store.deleteFilesByPaths(REPO_ID, ["src/a.ts"]);
 
     expect(await store.countRows()).toBe(1);
     const results = await store.searchInRepo(makeVector(2), repo2, 10);
     expect(results.length).toBeGreaterThan(0);
-    for (const result of results) {
-      expect(result.repo_id).toBe(repo2);
+  });
+
+  it("deleteFilesByPaths() batches deletes for large path lists", async () => {
+    await store.open(DIMS);
+    const paths = Array.from({ length: 520 }, (_, i) => `src/file${i}.ts`);
+    for (const p of paths) {
+      await store.upsertFile(REPO_ID, p, [makeChunk(p, 0)], [makeEmbedding(1)]);
     }
-  });
+    expect(await store.countRows()).toBe(520);
 
-  it("purgeOlderThan() preserves rows under exempt prefixes", async () => {
-    await store.open(DIMS);
-    await store.upsertFile(
-      REPO_ID,
-      "GeometricTools/GTE/file.h",
-      [makeChunk("GeometricTools/GTE/file.h", 0)],
-      [makeEmbedding(1)],
-    );
-    await store.upsertFile(REPO_ID, "src/a.ts", [makeChunk("src/a.ts", 0)], [makeEmbedding(2)]);
+    await store.deleteFilesByPaths(REPO_ID, paths);
 
-    const future = new Date(Date.now() + 86400_000).toISOString();
-    await store.purgeOlderThan(future, REPO_ID, ["GeometricTools/"]);
-
-    expect(await store.countRows()).toBe(1);
-    const results = await store.searchInRepo(makeVector(1), REPO_ID, 10);
-    expect(results.map((row) => row.file_path)).toContain("GeometricTools/GTE/file.h");
-  });
-
-  it("purgeOlderThan() supports multiple exempt prefixes", async () => {
-    await store.open(DIMS);
-    await store.upsertFile(
-      REPO_ID,
-      "vendor/a.ts",
-      [makeChunk("vendor/a.ts", 0)],
-      [makeEmbedding(1)],
-    );
-    await store.upsertFile(
-      REPO_ID,
-      "third_party/b.ts",
-      [makeChunk("third_party/b.ts", 0)],
-      [makeEmbedding(2)],
-    );
-    await store.upsertFile(REPO_ID, "src/c.ts", [makeChunk("src/c.ts", 0)], [makeEmbedding(3)]);
-
-    const future = new Date(Date.now() + 86400_000).toISOString();
-    await store.purgeOlderThan(future, REPO_ID, ["third_party/", "vendor/"]);
-
-    expect(await store.countRows()).toBe(2);
-    const results = await store.searchInRepo(makeVector(1), REPO_ID, 10);
-    const paths = results.map((row) => row.file_path);
-    expect(paths).toContain("vendor/a.ts");
-    expect(paths).toContain("third_party/b.ts");
-  });
+    expect(await store.countRows()).toBe(0);
+  }, 20000);
 
   // ── touchRepo ────────────────────────────────────────────────────────────────
 
@@ -276,9 +273,7 @@ describe("CodebaseStore", () => {
     await store.touchRepo(REPO_ID, touchedAt);
 
     const afterTouchedAt = new Date(Date.now() + 3600_000).toISOString();
-    await store.purgeOlderThan(afterTouchedAt, REPO_ID);
-
-    expect(await store.countRows()).toBe(1);
+    expect(await store.queryStalePaths(REPO_ID, afterTouchedAt)).toEqual([]);
   });
 
   it("touchRepo() does not affect other repos", async () => {
@@ -296,11 +291,7 @@ describe("CodebaseStore", () => {
     await store.touchRepo(REPO_ID, touchedAt);
 
     const future = new Date(Date.now() + 3600_000).toISOString();
-    await store.purgeOlderThan(future, repo2);
-
-    expect(await store.countRows()).toBe(1);
-    const results = await store.searchInRepo(makeVector(1), REPO_ID, 10);
-    expect(results.length).toBeGreaterThan(0);
+    expect(await store.queryStalePaths(repo2, future)).toEqual(["src/b.ts"]);
   });
 
   it("touchRepo() is a no-op for a repo with no rows", async () => {

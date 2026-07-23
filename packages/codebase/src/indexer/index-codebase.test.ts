@@ -8,7 +8,7 @@ import type { Embedder, EmbeddingResult } from "@ai-coding/embeddings";
 
 import type { ParserPool } from "../chunking/parser-pool";
 import { CodebaseStore } from "../store/codebase-store";
-import { indexCodebase } from "./index-codebase";
+import { TotalExclusionError, indexCodebase } from "./index-codebase";
 
 // ── mock helpers ──────────────────────────────────────────────────────────────
 
@@ -262,8 +262,8 @@ describe("indexCodebase", () => {
     expect(Array.isArray(result.deadRepos)).toBe(true);
   });
 
-  it("result includes keepDirs from discovered keep markers", async () => {
-    await createFile(repoDir, "GeometricTools/.ai-coding-keep", "");
+  it("result includes keepPatterns from the .ai-coding-keep control file", async () => {
+    await createFile(repoDir, ".ai-coding-keep", "GeometricTools/\n");
     await createFile(repoDir, "GeometricTools/GTE/file.h", "class Example {};\n");
 
     const result = await indexCodebase(embedder, store, pool, repoDir, {
@@ -271,10 +271,10 @@ describe("indexCodebase", () => {
       ttlDays: 3650,
     });
 
-    expect(result.keepDirs).toEqual(["GeometricTools/"]);
+    expect(result.keepPatterns).toEqual(["GeometricTools/"]);
   });
 
-  it("result keepDirs is empty when no markers are discovered", async () => {
+  it("result keepPatterns is empty when no .ai-coding-keep file is present", async () => {
     await createFile(repoDir, "src/main.ts", "const x = 1;\n");
 
     const result = await indexCodebase(embedder, store, pool, repoDir, {
@@ -282,7 +282,7 @@ describe("indexCodebase", () => {
       ttlDays: 3650,
     });
 
-    expect(result.keepDirs).toEqual([]);
+    expect(result.keepPatterns).toEqual([]);
   });
 
   it("refreshes skipped files so they survive the TTL purge", async () => {
@@ -427,5 +427,114 @@ describe("indexCodebase", () => {
     } finally {
       await rm(nonGitDir, { recursive: true, force: true });
     }
+  });
+
+  // ── .ai-coding-ignore discovery-time exclusion ───────────────────────────────
+
+  describe(".ai-coding-ignore", () => {
+    it("excludes matched files from vectorization and reporting", async () => {
+      await createFile(repoDir, ".ai-coding-ignore", "vendor/\n");
+      await createFile(repoDir, "vendor/lib.ts", "export const lib = 1;\n");
+      await createFile(repoDir, "src/main.ts", "export const x = 1;\n");
+
+      const result = await indexCodebase(embedder, store, pool, repoDir, {
+        metaPath,
+        ttlDays: 3650,
+      });
+
+      expect(result.indexed).toContain("src/main.ts");
+      expect(result.indexed).not.toContain("vendor/lib.ts");
+      expect(result.ignoredCount).toBe(1);
+      expect(result.ignorePatterns).toEqual(["vendor/"]);
+    });
+
+    it("keeps ignored files out of the store entirely", async () => {
+      await createFile(repoDir, ".ai-coding-ignore", "vendor/\n");
+      await createFile(repoDir, "vendor/lib.ts", "export const lib = 1;\n");
+      await createFile(repoDir, "src/main.ts", "export const x = 1;\n");
+
+      const result = await indexCodebase(embedder, store, pool, repoDir, {
+        metaPath,
+        ttlDays: 3650,
+      });
+
+      expect(result.indexed).not.toContain("vendor/lib.ts");
+      expect(await store.countRows()).toBeGreaterThan(0);
+    });
+
+    it("hard-aborts with TotalExclusionError when everything is excluded, leaving the DB untouched", async () => {
+      await createFile(repoDir, ".ai-coding-ignore", "*\n");
+      await createFile(repoDir, "src/main.ts", "export const x = 1;\n");
+
+      await expect(
+        indexCodebase(embedder, store, pool, repoDir, { metaPath, ttlDays: 3650 }),
+      ).rejects.toBeInstanceOf(TotalExclusionError);
+
+      // Store was never opened, so its underlying table doesn't even exist yet.
+      expect(await store.open(DIMS).then(() => store.countRows())).toBe(0);
+    });
+
+    it("does not throw TotalExclusionError for a genuinely empty repo", async () => {
+      const result = await indexCodebase(embedder, store, pool, repoDir, {
+        metaPath,
+        ttlDays: 3650,
+      });
+
+      expect(result.indexed).toHaveLength(0);
+    });
+
+    it("composes --exclude globs onto the .ai-coding-ignore matcher", async () => {
+      await createFile(repoDir, "src/main.ts", "export const x = 1;\n");
+      await createFile(repoDir, "docs/notes.log", "log content\n");
+
+      const result = await indexCodebase(embedder, store, pool, repoDir, {
+        metaPath,
+        ttlDays: 3650,
+        excludeGlobs: ["*.log"],
+      });
+
+      expect(result.indexed).toContain("src/main.ts");
+      expect(result.indexed).not.toContain("docs/notes.log");
+      expect(result.ignoredCount).toBe(1);
+    });
+
+    it("self-skips the .ai-coding-ignore and .ai-coding-keep control files themselves", async () => {
+      await createFile(repoDir, ".ai-coding-ignore", "vendor/\n");
+      await createFile(repoDir, ".ai-coding-keep", "vendor/\n");
+      await createFile(repoDir, "src/main.ts", "export const x = 1;\n");
+
+      const result = await indexCodebase(embedder, store, pool, repoDir, {
+        metaPath,
+        ttlDays: 3650,
+      });
+
+      expect(result.indexed).not.toContain(".ai-coding-ignore");
+      expect(result.indexed).not.toContain(".ai-coding-keep");
+      expect(result.indexed).toContain("src/main.ts");
+    });
+
+    it("removes a previously-indexed file via the delete-loop once newly matched by .ai-coding-ignore, even if it also matches .ai-coding-keep", async () => {
+      await createFile(repoDir, ".ai-coding-keep", "vendor/\n");
+      await createFile(repoDir, "vendor/lib.ts", "export const lib = 1;\n");
+      await createFile(repoDir, "src/main.ts", "export const x = 1;\n");
+
+      // First run: not yet ignored, so it gets indexed and stored.
+      await indexCodebase(embedder, store, pool, repoDir, { metaPath, ttlDays: 3650 });
+      expect(await store.countRows()).toBeGreaterThan(0);
+
+      // Add .ai-coding-ignore matching the same file that .ai-coding-keep also matches.
+      await createFile(repoDir, ".ai-coding-ignore", "vendor/\n");
+
+      const result = await indexCodebase(embedder, store, pool, repoDir, {
+        metaPath,
+        ttlDays: 3650,
+      });
+
+      // Precedence: ignore > keep. The delete-loop removes it because it fell
+      // out of discoveredSet, regardless of the keep-matcher.
+      expect(result.deleted).toContain("vendor/lib.ts");
+      const remaining = await store.countRows();
+      expect(remaining).toBeGreaterThan(0);
+    });
   });
 });

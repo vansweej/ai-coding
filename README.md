@@ -66,10 +66,17 @@ Index a git repository for semantic code search:
 
 ```bash
 # Via bun run (from the ai-coding monorepo directory)
-bun run index-codebase <repo-path> [--force] [--ttl <days>]
+bun run index-codebase <repo-path> [--force] [--ttl <days>] [--exclude <glob>]
 bun run index-codebase --purge-repo <path>   # remove a specific repo (no Ollama needed)
 bun run codebase-retrieval <query> [--workspace <path>] [--limit <n>] [--no-refresh]
 ```
+
+Exclude files from vectorization with a root-level `.ai-coding-ignore` file
+(gitignore syntax) — excluded files stay tracked in git and browsable, only
+the vector index skips them. Exempt files from TTL purge with a root-level
+`.ai-coding-keep` file. See
+[`docs/codebase-indexer.md#ignore--keep-filters`](docs/codebase-indexer.md#ignore--keep-filters)
+for full syntax and precedence rules.
 
 If the shell wrappers are installed via Home Manager (`home-manager switch`),
 you can run from any repository directory without referencing the monorepo:

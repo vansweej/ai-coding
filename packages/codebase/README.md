@@ -41,6 +41,30 @@ for (const r of results) {
 }
 ```
 
+## Excluding files from the index
+
+Add a root-level `.ai-coding-ignore` file (gitignore syntax) to exclude files
+from vectorization — they stay tracked in git and browsable, only the vector
+index skips them:
+
+```gitignore
+# .ai-coding-ignore
+vendor/
+GeometricTools/
+```
+
+For a one-off exclusion without editing the tracked file, use the repeatable
+`--exclude` CLI flag:
+
+```bash
+bun run index-codebase /path/to/repo --exclude "third_party/**"
+```
+
+To exempt files from TTL-based purge regardless of age, use a root-level
+`.ai-coding-keep` file with the same gitignore syntax. See
+[`docs/codebase-indexer.md#ignore--keep-filters`](../../docs/codebase-indexer.md#ignore--keep-filters)
+for full syntax, precedence rules, and the `TotalExclusionError` safety guard.
+
 ## Key Defaults
 
 | Constant | Value | Override |

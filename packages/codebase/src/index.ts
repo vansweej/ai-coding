@@ -15,6 +15,7 @@ export type { CodeChunk } from "./chunk-types";
 // Discovery
 export { detectLanguage } from "./discovery/detect-language";
 export { discoverFiles, resolveFilePath } from "./discovery/discover-files";
+export { IGNORE_FILE, KEEP_FILE, loadMatcher, readPatterns } from "./discovery/pattern-config";
 
 // Chunking
 export { fallbackChunk } from "./chunking/fallback-chunker";
@@ -24,7 +25,7 @@ export { ParserPool, DEFAULT_GRAMMARS_DIR } from "./chunking/parser-pool";
 
 // Indexer
 export type { IndexCodebaseOptions, IndexCodebaseResult } from "./indexer/index-codebase";
-export { indexCodebase } from "./indexer/index-codebase";
+export { indexCodebase, TotalExclusionError } from "./indexer/index-codebase";
 export type { PurgeResult } from "./indexer/purge";
 export { purgeStale, purgeDeadRepos, purgeRepo, runPostIndexPurge } from "./indexer/purge";
 

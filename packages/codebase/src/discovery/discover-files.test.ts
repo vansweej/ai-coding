@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { KEEP_MARKER, discoverFiles, discoverKeepDirs, resolveFilePath } from "./discover-files";
+import { discoverFiles, resolveFilePath } from "./discover-files";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -163,6 +163,20 @@ describe("discoverFiles", () => {
     expect(files).toContain("Shaders/terrain.ps.glsl");
   });
 
+  it("excludes .ai-coding-ignore control file", async () => {
+    await createFile(tmpDir, ".ai-coding-ignore", "vendor/\n");
+    await gitAdd(tmpDir, ".ai-coding-ignore");
+    const files = await discoverFiles(tmpDir);
+    expect(files).not.toContain(".ai-coding-ignore");
+  });
+
+  it("excludes .ai-coding-keep control file", async () => {
+    await createFile(tmpDir, ".ai-coding-keep", "vendor/\n");
+    await gitAdd(tmpDir, ".ai-coding-keep");
+    const files = await discoverFiles(tmpDir);
+    expect(files).not.toContain(".ai-coding-keep");
+  });
+
   it("throws when called on a non-git directory", async () => {
     // Must be a directory outside any git repo — not a child of tmpDir (which is
     // itself a git repo). Create an isolated temp directory in the system temp root.
@@ -178,48 +192,5 @@ describe("discoverFiles", () => {
 describe("resolveFilePath", () => {
   it("joins repoRoot and relativePath", () => {
     expect(resolveFilePath("/home/dev/myrepo", "src/main.ts")).toBe("/home/dev/myrepo/src/main.ts");
-  });
-});
-
-describe("discoverKeepDirs", () => {
-  it("returns the containing directory for a keep marker", () => {
-    const dirs = discoverKeepDirs(["GeometricTools/.ai-coding-keep", "src/main.ts"]);
-
-    expect(dirs).toEqual(["GeometricTools/"]);
-  });
-
-  it("returns directories at multiple depths sorted by path", () => {
-    const dirs = discoverKeepDirs([
-      "vendor/lib/.ai-coding-keep",
-      "src/main.ts",
-      "GeometricTools/.ai-coding-keep",
-    ]);
-
-    expect(dirs).toEqual(["GeometricTools/", "vendor/lib/"]);
-  });
-
-  it("deduplicates multiple markers for the same directory", () => {
-    const dirs = discoverKeepDirs([
-      "vendor/.ai-coding-keep",
-      "vendor/lib.ts",
-      "vendor/.ai-coding-keep",
-    ]);
-
-    expect(dirs).toEqual(["vendor/"]);
-  });
-
-  it("returns an empty array when no markers are present", () => {
-    expect(discoverKeepDirs(["src/main.ts", "README.md"])).toEqual([]);
-  });
-
-  it("warns and ignores a root-level keep marker", () => {
-    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
-
-    try {
-      expect(discoverKeepDirs([KEEP_MARKER, "src/main.ts"])).toEqual([]);
-      expect(warn).toHaveBeenCalledTimes(1);
-    } finally {
-      warn.mockRestore();
-    }
   });
 });

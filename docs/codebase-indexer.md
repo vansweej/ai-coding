@@ -90,6 +90,7 @@ sequenceDiagram
     participant CLI as index-codebase CLI
     participant IC as indexCodebase()
     participant DF as discoverFiles()
+    participant PC as loadMatcher()
     participant CF as chunkFile()
     participant OE as OllamaEmbedder
     participant CS as CodebaseStore
@@ -102,9 +103,19 @@ sequenceDiagram
     IC->>DF: discoverFiles(repoPath)
     Note over DF: git ls-files --cached --others
 
+    IC->>PC: loadMatcher(repoPath, IGNORE_FILE, excludeGlobs)
+    PC-->>IC: Ignore | null
+    IC->>IC: filesToIndex = discoveredFiles.filter(f => !ignoreMatcher?.ignores(f))
+    IC->>PC: loadMatcher(repoPath, KEEP_FILE)
+    PC-->>IC: keepMatcher: Ignore | null
+
+    alt discoveredFiles.length > 0 AND filesToIndex.length === 0
+        IC-->>CLI: throw TotalExclusionError\n(store never opened — DB untouched)
+    end
+
     IC->>CS: store.open(dimensions)
 
-    loop for each discovered file
+    loop for each file in filesToIndex
         IC->>IC: sha256(content)
         alt hash unchanged and not --force
             IC->>IC: skip file
@@ -117,11 +128,12 @@ sequenceDiagram
         end
     end
 
-    loop for each file in previous meta but NOT in discovered
+    loop for each file in previous meta but NOT in filesToIndex
+        Note over IC: covers deleted, .gitignore'd, AND newly .ai-coding-ignore'd files
         IC->>CS: store.deleteFile(repoId, filePath)
     end
 
-    IC->>PG: runPostIndexPurge(store, ttlDays)
+    IC->>PG: runPostIndexPurge(store, repoId, keepMatcher, ttlDays)
     PG-->>IC: PurgeResult { staleBefore, deadRepos }
 
     IC->>Meta: write updated meta.json
@@ -132,18 +144,22 @@ sequenceDiagram
 
 ## File Filtering Pipeline
 
-Before a file reaches the chunker, it passes through two independent guards in
-`discoverFiles()` and `indexCodebase()`.
+Before a file reaches the chunker, it passes through three independent guards:
+two inside `discoverFiles()`, and a discovery-time ignore guard applied by
+`indexCodebase()` immediately after discovery.
 
 ```mermaid
 flowchart TD
-    A[git ls-files output] --> B{shouldSkip?\nextension in SKIP_EXTENSIONS\nor suffix in SKIP_SUFFIXES}
+    A[git ls-files output] --> B{shouldSkip?\nextension in SKIP_EXTENSIONS\nor suffix in SKIP_SUFFIXES\nor filename in SKIP_FILENAMES}
     B -->|yes| SKIP1[skip — not indexed]
-    B -->|no| C{file.size\n> maxFileSizeBytes?}
+    B -->|no| B2{loadMatcher .ai-coding-ignore\n+ --exclude\n.ignores filePath ?}
+    B2 -->|yes| SKIP1b[skip — excluded from vectorization\nstill tracked in git, browsable]
+    B2 -->|no| C{file.size\n> maxFileSizeBytes?}
     C -->|yes| SKIP2[skip — oversized\nrecorded as hash sentinel '']
     C -->|no| D[read content\nchunk → embed → store]
 
     style SKIP1 fill:#c9184a,color:#fff
+    style SKIP1b fill:#c9184a,color:#fff
     style SKIP2 fill:#c9184a,color:#fff
     style D fill:#2d6a4f,color:#fff
 ```
@@ -162,6 +178,13 @@ Binary and generated file types that produce no useful text chunks:
 Compound suffixes that are not caught by extension alone:
 `.vcxproj.filters`.
 
+**Skipped filenames** (`SKIP_FILENAMES` in `discover-files.ts`):
+
+Exact filename matches, including lockfiles (`bun.lock`, `package-lock.json`,
+`yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`, `flake.lock`) and both root-level
+control files themselves — `.ai-coding-ignore` and `.ai-coding-keep` are never
+indexed as source content, only read as configuration.
+
 **Oversized file handling:**
 
 Files whose `file.size` (bytes) exceeds `maxFileSizeBytes` (default `100_000`)
@@ -174,6 +197,95 @@ recorded as the sentinel value `""` so that:
   real hash, triggering a re-index.
 - `--force` does **not** override the size cap — oversized files are always
   skipped regardless of `--force`.
+
+---
+
+## Ignore & Keep Filters
+
+Two root-level, git-tracked control files share a single `ignore`-package
+matcher engine (the same faithful gitignore-syntax library `git` itself uses
+conceptually), but they apply at **different times** in the pipeline and
+answer **different questions**.
+
+```mermaid
+flowchart LR
+    subgraph Discovery-time["Discovery time — what gets vectorized"]
+        direction TB
+        IGN[".ai-coding-ignore\n(root file)"] --> IM["loadMatcher()"]
+        EXC["--exclude glob\n(repeatable CLI flag)"] --> IM
+        IM --> FIL["filesToIndex =\ndiscoveredFiles.filter(f => !matcher.ignores(f))"]
+        FIL --> EXCLUDED["Excluded files:\nstay in git, browsable/greppable\nNEVER reach the vector store"]
+    end
+
+    subgraph Retention-time["Retention time — what survives TTL"]
+        direction TB
+        KEEP[".ai-coding-keep\n(root file)"] --> KM["loadMatcher()"]
+        KM --> STALE["queryStalePaths()\nfilter(p => !keepMatcher.ignores(p))"]
+        STALE --> SURVIVE["Matched stale rows\nsurvive the TTL sweep"]
+    end
+
+    style EXCLUDED fill:#c9184a,color:#fff
+    style SURVIVE fill:#2d6a4f,color:#fff
+```
+
+**`.ai-coding-ignore`** — gitignore-syntax patterns, root-only. Files matching
+these patterns are excluded from vectorization at *discovery time*: they
+remain fully tracked in git and browsable/greppable by agents, but the vector
+index never embeds them. This is the mechanism for excluding large vendored
+subtrees (e.g. a third-party 3D codebase kept for pattern inspiration) that
+would otherwise blow up indexing time or context budgets.
+
+**`.ai-coding-keep`** — gitignore-syntax patterns, root-only. Files matching
+these patterns are exempt from TTL-based purge (retention time), regardless of
+how old their `indexed_at` timestamp is. This replaces the old per-directory
+`.ai-coding-keep` marker scheme with a single root glob file.
+
+**Syntax:** both files use standard gitignore syntax, including `!` negation
+(e.g. `vendor/*` then `!vendor/keep.ts` re-includes one file), `**` globstar,
+and directory-only patterns with a trailing slash (`foo/`). Comments (`#`) and
+blank lines are ignored. **Root-only** — nested control files in
+subdirectories are *not* honored; there is a single source of truth per repo.
+
+**`--exclude <glob>`** — repeatable CLI flag that composes additional
+gitignore-syntax patterns onto the `.ai-coding-ignore` matcher for a single
+run, without editing the tracked file. Useful for one-off exclusions.
+
+**Precedence: ignore always wins over keep.** This is enforced two ways:
+
+1. **Structurally** — an ignored file never reaches `filesToIndex`, so it can
+   never be inserted into the store in the first place.
+2. **Delete-loop** — if a file was previously indexed and *later* becomes
+   matched by `.ai-coding-ignore` (e.g. someone adds a new pattern), it drops
+   out of `discoveredSet` on the next run. The existing "files removed from
+   the repo" delete-loop in `indexCodebase()` treats it exactly like a
+   deleted or `.gitignore`d file and removes its store rows — even if the
+   same file also matches `.ai-coding-keep`. The keep-matcher is threaded
+   *only* into the purge step, never into the main discovery/delete loop, so
+   this precedence falls out of existing control flow rather than needing a
+   special case.
+
+The only residual gap is a **drifted row**: a store row that predates both
+control files existing, is absent from `meta.json` (so the delete-loop can't
+see it), and happens to match both an ignore and a keep pattern. This
+corner-of-a-corner case is not specially handled — recover with `--force` (a
+full re-index that rebuilds `meta.json` from scratch) or by purging and
+re-indexing the repo.
+
+**Hard-abort on total exclusion:** if `.ai-coding-ignore` and/or `--exclude`
+patterns exclude *every* discovered file, `indexCodebase()` throws
+`TotalExclusionError` **before** the store is opened. Nothing is indexed and
+the database is left completely untouched. This is deliberately *not* treated
+as a valid "empty repo" state — it almost always means an over-broad pattern
+(a bare `*` or `**`) or a stray `!` negation, and failing loudly prevents a
+config mistake from silently wiping a repo's search results.
+
+```gitignore
+# .ai-coding-ignore example — exclude a vendored 3D engine subtree
+GeometricTools/
+
+# .ai-coding-keep example — never TTL-evict the same subtree once indexed
+GeometricTools/
+```
 
 ---
 
@@ -356,10 +468,10 @@ It has two stages that together prevent unbounded store growth.
 flowchart TD
     IC[indexCodebase completes] --> PG[runPostIndexPurge]
 
-    PG --> TTL[purgeStale\nrepo_id = current repo\ncutoff = now − ttlDays]
-    TTL --> EXEMPT{file_path matches\n.ai-coding-keep dir?}
-    EXEMPT -->|yes| KEEP_TTL[skip TTL delete]
-    EXEMPT -->|no| DEL1["store.purgeOlderThan\nDELETE WHERE repo_id = current repo\nAND indexed_at < cutoff"]
+    PG --> QS["queryStalePaths\nrepo_id = current repo\nindexed_at < now − ttlDays"]
+    QS --> EXEMPT{"keepMatcher?.ignores(path)\n(.ai-coding-keep)"}
+    EXEMPT -->|yes| KEEP_TTL[exclude from delete batch]
+    EXEMPT -->|no| DEL1["deleteFilesByPaths\nbatched ~500 paths per call"]
 
     PG --> DEAD[purgeDeadRepos\nlist all repo_ids]
     DEAD --> LOOP{for each repo_id}
@@ -370,7 +482,7 @@ flowchart TD
     KEEP --> LOOP
     KEEP_TTL --> RESULT
 
-    TTL --> RESULT["PurgeResult\n{ staleBefore, deadRepos }"]
+    DEL1 --> RESULT["PurgeResult\n{ staleBefore, deadRepos }"]
     DEAD --> RESULT
 
     style DEL1 fill:#c9184a,color:#fff
@@ -386,10 +498,16 @@ repository cannot evict stale rows for another repository. After indexing and
 deleted-file cleanup, `indexCodebase()` bulk-refreshes `indexed_at` for every
 surviving row in the current repo, including files skipped by the hash check.
 
-**Directory TTL exemption:** place an empty `.ai-coding-keep` file inside a
-directory to prevent rows under that relative prefix from being TTL-evicted. For
-example, `GeometricTools/.ai-coding-keep` exempts `GeometricTools/`. A root-level
-marker is ignored because it would disable TTL for the entire repo.
+**Directory TTL exemption:** list gitignore-syntax patterns in a single
+root-level `.ai-coding-keep` file to prevent matching rows from being
+TTL-evicted. For example, a line containing `GeometricTools/` exempts every
+file path under `GeometricTools/`. This replaced the older per-directory
+`.ai-coding-keep` marker scheme (one marker file per exempted directory) —
+there is now exactly one control file per repo, sharing the same matcher
+engine as `.ai-coding-ignore`. See [Ignore & Keep Filters](#ignore--keep-filters)
+above for full syntax and precedence rules. There is no migration path for
+old per-directory markers — consolidate them into a single root
+`.ai-coding-keep` file with one pattern per former marker directory.
 
 **Note:** Query-time refresh uses `ttlDays: 3650` (≈10 years) so that freshly
 indexed rows are never swept away immediately after indexing.
@@ -426,6 +544,7 @@ bun run index-codebase <repo-path> [options]
 |------|---------|-------------|
 | `--force` | off | Re-index all files, bypassing the hash check |
 | `--max-file-bytes <n>` | `100000` | Skip files larger than this many bytes (size check uses `file.size`, not char count) |
+| `--exclude <glob>` | — | Gitignore-syntax pattern to exclude from vectorization, on top of `.ai-coding-ignore`. Repeatable |
 | `--purge-only` | off | Run dead-repo purge only; no indexing or TTL sweep. Does not require Ollama |
 | `--purge-repo <path>` | — | Remove all indexed chunks for a specific repo. Does not require Ollama |
 | `--ttl <days>` | `30` | TTL for the post-index purge sweep |
@@ -445,6 +564,9 @@ bun run index-codebase /path/to/poky --ttl 90
 
 # Remove one specific repo from the index (no Ollama needed)
 bun run index-codebase --purge-repo /path/to/old-project
+
+# One-off exclusion without editing .ai-coding-ignore
+bun run index-codebase /path/to/repo --exclude "third_party/**" --exclude "*.generated.ts"
 ```
 
 ### Search the index
@@ -505,7 +627,7 @@ index-codebase --purge-only
 index-codebase --purge-repo /path/to/old-project
 ```
 
-All flags (`--force`, `--max-file-bytes`, `--ttl`, `--purge-only`, `--purge-repo`, `--db-path`, `--model`, `--grammars`) are
+All flags (`--force`, `--max-file-bytes`, `--exclude`, `--ttl`, `--purge-only`, `--purge-repo`, `--db-path`, `--model`, `--grammars`) are
 forwarded verbatim to the underlying CLI.
 
 ### `codebase-retrieval`

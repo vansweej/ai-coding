@@ -167,31 +167,48 @@ export class CodebaseStore {
   }
 
   /**
-   * Delete rows for one repository that were indexed before `cutoffDate`.
+   * Return distinct file paths for one repository whose rows were indexed
+   * before `cutoffDate`.
    *
-   * TTL purging is intentionally scoped to the repo being indexed so an index
-   * run for repo B cannot evict stale rows from repo A. `exemptPrefixes` are
-   * relative directory prefixes, including a trailing slash, that should survive
-   * the TTL sweep (for example: `GeometricTools/`).
+   * TTL staleness is intentionally scoped to the repo being indexed so an
+   * index run for repo B cannot surface stale rows from repo A.
    *
-   * @param cutoffDate     - ISO-8601 date string. Rows with `indexed_at` before
-   *                         this date are deleted.
-   * @param repoId         - Canonical repo identifier to scope the purge to.
-   * @param exemptPrefixes - File path prefixes to keep even when older than the cutoff.
+   * @param repoId     - Canonical repo identifier to scope the query to.
+   * @param cutoffDate - ISO-8601 date string. Rows with `indexed_at` before
+   *                     this date are considered stale.
+   * @returns Distinct relative file paths that are stale.
    */
-  async purgeOlderThan(
-    cutoffDate: string,
-    repoId: string,
-    exemptPrefixes: readonly string[] = [],
-  ): Promise<void> {
+  async queryStalePaths(repoId: string, cutoffDate: string): Promise<readonly string[]> {
     const table = await this.table();
-    const clauses = [
-      `repo_id = '${escapeStr(repoId)}'`,
-      `indexed_at < '${escapeStr(cutoffDate)}'`,
-      ...exemptPrefixes.map((prefix) => `file_path NOT LIKE '${escapeStr(prefix)}%'`),
-    ];
+    const rows = (await table
+      .query()
+      .where(`repo_id = '${escapeStr(repoId)}' AND indexed_at < '${escapeStr(cutoffDate)}'`)
+      .select(["file_path"])
+      .toArray()) as Array<{ file_path: string }>;
+    const unique = new Set(rows.map((r) => r.file_path));
+    return Array.from(unique);
+  }
 
-    await table.delete(clauses.join(" AND "));
+  /**
+   * Delete all rows for a set of file paths within one repository.
+   *
+   * Batches the delete into chunks of ~500 paths to keep the generated
+   * filter expression within a reasonable size. No-op if `paths` is empty.
+   *
+   * @param repoId - Canonical repo identifier to scope the delete to.
+   * @param paths  - Relative file paths to delete.
+   */
+  async deleteFilesByPaths(repoId: string, paths: readonly string[]): Promise<void> {
+    if (paths.length === 0) return;
+
+    const table = await this.table();
+    const BATCH_SIZE = 500;
+
+    for (let i = 0; i < paths.length; i += BATCH_SIZE) {
+      const batch = paths.slice(i, i + BATCH_SIZE);
+      const inList = batch.map((p) => `'${escapeStr(p)}'`).join(", ");
+      await table.delete(`repo_id = '${escapeStr(repoId)}' AND file_path IN (${inList})`);
+    }
   }
 
   /**

@@ -1,7 +1,6 @@
 import { join } from "node:path";
 
-/** Marker filename that exempts its containing directory from TTL eviction. */
-export const KEEP_MARKER = ".ai-coding-keep";
+import { IGNORE_FILE, KEEP_FILE } from "./pattern-config";
 
 /**
  * Extensions and filenames that are never worth indexing for code retrieval.
@@ -72,18 +71,24 @@ const SKIP_FILENAMES = new Set([
   "pnpm-lock.yaml",
   "Cargo.lock",
   "flake.lock",
+  IGNORE_FILE,
+  KEEP_FILE,
 ]);
 
 /**
  * Discover all indexable source files in a git repository.
  *
- * Uses `git ls-files` to enumerate tracked files, which automatically
- * respects `.gitignore` and only returns committed or staged files.
- * Untracked files are intentionally excluded — they will appear after the
- * next `git add`.
+ * Uses `git ls-files --cached --others --exclude-standard` to enumerate
+ * files, which respects `.gitignore` and includes both committed/staged
+ * files AND untracked-but-not-ignored files (so newly created files appear
+ * before the next `git add`).
  *
  * Binary files and known non-code files (images, lockfiles, compiled
  * artifacts) are filtered out. The returned paths are relative to `repoRoot`.
+ *
+ * This function does NOT apply `.ai-coding-ignore` filtering — that happens
+ * in `indexCodebase` via `loadMatcher`, after discovery, so the raw
+ * discovered set stays available for reporting (e.g. total-exclusion checks).
  *
  * @param repoRoot - Absolute path to the repository root.
  * @returns Relative file paths suitable for passing to the chunker.
@@ -127,34 +132,6 @@ export async function discoverFiles(repoRoot: string): Promise<readonly string[]
     .filter((f) => f.length > 0);
 
   return allFiles.filter((filePath) => !shouldSkip(filePath));
-}
-
-/**
- * Discover directory prefixes that should be exempt from TTL eviction.
- *
- * This is a pure pass over the already-discovered file list, avoiding extra
- * filesystem I/O. A marker at the repository root would exempt every row, so it
- * is ignored with a warning.
- *
- * @param files - Relative file paths returned by {@link discoverFiles}.
- * @returns Directory prefixes with trailing slash, e.g. `["GeometricTools/"]`.
- */
-export function discoverKeepDirs(files: readonly string[]): readonly string[] {
-  const keepDirs = new Set<string>();
-
-  for (const filePath of files) {
-    if (!filePath.endsWith(KEEP_MARKER)) continue;
-
-    const markerIndex = filePath.lastIndexOf(`/${KEEP_MARKER}`);
-    if (markerIndex === -1) {
-      console.warn(`⚠️   Ignoring root-level ${KEEP_MARKER}; it would exempt the entire repo.`);
-      continue;
-    }
-
-    keepDirs.add(`${filePath.slice(0, markerIndex)}/`);
-  }
-
-  return Array.from(keepDirs).sort();
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

@@ -17,6 +17,8 @@
  *   --model <name>           Ollama embedding model (default: nomic-embed-text).
  *   --grammars <p>           Override the tree-sitter grammars directory.
  *   --max-file-bytes <n>     Skip files exceeding this byte size (default: 100000).
+ *   --exclude <glob>         Gitignore-syntax pattern to exclude from vectorization,
+ *                            on top of the repo's .ai-coding-ignore. Repeatable.
  */
 
 /* v8 ignore start */
@@ -27,7 +29,7 @@ import { OllamaEmbedder, isOllamaReachable } from "@ai-coding/embeddings";
 
 import { DEFAULT_GRAMMARS_DIR, ParserPool } from "../chunking/parser-pool";
 import { CodebaseStore, DEFAULT_CODEBASE_DB_PATH, DEFAULT_TTL_DAYS } from "../store/codebase-store";
-import { indexCodebase } from "./index-codebase";
+import { TotalExclusionError, indexCodebase } from "./index-codebase";
 import { purgeDeadRepos, purgeRepo } from "./purge";
 
 const args = process.argv.slice(2);
@@ -41,6 +43,17 @@ function option(name: string, fallback: string): string {
   return idx !== -1 && args[idx + 1] !== undefined ? (args[idx + 1] as string) : fallback;
 }
 
+/** Collects every value passed to a repeatable flag, e.g. multiple `--exclude <glob>`. */
+function repeatableOption(name: string): readonly string[] {
+  const values: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === name && args[i + 1] !== undefined) {
+      values.push(args[i + 1] as string);
+    }
+  }
+  return values;
+}
+
 const repoArg = args.find((a) => !a.startsWith("--"));
 const force = flag("--force");
 const purgeOnly = flag("--purge-only");
@@ -52,12 +65,13 @@ const model = option("--model", "nomic-embed-text");
 const grammarsDir = option("--grammars", DEFAULT_GRAMMARS_DIR);
 const maxFileBytesRaw = option("--max-file-bytes", "");
 const maxFileSizeBytes = maxFileBytesRaw ? Number.parseInt(maxFileBytesRaw, 10) : undefined;
+const excludeGlobs = repeatableOption("--exclude");
 
 if (!purgeOnly && !purgeRepoArg && repoArg === undefined) {
   console.error(
     "Usage: index-codebase <repo-path> [--force] [--purge-only] [--purge-repo <path>] [--ttl <days>]\n" +
       "                     [--db-path <path>] [--model <name>] [--grammars <dir>]\n" +
-      "                     [--max-file-bytes <n>]",
+      "                     [--max-file-bytes <n>] [--exclude <glob>]...",
   );
   process.exit(1);
 }
@@ -127,6 +141,7 @@ console.log(`📁  Grammars dir: ${grammarsDir}`);
 if (force) console.log("⚡  Force mode: re-indexing all files");
 if (ttlDays !== DEFAULT_TTL_DAYS) console.log(`⏱️   TTL: ${ttlDays} days`);
 if (maxFileSizeBytes !== undefined) console.log(`📏  Max file size: ${maxFileSizeBytes} bytes`);
+if (excludeGlobs.length > 0) console.log(`🚫  --exclude patterns: ${excludeGlobs.join(", ")}`);
 
 const embedder = new OllamaEmbedder(model);
 const pool = new ParserPool(grammarsDir);
@@ -136,6 +151,7 @@ try {
     force,
     ttlDays,
     maxFileSizeBytes,
+    excludeGlobs,
   });
 
   if (result.indexed.length > 0) {
@@ -156,11 +172,15 @@ try {
     }
   }
 
-  if (result.keepDirs.length > 0) {
-    console.log(`\n🔒  TTL-exempt dirs (${result.keepDirs.length}):`);
-    for (const dir of result.keepDirs) {
-      console.log(`    • ${dir}`);
-    }
+  if (result.ignoredCount > 0) {
+    console.log(
+      `\n🙈  Excluded from vectorization (${result.ignoredCount}) — ` +
+        `patterns: [${result.ignorePatterns.join(", ")}]`,
+    );
+  }
+
+  if (result.keepPatterns.length > 0) {
+    console.log(`\n🔒  TTL-exempt patterns: [${result.keepPatterns.join(", ")}]`);
   }
 
   if (result.deleted.length > 0) {
@@ -188,7 +208,12 @@ try {
 
   console.log(`\n✨  Done. Rows older than ${result.staleBefore} were purged.`);
 } catch (err) {
-  console.error("❌  Indexing failed:", err instanceof Error ? err.message : String(err));
+  if (err instanceof TotalExclusionError) {
+    console.error(`❌  ${err.message}`);
+    console.error("    Nothing was indexed. The database was not touched.");
+  } else {
+    console.error("❌  Indexing failed:", err instanceof Error ? err.message : String(err));
+  }
   process.exit(1);
 }
 /* v8 ignore stop */

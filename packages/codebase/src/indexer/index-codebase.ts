@@ -5,9 +5,39 @@ import { chunkFile } from "../chunking/code-chunker";
 import type { ParserPool } from "../chunking/parser-pool";
 import { detectLanguage } from "../discovery/detect-language";
 
-import { discoverFiles, discoverKeepDirs, resolveFilePath } from "../discovery/discover-files";
+import { discoverFiles, resolveFilePath } from "../discovery/discover-files";
+import { IGNORE_FILE, KEEP_FILE, loadMatcher, readPatterns } from "../discovery/pattern-config";
 import type { CodebaseStore } from "../store/codebase-store";
 import { type PurgeResult, runPostIndexPurge } from "./purge";
+
+// ── errors ────────────────────────────────────────────────────────────────────
+
+/**
+ * Thrown when every discovered file in a repo is excluded by
+ * `.ai-coding-ignore` and/or `--exclude` patterns, leaving nothing to index.
+ *
+ * This is treated as a configuration mistake (over-broad pattern or stray
+ * negation) rather than a valid "empty repo" state, and aborts BEFORE the
+ * store is opened — the database is left completely untouched.
+ */
+export class TotalExclusionError extends Error {
+  readonly ignorePatterns: readonly string[];
+  readonly excludeGlobs: readonly string[];
+
+  constructor(
+    discoveredCount: number,
+    ignorePatterns: readonly string[],
+    excludeGlobs: readonly string[],
+  ) {
+    const patternsMsg = `Active ignore patterns: [${ignorePatterns.join(", ")}]; --exclude flags: [${excludeGlobs.join(", ")}].`;
+    super(
+      `All ${discoveredCount} discovered file(s) were excluded by ${IGNORE_FILE} and/or --exclude patterns. Nothing was indexed; the database was not touched. ${patternsMsg} Check for an over-broad glob (e.g. bare '*' or '**') or a stray '!' negation.`,
+    );
+    this.name = "TotalExclusionError";
+    this.ignorePatterns = ignorePatterns;
+    this.excludeGlobs = excludeGlobs;
+  }
+}
 
 // ── public types ──────────────────────────────────────────────────────────────
 
@@ -42,6 +72,12 @@ export interface IndexCodebaseOptions {
    * Default: `100_000`.
    */
   readonly maxFileSizeBytes?: number;
+  /**
+   * Additional gitignore-syntax patterns to exclude from vectorization, on
+   * top of the repo's root `.ai-coding-ignore` file. Composes onto the same
+   * matcher (repeatable `--exclude` CLI flags feed this).
+   */
+  readonly excludeGlobs?: readonly string[];
 }
 
 /** Result returned by {@link indexCodebase}. */
@@ -54,7 +90,8 @@ export interface IndexCodebaseResult {
   readonly skipped: readonly string[];
   /**
    * Files that were present in the previous meta but are no longer discovered
-   * (deleted or `.gitignore`d). Their chunks have been removed from the store.
+   * (deleted, `.gitignore`d, or newly matched by `.ai-coding-ignore`). Their
+   * chunks have been removed from the store.
    */
   readonly deleted: readonly string[];
   /**
@@ -64,8 +101,15 @@ export interface IndexCodebaseResult {
    * the limit (at which point the hash changes and the file is re-indexed).
    */
   readonly oversized: readonly string[];
-  /** Directory prefixes exempt from TTL purge due to `.ai-coding-keep` markers. */
-  readonly keepDirs: readonly string[];
+  /**
+   * Number of discovered files excluded from vectorization by
+   * `.ai-coding-ignore` and/or `--exclude` patterns.
+   */
+  readonly ignoredCount: number;
+  /** Active `.ai-coding-ignore` + `--exclude` patterns, for reporting. */
+  readonly ignorePatterns: readonly string[];
+  /** Active `.ai-coding-keep` patterns exempting files from TTL purge, for reporting. */
+  readonly keepPatterns: readonly string[];
   /** ISO-8601 cutoff date used for the TTL purge sweep. */
   readonly staleBefore: string;
   /** Repo IDs whose root directory no longer exists on disk and were purged. */
@@ -121,7 +165,7 @@ export async function indexCodebase(
   repoPath: string,
   options: IndexCodebaseOptions = {},
 ): Promise<IndexCodebaseResult> {
-  const { force = false, ttlDays, maxFileSizeBytes = 100_000 } = options;
+  const { force = false, ttlDays, maxFileSizeBytes = 100_000, excludeGlobs = [] } = options;
   const metaPath = options.metaPath ?? `${store.dbPath}.meta.json`;
   const repoId = realpathSync(repoPath);
 
@@ -134,8 +178,25 @@ export async function indexCodebase(
 
   // Discover all current indexable files (throws if not a git repo)
   const discoveredFiles = await discoverFiles(repoPath);
-  const keepDirs = discoverKeepDirs(discoveredFiles);
-  const discoveredSet = new Set(discoveredFiles);
+
+  // Discovery-time exclusion: .ai-coding-ignore + --exclude compose onto one matcher
+  const ignorePatterns = await readPatterns(repoPath, IGNORE_FILE);
+  const ignoreMatcher = await loadMatcher(repoPath, IGNORE_FILE, excludeGlobs);
+  const filesToIndex = ignoreMatcher
+    ? discoveredFiles.filter((f) => !ignoreMatcher.ignores(f))
+    : discoveredFiles;
+  const ignoredCount = discoveredFiles.length - filesToIndex.length;
+
+  // Retention-time exemption: .ai-coding-keep, threaded into the purge step only
+  const keepPatterns = await readPatterns(repoPath, KEEP_FILE);
+  const keepMatcher = await loadMatcher(repoPath, KEEP_FILE);
+
+  // Hard-abort BEFORE the store is opened — nothing indexed, DB untouched.
+  if (discoveredFiles.length > 0 && filesToIndex.length === 0) {
+    throw new TotalExclusionError(discoveredFiles.length, ignorePatterns, excludeGlobs);
+  }
+
+  const discoveredSet = new Set(filesToIndex);
 
   // Open the store (idempotent)
   const dims = await embedder.dimensions;
@@ -146,7 +207,7 @@ export async function indexCodebase(
   const oversized: string[] = [];
   const newFileHashes: Record<string, string> = {};
 
-  for (const filePath of discoveredFiles) {
+  for (const filePath of filesToIndex) {
     const absolutePath = resolveFilePath(repoPath, filePath);
     const file = Bun.file(absolutePath);
 
@@ -183,7 +244,10 @@ export async function indexCodebase(
     indexed.push(filePath);
   }
 
-  // Delete chunks for files that no longer appear in the repo
+  // Delete chunks for files that no longer appear in the (filtered) repo set.
+  // Files that become newly excluded by .ai-coding-ignore also fall out of
+  // discoveredSet here, so they are removed just like deleted/gitignored files —
+  // this is the delete-loop that enforces ignore > keep for previously-indexed rows.
   const deleted: string[] = [];
   for (const prevFile of Object.keys(existingRepoMeta.fileHashes)) {
     if (!discoveredSet.has(prevFile)) {
@@ -198,7 +262,7 @@ export async function indexCodebase(
   await store.touchRepo(repoId, now);
 
   // Post-index purge (current-repo TTL sweep + global dead-repo cleanup)
-  const purgeResult: PurgeResult = await runPostIndexPurge(store, repoId, keepDirs, ttlDays);
+  const purgeResult: PurgeResult = await runPostIndexPurge(store, repoId, keepMatcher, ttlDays);
 
   // Persist updated meta
   const updatedMeta: GlobalMeta = {
@@ -218,7 +282,9 @@ export async function indexCodebase(
     skipped,
     deleted,
     oversized,
-    keepDirs,
+    ignoredCount,
+    ignorePatterns,
+    keepPatterns,
     staleBefore: purgeResult.staleBefore,
     deadRepos: purgeResult.deadRepos,
   };
