@@ -31,15 +31,37 @@ const store    = new CodebaseStore();
 const pool     = new ParserPool();
 const backend  = new CodebaseBackend(embedder, store, pool);
 
-// Incremental refresh + vector search
-const results = await backend.search("purge stale rows", "/path/to/repo");
+// Incremental refresh + vector search — returns Result<readonly CodebaseResult[], NoIndex>
+const result = await backend.search("purge stale rows", "/path/to/repo");
 
-for (const r of results) {
-  console.log(`${r.filePath}:${r.startLine}-${r.endLine}  score=${r.score.toFixed(3)}`);
-  console.log(r.text.slice(0, 200));
-  console.log();
+if (!result.ok) {
+  // Cold repo — never indexed. Run `index-codebase` first, or fall back to grep/glob.
+  console.error(`Not indexed: ${result.error.repoId ?? "(global)"}`);
+} else {
+  for (const r of result.value) {
+    console.log(`${r.filePath}:${r.startLine}-${r.endLine}  score=${r.score.toFixed(3)}`);
+    console.log(r.text.slice(0, 200));
+    console.log();
+  }
 }
 ```
+
+### Warm vs cold repos
+
+`CodebaseStore` is the single source of truth for whether a repo has ever
+been indexed — **not** `meta.json`, which only tracks incremental hash state
+and can drift from the LanceDB table via TTL purge. `CodebaseBackend.search()`
+checks `store.hasRepo()` before every repo-scoped query:
+
+- **Cold** (never indexed) → always returns `Err(NoIndex)`, regardless of
+  `refresh`. The backend never auto-indexes a cold repo — that would silently
+  run a potentially very slow full `indexCodebase()` on a first-ever query.
+- **Warm** (already indexed at least once) → honors `refresh` as before:
+  `refresh: true` (default) runs a fast incremental re-index before
+  searching; `refresh: false` searches the existing index as-is.
+
+Run `bun run index-codebase /path/to/repo` once to warm a repo before
+querying it.
 
 ## Excluding files from the index
 

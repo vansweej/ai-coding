@@ -406,20 +406,69 @@ than `mergeInsert` and sufficient for per-file granularity.
 
 ---
 
+## Retrieval: Warm vs Cold Repos
+
+`CodebaseStore` is the single source of truth for whether a repo has ever
+been indexed — **not** `meta.json`, which only tracks incremental hash state
+for skip-unchanged-file logic and can drift from the LanceDB table via TTL
+purge. `CodebaseBackend.search()` calls `store.hasRepo(repoId)` before every
+repo-scoped (or global, when no `repoPath` is given) query and branches on
+the result:
+
+- **Cold** (never indexed) → returns `Err(NoIndex)` immediately, **regardless
+  of `refresh`**. The backend never auto-indexes a cold repo — silently
+  running a potentially very slow full `indexCodebase()` on a first-ever
+  query is exactly the multi-day-crash footgun this oracle closes.
+- **Warm** (indexed at least once) → proceeds to the existing freshness modes
+  below, honoring `refresh`.
+
+`CodebaseResult[]` search callers therefore receive
+`Result<readonly CodebaseResult[], NoIndex>`. The `codebase-retrieval` CLI
+translates `Err(NoIndex)` into a `NO_INDEX:` stdout line (see
+[CLI Usage](#cli-usage)) so callers can fall back to grep/glob instead of
+treating it as a failure.
+
+```mermaid
+flowchart TD
+    S["search(query, repoPath, opts)"] --> HR{"repoPath given?"}
+    HR -->|yes| WARM{"store.hasRepo(repoPath)"}
+    HR -->|no, global| GWARM{"store.open()\nsucceeds?"}
+
+    WARM -->|cold| NI1["Err(NoIndex{ repoId })"]
+    WARM -->|warm| REFRESH{"refresh?"}
+
+    GWARM -->|table missing| NI2["Err(NoIndex{ repoId: undefined })"]
+    GWARM -->|table exists| SEARCH
+
+    REFRESH -->|true, default| INC["indexCodebase()\nincremental re-index"]
+    REFRESH -->|false| SEARCH["embed query + vector search"]
+    INC --> SEARCH
+    SEARCH --> OK["Ok(CodebaseResult[])"]
+
+    style NI1 fill:#c9184a,color:#fff
+    style NI2 fill:#c9184a,color:#fff
+    style OK fill:#2d6a4f,color:#fff
+```
+
+Run `bun run index-codebase /path/to/repo` once to warm a repo before
+querying it — cold repos are never auto-indexed by `search()`.
+
 ## Query-Time Freshness
 
-`CodebaseBackend.search()` supports two freshness modes, selectable per-call via
-the `refresh` option.
+`CodebaseBackend.search()` supports two freshness modes for **warm** repos,
+selectable per-call via the `refresh` option.
 
 ```mermaid
 sequenceDiagram
     participant Caller
     participant CB as CodebaseBackend
+    participant CS as CodebaseStore
     participant IC as indexCodebase()
     participant OE as OllamaEmbedder
-    participant CS as CodebaseStore
 
     Caller->>CB: search(query, repoPath, { refresh: true })
+    CB->>CS: store.hasRepo(repoPath)
+    CS-->>CB: true (warm)
 
     Note over CB: refresh=true (default)
     CB->>IC: indexCodebase(embedder, store, pool, repoPath, { ttlDays: 3650 })
@@ -432,19 +481,21 @@ sequenceDiagram
     CB->>CS: store.searchInRepo(vector, repoPath, limit)
     CS-->>CB: CodebaseSearchResult[]
 
-    CB-->>Caller: CodebaseResult[] (score = 1 − distance)
+    CB-->>Caller: Ok(CodebaseResult[]) (score = 1 − distance)
 
     ---
 
     Caller->>CB: search(query, repoPath, { refresh: false })
+    CB->>CS: store.hasRepo(repoPath)
+    CS-->>CB: true (warm)
 
     Note over CB: refresh=false — skip re-index
-    CB->>CS: store.open() — throws if table missing
+    CB->>CS: store.open()
     CB->>OE: embedder.embed(query)
     OE-->>CB: EmbeddingResult { vector }
     CB->>CS: store.searchInRepo(vector, repoPath, limit)
     CS-->>CB: CodebaseSearchResult[]
-    CB-->>Caller: CodebaseResult[]
+    CB-->>Caller: Ok(CodebaseResult[])
 ```
 
 **When to use `refresh: false`:**
@@ -595,6 +646,16 @@ bun run codebase-retrieval "how does the purge step work"
 bun run codebase-retrieval "LanceDB schema" --workspace . --no-refresh
 ```
 
+**Cold repos:** if the target repo (or the global store, when `--workspace`
+is omitted) has never been indexed, the CLI prints a stable, machine-matchable
+sentinel line and exits `0` (not an error) rather than auto-indexing:
+
+```
+NO_INDEX: /path/to/repo not vectorized — use grep or run index-codebase
+```
+
+Run `bun run index-codebase <repo-path>` once to warm the repo, then retry.
+
 ---
 
 ## Shell Wrappers (run from any directory)
@@ -684,11 +745,15 @@ const store    = new CodebaseStore();
 const pool     = new ParserPool();
 const backend  = new CodebaseBackend(embedder, store, pool);
 
-// Search with automatic incremental refresh
-const results = await backend.search("hash-based staleness", "/path/to/repo");
-for (const r of results) {
-  console.log(`${r.filePath}:${r.startLine}-${r.endLine} (score ${r.score.toFixed(3)})`);
-  console.log(r.text.slice(0, 200));
+// Search with automatic incremental refresh — returns Result<CodebaseResult[], NoIndex>
+const result = await backend.search("hash-based staleness", "/path/to/repo");
+if (!result.ok) {
+  console.error(`Not indexed: ${result.error.repoId ?? "(global)"}`);
+} else {
+  for (const r of result.value) {
+    console.log(`${r.filePath}:${r.startLine}-${r.endLine} (score ${r.score.toFixed(3)})`);
+    console.log(r.text.slice(0, 200));
+  }
 }
 ```
 
@@ -799,9 +864,12 @@ home-manager switch --flake ~/Projects/home-manager#<machine>
 
 ### `CodebaseStore not opened`
 
-`refresh: false` was passed but no previous `index-codebase` run has created the
-LanceDB table. Either run `bun run index-codebase <repo>` first, or drop the
-`--no-refresh` flag.
+This can still occur from direct `CodebaseStore` API use (e.g. calling
+`store.searchInRepo()` before `store.open()`), but `CodebaseBackend.search()`
+no longer throws for a never-indexed repo — it returns `Err(NoIndex)` instead
+(see [Retrieval: Warm vs Cold Repos](#retrieval-warm-vs-cold-repos)). The
+`codebase-retrieval` CLI surfaces this as a `NO_INDEX:` stdout line and exits
+`0`. Run `bun run index-codebase <repo>` first to warm the repo.
 
 ### Ollama not running
 

@@ -32,6 +32,8 @@ export { purgeStale, purgeDeadRepos, purgeRepo, runPostIndexPurge } from "./inde
 // Retrieval backend
 export type { CodebaseResult, CodebaseSearchOptions } from "./backends/codebase-backend";
 export { CodebaseBackend } from "./backends/codebase-backend";
+export type { NoIndex, Result } from "./backends/retrieval-result";
+export { noIndex, ok } from "./backends/retrieval-result";
 
 export {
   CodebaseStore,

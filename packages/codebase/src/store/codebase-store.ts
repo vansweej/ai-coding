@@ -263,6 +263,41 @@ export class CodebaseStore {
   }
 
   /**
+   * Check whether a repo has ever been indexed.
+   *
+   * This is the SINGLE SOURCE OF TRUTH for "is this repo indexed" — meta.json
+   * (used elsewhere for incremental hash checks) can drift from the actual
+   * LanceDB table contents via TTL purge, so callers that need to know
+   * whether a repo is cold must query the store directly, not meta.json.
+   *
+   * Distinguishes "table does not exist yet" (cold DB, returns `false`) from
+   * genuine I/O errors (re-thrown) by narrowly matching the specific
+   * "dimensions required" error thrown by `open()` for a missing table.
+   *
+   * @param repoId - Canonical repo identifier to check.
+   * @returns `true` if at least one row exists for `repoId`.
+   */
+  async hasRepo(repoId: string): Promise<boolean> {
+    try {
+      await this.open();
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("dimensions required")) {
+        return false;
+      }
+      throw err;
+    }
+
+    const table = await this.table();
+    const rows = (await table
+      .query()
+      .where(`repo_id = '${escapeStr(repoId)}'`)
+      .select(["repo_id"])
+      .limit(1)
+      .toArray()) as Array<{ repo_id: string }>;
+    return rows.length > 0;
+  }
+
+  /**
    * Return all distinct repo_id values currently in the table.
    * Used by the purge step to detect dead repos.
    */

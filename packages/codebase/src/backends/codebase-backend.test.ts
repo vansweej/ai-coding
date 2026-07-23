@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { Embedder, EmbeddingResult } from "@ai-coding/embeddings";
 
 import type { ParserPool } from "../chunking/parser-pool";
+import { indexCodebase } from "../indexer/index-codebase";
 import { CodebaseStore } from "../store/codebase-store";
 import { CodebaseBackend } from "./codebase-backend";
 
@@ -74,23 +75,75 @@ describe("CodebaseBackend.search()", () => {
     await rm(dbDir, { recursive: true, force: true });
   });
 
-  // ── basic search ─────────────────────────────────────────────────────────────
+  // ── cold repo → NoIndex ──────────────────────────────────────────────────────
 
-  it("returns results after indexing a file (refresh=true)", async () => {
+  it("cold repo (never indexed) returns NoIndex, does not auto-index (refresh=true)", async () => {
     await createFile(repoDir, "src/main.ts", "export const greet = () => 'hello';\n");
 
     const backend = new CodebaseBackend(embedder, store, pool);
-    const results = await backend.search("greeting function", repoDir, {
+    const result = await backend.search("greeting function", repoDir, { refresh: true });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("no-index");
+      expect(result.error.repoId).toBe(realpathSync(repoDir));
+    }
+  });
+
+  it("cold repo (never indexed) returns NoIndex, does not auto-index (refresh=false)", async () => {
+    await createFile(repoDir, "src/main.ts", "export const greet = () => 'hello';\n");
+
+    const backend = new CodebaseBackend(embedder, store, pool);
+    const result = await backend.search("greeting function", repoDir, { refresh: false });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("no-index");
+    }
+  });
+
+  it("cold global store (no repoPath) returns NoIndex(undefined)", async () => {
+    const backend = new CodebaseBackend(embedder, store, pool);
+    const result = await backend.search("anything", undefined, { refresh: false });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("no-index");
+      expect(result.error.repoId).toBeUndefined();
+    }
+  });
+
+  // ── warm repo: basic search ──────────────────────────────────────────────────
+
+  async function warmUp(dir: string): Promise<void> {
+    await indexCodebase(embedder, store, pool, realpathSync(dir), { ttlDays: 3650 });
+  }
+
+  it("returns results after indexing a file (refresh=true)", async () => {
+    await createFile(repoDir, "src/main.ts", "export const greet = () => 'hello';\n");
+    await warmUp(repoDir);
+
+    const backend = new CodebaseBackend(embedder, store, pool);
+    const result = await backend.search("greeting function", repoDir, {
       refresh: true,
     });
 
-    expect(results.length).toBeGreaterThan(0);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.length).toBeGreaterThan(0);
+    }
   });
 
-  it("returns empty array for an empty repo (no files)", async () => {
+  it("a warmed but empty repo (no files ever indexed) is treated as NoIndex (symmetry with global empty store)", async () => {
+    await warmUp(repoDir);
     const backend = new CodebaseBackend(embedder, store, pool);
-    const results = await backend.search("anything", repoDir, { refresh: true });
-    expect(results).toHaveLength(0);
+    const result = await backend.search("anything", repoDir, { refresh: true });
+    // indexCodebase() on an empty repo writes zero rows, so hasRepo() still
+    // reports cold — same symmetry as the global-empty-store case.
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("no-index");
+    }
   });
 
   it("each result has the required fields", async () => {
@@ -99,11 +152,14 @@ describe("CodebaseBackend.search()", () => {
       "lib/util.ts",
       "export function add(a: number, b: number) { return a + b; }\n",
     );
+    await warmUp(repoDir);
 
     const backend = new CodebaseBackend(embedder, store, pool);
-    const results = await backend.search("addition utility", repoDir, { refresh: true });
+    const result = await backend.search("addition utility", repoDir, { refresh: true });
 
-    for (const r of results) {
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    for (const r of result.value) {
       expect(typeof r.repoId).toBe("string");
       expect(typeof r.filePath).toBe("string");
       expect(typeof r.text).toBe("string");
@@ -118,33 +174,42 @@ describe("CodebaseBackend.search()", () => {
 
   it("result.repoId equals the repoPath argument", async () => {
     await createFile(repoDir, "index.ts", "const x = 1;\n");
+    await warmUp(repoDir);
 
     const backend = new CodebaseBackend(embedder, store, pool);
-    const results = await backend.search("variable", repoDir, { refresh: true });
+    const result = await backend.search("variable", repoDir, { refresh: true });
 
-    for (const r of results) {
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    for (const r of result.value) {
       expect(r.repoId).toBe(realpathSync(repoDir));
     }
   });
 
   it("result.filePath is relative (no leading /)", async () => {
     await createFile(repoDir, "src/app.ts", "const app = {};\n");
+    await warmUp(repoDir);
 
     const backend = new CodebaseBackend(embedder, store, pool);
-    const results = await backend.search("app", repoDir, { refresh: true });
+    const result = await backend.search("app", repoDir, { refresh: true });
 
-    for (const r of results) {
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    for (const r of result.value) {
       expect(r.filePath.startsWith("/")).toBe(false);
     }
   });
 
   it("result.score is a number (1 − distance)", async () => {
     await createFile(repoDir, "src/foo.ts", "const foo = 42;\n");
+    await warmUp(repoDir);
 
     const backend = new CodebaseBackend(embedder, store, pool);
-    const results = await backend.search("constant", repoDir, { refresh: true });
+    const result = await backend.search("constant", repoDir, { refresh: true });
 
-    for (const r of results) {
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    for (const r of result.value) {
       expect(typeof r.score).toBe("number");
     }
   });
@@ -156,74 +221,77 @@ describe("CodebaseBackend.search()", () => {
     for (let i = 0; i < 5; i++) {
       await createFile(repoDir, `src/file${i}.ts`, `export const val${i} = ${i};\n`);
     }
+    await warmUp(repoDir);
 
     const backend = new CodebaseBackend(embedder, store, pool);
-    const results = await backend.search("value", repoDir, {
+    const result = await backend.search("value", repoDir, {
       refresh: true,
       limit: 2,
     });
 
-    expect(results.length).toBeLessThanOrEqual(2);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.length).toBeLessThanOrEqual(2);
+    }
   });
 
   // ── refresh=false ─────────────────────────────────────────────────────────────
 
   it("refresh=false uses existing index without re-running indexCodebase", async () => {
     await createFile(repoDir, "src/cached.ts", "const cached = true;\n");
+    await warmUp(repoDir);
 
-    // First: index via refresh=true
     const backend = new CodebaseBackend(embedder, store, pool);
-    await backend.search("cache", repoDir, { refresh: true });
 
-    // Second: search with refresh=false — should still return results from the existing index
-    const results = await backend.search("cache", repoDir, { refresh: false });
-    expect(results.length).toBeGreaterThan(0);
-  });
-
-  it("refresh=false on an un-opened store throws (no table exists)", async () => {
-    // Store has never been opened (no prior indexing)
-    const freshStore = new CodebaseStore(dbDir);
-    const backend = new CodebaseBackend(embedder, freshStore, pool);
-
-    // No repoPath means global search, refresh=false → store.open() called → throws (no table)
-    await expect(backend.search("anything", undefined, { refresh: false })).rejects.toThrow();
+    const result = await backend.search("cache", repoDir, { refresh: false });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.length).toBeGreaterThan(0);
+    }
   });
 
   // ── global search (no repoPath) ───────────────────────────────────────────────
 
   it("search without repoPath returns results across all repos", async () => {
     await createFile(repoDir, "src/main.ts", "const x = 1;\n");
+    await warmUp(repoDir);
 
-    // Pre-index using a direct store upsert to avoid needing two repos
     const backend = new CodebaseBackend(embedder, store, pool);
-    // refresh=true with no repoPath → falls through to store.open() branch
-    // We need to index first via refresh=true with repoPath
-    await backend.search("x", repoDir, { refresh: true });
 
-    // Now global search (no repoPath)
-    const results = await backend.search("variable declaration", undefined, { refresh: false });
-    expect(results.length).toBeGreaterThan(0);
+    // Global search (no repoPath) — store is warm from the repo-scoped warm-up.
+    const result = await backend.search("variable declaration", undefined, { refresh: false });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.length).toBeGreaterThan(0);
+    }
   });
 
   // ── freshness: changed file is re-indexed ─────────────────────────────────────
 
   it("refresh=true picks up changes to a file between two searches", async () => {
     await createFile(repoDir, "src/counter.ts", "const counter = 0;\n");
+    await warmUp(repoDir);
 
     const backend = new CodebaseBackend(embedder, store, pool);
 
-    // First search — indexes the file
-    const results1 = await backend.search("counter", repoDir, { refresh: true });
-    expect(results1.length).toBeGreaterThan(0);
+    // First search — repo already warm from warmUp above.
+    const result1 = await backend.search("counter", repoDir, { refresh: true });
+    expect(result1.ok).toBe(true);
+    if (result1.ok) {
+      expect(result1.value.length).toBeGreaterThan(0);
+    }
 
     // Modify the file
     await writeFile(join(repoDir, "src/counter.ts"), "const counter = 999; // updated\n");
 
     // Second search — re-indexes the changed file
-    const results2 = await backend.search("counter", repoDir, { refresh: true });
-    expect(results2.length).toBeGreaterThan(0);
-    // At least one result should contain the updated content
-    const hasUpdated = results2.some((r) => r.text.includes("999"));
-    expect(hasUpdated).toBe(true);
+    const result2 = await backend.search("counter", repoDir, { refresh: true });
+    expect(result2.ok).toBe(true);
+    if (result2.ok) {
+      expect(result2.value.length).toBeGreaterThan(0);
+      // At least one result should contain the updated content
+      const hasUpdated = result2.value.some((r) => r.text.includes("999"));
+      expect(hasUpdated).toBe(true);
+    }
   });
 });
