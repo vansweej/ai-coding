@@ -3,10 +3,12 @@ import { describe, expect, it } from "bun:test";
 import {
   CPP_CONFIG,
   DEV_CYCLE_LANGUAGE_CONFIGS,
+  PLAN_CONFIG_FACTORIES,
   RUST_CONFIG,
   RUST_PLAN_CONFIG,
   TYPESCRIPT_CONFIG,
   createRustPlanConfig,
+  createTsPlanConfig,
 } from "./language-configs";
 
 describe("language configs", () => {
@@ -132,5 +134,56 @@ describe("language configs", () => {
     const coverageStep = steps.find((step) => step.name === "coverage");
     expect(coverageStep).toBeDefined();
     // With auto-exempt, coverage should be warning-only (warnOnly: true)
+  });
+
+  it("createRustPlanConfig implementSystem is byte-identical before and after buildPatchSystem refactor", () => {
+    const config = createRustPlanConfig({ mode: "default" }, "");
+    expect(config.implementSystem).toContain("aider-style");
+    expect(config.implementSystem).toContain("<<<<<<< SEARCH");
+    expect(config.implementSystem).toContain(">>>>>>> REPLACE");
+    expect(config.implementSystem).toContain("Follow Rust idioms");
+    expect(config.implementSystem).toContain("Do not include any explanation");
+    // Verify the exact prefix so the refactor stays byte-identical
+    expect(config.implementSystem.startsWith("You are a Rust coding assistant.")).toBe(true);
+  });
+
+  it("createTsPlanConfig produces aider-style patch system prompt", () => {
+    const config = createTsPlanConfig({ mode: "default" }, "");
+    expect(config.implementSystem).toContain("aider-style");
+    expect(config.implementSystem).toContain("<<<<<<< SEARCH");
+    expect(config.implementSystem).toContain(">>>>>>> REPLACE");
+    expect(config.implementSystem).toContain("TypeScript");
+    expect(config.implementSystem).toContain("Do not include any explanation");
+  });
+
+  it("createTsPlanConfig has typecheck, lint, and test toolchain steps", () => {
+    const config = createTsPlanConfig({ mode: "default" }, "");
+    expect(config.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual([
+      "typecheck",
+      "lint",
+      "test",
+    ]);
+  });
+
+  it("createTsPlanConfig has no coverage gate step", () => {
+    const config = createTsPlanConfig({ mode: "default" }, "");
+    const names = config.toolchainSteps("/tmp/ws").map((s) => s.name);
+    expect(names).not.toContain("coverage");
+  });
+
+  it("createTsPlanConfig declares correct source extensions and roots", () => {
+    const config = createTsPlanConfig({ mode: "default" }, "");
+    expect(config.sourceExtensions).toEqual([".ts"]);
+    expect(config.sourceRoots).toEqual(["src", "."]);
+  });
+
+  it("PLAN_CONFIG_FACTORIES registers rust and typescript", () => {
+    expect(PLAN_CONFIG_FACTORIES.rust).toBe(createRustPlanConfig);
+    expect(PLAN_CONFIG_FACTORIES.typescript).toBe(createTsPlanConfig);
+  });
+
+  it("PLAN_CONFIG_FACTORIES does not register unimplemented languages", () => {
+    expect(PLAN_CONFIG_FACTORIES.python).toBeUndefined();
+    expect(PLAN_CONFIG_FACTORIES.haskell).toBeUndefined();
   });
 });

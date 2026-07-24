@@ -7,6 +7,36 @@ import { resolveCoverageThreshold } from "../steps/coverage-exemption";
 const DEFAULT_COVERAGE_THRESHOLD = 90;
 const DEFAULT_CPP_BUILD_DIR = "build";
 
+/**
+ * Build the `implementSystem` prompt for plan-cycle configs that use aider-style
+ * SEARCH/REPLACE patches.
+ *
+ * @param languageHint - Human-readable language name used in the opening sentence (e.g. "Rust").
+ * @param idioms       - Language-specific coding rules appended after the patch format block.
+ */
+function buildPatchSystem(languageHint: string, idioms: string): string {
+  return `You are a ${languageHint} coding assistant. Output ONLY aider-style SEARCH/REPLACE patches for files that need changes. Each patch must have the format:\n<file-path>\n<<<<<<< SEARCH\n<exact anchor text>\n=======\n<replacement text>\n>>>>>>> REPLACE\n\n${idioms} Do not include any explanation or prose outside the patches.`;
+}
+
+const RUST_PLAN_IDIOMS =
+  "Follow Rust idioms: use Result/Option, avoid unwrap in production code, prefer ownership over cloning, and include idiomatic doc comments on all public items. " +
+  "Generate compilable Rust code. Ensure all use statements are present and all types, functions, and macros referenced are either in the standard prelude or explicitly imported.";
+
+const TS_PLAN_IDIOMS =
+  "Use named exports, strict types, Result patterns for fallible operations, and idiomatic doc comments on all public items. " +
+  "Generate compilable TypeScript code. Ensure all imports are present.";
+
+/**
+ * Factory that creates a language-specific plan-cycle config from the phase's
+ * coverage directive and current git diff.  Registered factories are keyed by
+ * LanguageName so the phase-runner can look one up without knowing the language
+ * at compile time.
+ */
+export type PlanConfigFactory = (
+  coverage: CoverageDirective,
+  diff: string,
+) => DevCycleLanguageConfig;
+
 /** Language-specific configuration for the unified dev-cycle pipeline. */
 export interface DevCycleLanguageConfig {
   /** Stable language identifier used by CLI arguments and tests. */
@@ -107,18 +137,7 @@ export function createRustPlanConfig(
     languageHint: "Rust",
     sourceExtensions: [".rs"],
     sourceRoots: ["src"],
-    implementSystem:
-      "You are a Rust coding assistant. Output ONLY aider-style SEARCH/REPLACE patches for files that need changes. " +
-      "Each patch must have the format:\n" +
-      "<file-path>\n" +
-      "<<<<<<< SEARCH\n" +
-      "<exact anchor text>\n" +
-      "=======\n" +
-      "<replacement text>\n" +
-      ">>>>>>> REPLACE\n\n" +
-      "Follow Rust idioms: use Result/Option, avoid unwrap in production code, prefer ownership over cloning, and include idiomatic doc comments on all public items. " +
-      "Generate compilable Rust code. Ensure all use statements are present and all types, functions, and macros referenced are either in the standard prelude or explicitly imported. " +
-      "Do not include any explanation or prose outside the patches.",
+    implementSystem: buildPatchSystem("Rust", RUST_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt"], { cwd: workspace }),
       createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], {
@@ -149,6 +168,57 @@ export const RUST_PLAN_CONFIG: DevCycleLanguageConfig = createRustPlanConfig(
   { mode: "default" },
   "",
 );
+
+/**
+ * TypeScript plan-cycle configuration.
+ *
+ * Uses aider-style SEARCH/REPLACE patches like the Rust plan-cycle, but runs
+ * the Bun/Biome toolchain instead of Cargo. No coverage gate is applied —
+ * the test step runs `bun test` with a generous timeout to accommodate the full
+ * suite without a separate tarpaulin step.
+ *
+ * The `coverage` and `diff` parameters are accepted for `PlanConfigFactory`
+ * compatibility; TypeScript plan-cycle does not currently gate on coverage.
+ */
+export function createTsPlanConfig(
+  _coverage: CoverageDirective,
+  _diff: string,
+): DevCycleLanguageConfig {
+  return {
+    name: "typescript",
+    languageHint: "TypeScript",
+    sourceExtensions: [".ts"],
+    sourceRoots: ["src", "."],
+    implementSystem: buildPatchSystem("TypeScript", TS_PLAN_IDIOMS),
+    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+      createNixShellStep<AIRequestEvent>("typecheck", ["bun", "run", "typecheck"], {
+        cwd: workspace,
+      }),
+      createNixShellStep<AIRequestEvent>("lint", ["bunx", "biome", "check", "--write", "."], {
+        cwd: workspace,
+      }),
+      createNixShellStep<AIRequestEvent>("test", ["bun", "test"], {
+        cwd: workspace,
+        timeoutMs: 300_000,
+      }),
+    ],
+  };
+}
+
+/**
+ * Registry of plan-config factories keyed by language name.
+ *
+ * A phase runner looks up the factory for the phase's language (or the run's
+ * default language), calls it with the phase's coverage directive and current
+ * git diff, and obtains a fully-configured `DevCycleLanguageConfig`.
+ *
+ * Languages not yet registered here fail cleanly with an "unregistered language"
+ * error rather than silently falling back to the wrong toolchain.
+ */
+export const PLAN_CONFIG_FACTORIES: Readonly<Partial<Record<LanguageName, PlanConfigFactory>>> = {
+  rust: createRustPlanConfig,
+  typescript: createTsPlanConfig,
+};
 
 /** C++/CMake verification and implementation rules. */
 export const CPP_CONFIG: DevCycleLanguageConfig = {
