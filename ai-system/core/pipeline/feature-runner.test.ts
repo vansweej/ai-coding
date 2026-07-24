@@ -9,7 +9,7 @@ import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@
 
 import { LOCAL_PROFILE } from "../../config/model-profiles";
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
-import type { DevCycleLanguageConfig } from "./definitions/language-configs";
+import type { DevCycleLanguageConfig, PlanConfigFactory } from "./definitions/language-configs";
 import { runFeature } from "./feature-runner";
 
 const PLAN = `# Feature: Demo
@@ -76,6 +76,8 @@ function languageConfig(): DevCycleLanguageConfig {
   };
 }
 
+const testFactory: PlanConfigFactory = () => languageConfig();
+
 let workspace: string;
 
 beforeEach(async () => {
@@ -96,7 +98,8 @@ describe("runFeature", () => {
     const result = await runFeature(PLAN, {
       config: config(),
       workspace,
-      languageConfig: languageConfig(),
+      defaultLanguage: "typescript",
+      factories: { typescript: testFactory },
       commitPhase: async (_workspace, message, _phaseNumber) => {
         commits.push(message);
         return { ok: true, value: message };
@@ -116,7 +119,8 @@ describe("runFeature", () => {
     const result = await runFeature(PLAN, {
       config: config(),
       workspace,
-      languageConfig: languageConfig(),
+      defaultLanguage: "typescript",
+      factories: { typescript: testFactory },
       commitPhase: async (_workspace, message, _phaseNumber) => {
         commits.push(message);
         if (message === "feat: two") return { ok: false, error: new Error("commit failed") };

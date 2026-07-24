@@ -10,7 +10,7 @@ import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@
 
 import { LOCAL_PROFILE } from "../../config/model-profiles";
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
-import type { DevCycleLanguageConfig } from "./definitions/language-configs";
+import type { DevCycleLanguageConfig, PlanConfigFactory } from "./definitions/language-configs";
 import { runPhase } from "./phase-runner";
 import type { Phase } from "./plan-parser";
 
@@ -45,6 +45,10 @@ function languageConfig(shouldFail: boolean, calls?: string[]): DevCycleLanguage
       verifyStep(shouldFail, calls),
     ],
   };
+}
+
+function makeFactory(shouldFail: boolean, calls?: string[]): PlanConfigFactory {
+  return () => languageConfig(shouldFail, calls);
 }
 
 function config(response: string): OrchestratorConfig {
@@ -109,7 +113,8 @@ describe("runPhase", () => {
     const result = await runPhase(PHASE, {
       config: config("```typescript src/index.ts\nexport const value = 1;\n```"),
       workspace,
-      languageConfig: languageConfig(false),
+      defaultLanguage: "typescript",
+      factories: { typescript: makeFactory(false) },
       commitPhase: async (_workspace, message, _phaseNumber) => {
         commits.push(message);
         return { ok: true, value: message };
@@ -128,7 +133,8 @@ describe("runPhase", () => {
     const result = await runPhase(PHASE, {
       config: config("```typescript src/index.ts\nexport const value = 1;\n```"),
       workspace,
-      languageConfig: languageConfig(true),
+      defaultLanguage: "typescript",
+      factories: { typescript: makeFactory(true) },
       retryConfig: { maxLocalRetries: 0, maxEscalationRetries: 0 },
       commitPhase: async (_workspace, message, _phaseNumber) => {
         commits.push(message);
@@ -170,7 +176,8 @@ describe("runPhase", () => {
         dispatchers: { "gemma4:26b": modelDispatcher },
       },
       workspace,
-      languageConfig: languageConfig(false, verifyCalls),
+      defaultLanguage: "typescript",
+      factories: { typescript: makeFactory(false, verifyCalls) },
       commitPhase: async (_workspace, message, _phaseNumber) => {
         commits.push(message);
         return { ok: true, value: message };

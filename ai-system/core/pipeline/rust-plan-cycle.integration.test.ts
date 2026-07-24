@@ -11,8 +11,7 @@ import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@
 import { LOCAL_PROFILE } from "../../config/model-profiles";
 import { CerebrumMemory } from "../orchestrator/cerebrum-memory";
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
-import type { DevCycleLanguageConfig } from "./definitions/language-configs";
-import { RUST_PLAN_CONFIG } from "./definitions/language-configs";
+import type { DevCycleLanguageConfig, PlanConfigFactory } from "./definitions/language-configs";
 import { runFeature } from "./feature-runner";
 
 const LOCAL_PROFILE_NAME = "local";
@@ -33,6 +32,8 @@ function testLanguageConfig(): DevCycleLanguageConfig {
     toolchainSteps: (_workspace: string) => [],
   };
 }
+
+const testFactory: PlanConfigFactory = () => testLanguageConfig();
 
 // Mock dispatcher that returns aider-style patches
 function createMockDispatcher(responses: string[]): ModelDispatcher {
@@ -141,7 +142,8 @@ describe("rust-plan-cycle integration tests", () => {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      languageConfig: testLanguageConfig(),
+      defaultLanguage: "rust",
+      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -161,7 +163,8 @@ describe("rust-plan-cycle integration tests", () => {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      languageConfig: testLanguageConfig(),
+      defaultLanguage: "rust",
+      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -179,7 +182,8 @@ describe("rust-plan-cycle integration tests", () => {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      languageConfig: testLanguageConfig(),
+      defaultLanguage: "rust",
+      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -203,7 +207,8 @@ describe("rust-plan-cycle integration tests", () => {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      languageConfig: testLanguageConfig(),
+      defaultLanguage: "rust",
+      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(false);
@@ -219,7 +224,8 @@ describe("rust-plan-cycle integration tests", () => {
     const firstRun = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      languageConfig: testLanguageConfig(),
+      defaultLanguage: "rust",
+      factories: { rust: testFactory },
     });
 
     expect(firstRun.ok).toBe(true);
@@ -240,7 +246,8 @@ describe("rust-plan-cycle integration tests", () => {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      languageConfig: testLanguageConfig(),
+      defaultLanguage: "rust",
+      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -340,7 +347,8 @@ pub mod utils {
     const result = await runFeature(multiStepPlan, {
       config,
       workspace,
-      languageConfig: testLanguageConfig(),
+      defaultLanguage: "rust",
+      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -357,7 +365,8 @@ pub mod utils {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      languageConfig: testLanguageConfig(),
+      defaultLanguage: "rust",
+      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -380,7 +389,8 @@ pub mod utils {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      languageConfig: testLanguageConfig(),
+      defaultLanguage: "rust",
+      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -400,7 +410,8 @@ pub mod utils {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      languageConfig: testLanguageConfig(),
+      defaultLanguage: "rust",
+      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -430,7 +441,8 @@ pub mod utils {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      languageConfig: testLanguageConfig(),
+      defaultLanguage: "rust",
+      factories: { rust: testFactory },
     });
 
     // Should fail on phase 2

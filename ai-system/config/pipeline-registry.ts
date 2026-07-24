@@ -18,9 +18,14 @@ export interface PipelineEntry {
 /** All registered pipelines, in display order. */
 export const PIPELINE_REGISTRY: readonly PipelineEntry[] = [
   {
-    name: "rust-plan-cycle",
+    name: "plan-cycle",
     description:
       "unattended plan executor: parse plan → per-phase implement → verify/retry → commit; resumable",
+    stack: "polyglot",
+  },
+  {
+    name: "rust-plan-cycle",
+    description: "alias for plan-cycle --language rust",
     stack: "Rust",
   },
   {

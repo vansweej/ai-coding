@@ -107,4 +107,22 @@ describe("parseArgs", () => {
       expect(result.value.profileName).toBe("copilot-default");
     }
   });
+
+  it("parses --language flag", () => {
+    const result = parseArgs(["plan-cycle", "/tmp/ws", "--language", "typescript"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.language).toBe("typescript");
+  });
+
+  it("leaves language undefined when --language is not provided", () => {
+    const result = parseArgs(["plan-cycle", "/tmp/ws"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.language).toBeUndefined();
+  });
+
+  it("returns error when --language flag has no value", () => {
+    const result = parseArgs(["plan-cycle", "/tmp/ws", "--language"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("--language flag requires a value");
+  });
 });
