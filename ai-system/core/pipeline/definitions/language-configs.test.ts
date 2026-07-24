@@ -7,7 +7,13 @@ import {
   RUST_CONFIG,
   RUST_PLAN_CONFIG,
   TYPESCRIPT_CONFIG,
+  createCppPlanConfig,
+  createHaskellPlanConfig,
+  createJuliaPlanConfig,
+  createNixPlanConfig,
+  createPythonPlanConfig,
   createRustPlanConfig,
+  createShellPlanConfig,
   createTsPlanConfig,
 } from "./language-configs";
 
@@ -182,8 +188,189 @@ describe("language configs", () => {
     expect(PLAN_CONFIG_FACTORIES.typescript).toBe(createTsPlanConfig);
   });
 
-  it("PLAN_CONFIG_FACTORIES does not register unimplemented languages", () => {
-    expect(PLAN_CONFIG_FACTORIES.python).toBeUndefined();
-    expect(PLAN_CONFIG_FACTORIES.haskell).toBeUndefined();
+  it("PLAN_CONFIG_FACTORIES registers all 8 known languages", () => {
+    expect(PLAN_CONFIG_FACTORIES.rust).toBe(createRustPlanConfig);
+    expect(PLAN_CONFIG_FACTORIES.typescript).toBe(createTsPlanConfig);
+    expect(PLAN_CONFIG_FACTORIES.python).toBe(createPythonPlanConfig);
+    expect(PLAN_CONFIG_FACTORIES.cpp).toBe(createCppPlanConfig);
+    expect(PLAN_CONFIG_FACTORIES.haskell).toBe(createHaskellPlanConfig);
+    expect(PLAN_CONFIG_FACTORIES.julia).toBe(createJuliaPlanConfig);
+    expect(PLAN_CONFIG_FACTORIES.nix).toBe(createNixPlanConfig);
+    expect(PLAN_CONFIG_FACTORIES.shell).toBe(createShellPlanConfig);
+  });
+
+  describe("createPythonPlanConfig", () => {
+    it("declares correct source extensions and roots", () => {
+      const config = createPythonPlanConfig({ mode: "default" }, "");
+      expect(config.sourceExtensions).toEqual([".py"]);
+      expect(config.sourceRoots).toEqual(["src", "."]);
+    });
+
+    it("produces aider-style patch system prompt", () => {
+      const config = createPythonPlanConfig({ mode: "default" }, "");
+      expect(config.implementSystem).toContain("aider-style");
+      expect(config.implementSystem).toContain("<<<<<<< SEARCH");
+      expect(config.implementSystem).toContain(">>>>>>> REPLACE");
+      expect(config.implementSystem).toContain("Python");
+    });
+
+    it("has format, lint, typecheck, and test toolchain steps in order", () => {
+      const config = createPythonPlanConfig({ mode: "default" }, "");
+      expect(config.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual([
+        "format",
+        "lint",
+        "typecheck",
+        "test",
+      ]);
+    });
+
+    it("has no coverage gate step", () => {
+      const config = createPythonPlanConfig({ mode: "default" }, "");
+      const names = config.toolchainSteps("/tmp/ws").map((s) => s.name);
+      expect(names).not.toContain("coverage");
+    });
+
+    it("does not set baselineCheck", () => {
+      const config = createPythonPlanConfig({ mode: "default" }, "");
+      expect(config.baselineCheck).toBeUndefined();
+    });
+  });
+
+  describe("createCppPlanConfig", () => {
+    it("declares correct source extensions and roots", () => {
+      const config = createCppPlanConfig({ mode: "default" }, "");
+      expect(config.sourceExtensions).toEqual([".cpp", ".h", ".hpp"]);
+      expect(config.sourceRoots).toEqual(["src", "include"]);
+    });
+
+    it("produces aider-style patch system prompt", () => {
+      const config = createCppPlanConfig({ mode: "default" }, "");
+      expect(config.implementSystem).toContain("aider-style");
+      expect(config.implementSystem).toContain("<<<<<<< SEARCH");
+      expect(config.implementSystem).toContain(">>>>>>> REPLACE");
+      expect(config.implementSystem).toContain("C++");
+    });
+
+    it("has configure, build, and test toolchain steps in order", () => {
+      const config = createCppPlanConfig({ mode: "default" }, "");
+      expect(config.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual([
+        "configure",
+        "build",
+        "test",
+      ]);
+    });
+
+    it("does not set baselineCheck", () => {
+      const config = createCppPlanConfig({ mode: "default" }, "");
+      expect(config.baselineCheck).toBeUndefined();
+    });
+  });
+
+  describe("createHaskellPlanConfig", () => {
+    it("declares correct source extensions and roots", () => {
+      const config = createHaskellPlanConfig({ mode: "default" }, "");
+      expect(config.sourceExtensions).toEqual([".hs"]);
+      expect(config.sourceRoots).toEqual(["src", "app"]);
+    });
+
+    it("produces aider-style patch system prompt", () => {
+      const config = createHaskellPlanConfig({ mode: "default" }, "");
+      expect(config.implementSystem).toContain("aider-style");
+      expect(config.implementSystem).toContain("<<<<<<< SEARCH");
+      expect(config.implementSystem).toContain(">>>>>>> REPLACE");
+      expect(config.implementSystem).toContain("Haskell");
+    });
+
+    it("has build, lint, and test toolchain steps in order", () => {
+      const config = createHaskellPlanConfig({ mode: "default" }, "");
+      expect(config.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual([
+        "build",
+        "lint",
+        "test",
+      ]);
+    });
+
+    it("does not set baselineCheck", () => {
+      const config = createHaskellPlanConfig({ mode: "default" }, "");
+      expect(config.baselineCheck).toBeUndefined();
+    });
+  });
+
+  describe("createJuliaPlanConfig", () => {
+    it("declares correct source extensions and roots", () => {
+      const config = createJuliaPlanConfig({ mode: "default" }, "");
+      expect(config.sourceExtensions).toEqual([".jl"]);
+      expect(config.sourceRoots).toEqual(["src"]);
+    });
+
+    it("produces aider-style patch system prompt", () => {
+      const config = createJuliaPlanConfig({ mode: "default" }, "");
+      expect(config.implementSystem).toContain("aider-style");
+      expect(config.implementSystem).toContain("<<<<<<< SEARCH");
+      expect(config.implementSystem).toContain(">>>>>>> REPLACE");
+      expect(config.implementSystem).toContain("Julia");
+    });
+
+    it("has only a single test toolchain step (weak verification)", () => {
+      const config = createJuliaPlanConfig({ mode: "default" }, "");
+      expect(config.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual(["test"]);
+    });
+
+    it("does not set baselineCheck", () => {
+      const config = createJuliaPlanConfig({ mode: "default" }, "");
+      expect(config.baselineCheck).toBeUndefined();
+    });
+  });
+
+  describe("createNixPlanConfig", () => {
+    it("declares correct source extensions and roots", () => {
+      const config = createNixPlanConfig({ mode: "default" }, "");
+      expect(config.sourceExtensions).toEqual([".nix"]);
+      expect(config.sourceRoots).toEqual(["."]);
+    });
+
+    it("produces aider-style patch system prompt", () => {
+      const config = createNixPlanConfig({ mode: "default" }, "");
+      expect(config.implementSystem).toContain("aider-style");
+      expect(config.implementSystem).toContain("<<<<<<< SEARCH");
+      expect(config.implementSystem).toContain(">>>>>>> REPLACE");
+      expect(config.implementSystem).toContain("Nix");
+    });
+
+    it("has format and check toolchain steps in order", () => {
+      const config = createNixPlanConfig({ mode: "default" }, "");
+      expect(config.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual(["format", "check"]);
+    });
+
+    it("sets baselineCheck to true (whole-repo nix flake check cannot be scoped to a diff)", () => {
+      const config = createNixPlanConfig({ mode: "default" }, "");
+      expect(config.baselineCheck).toBe(true);
+    });
+  });
+
+  describe("createShellPlanConfig", () => {
+    it("declares correct source extensions and roots", () => {
+      const config = createShellPlanConfig({ mode: "default" }, "");
+      expect(config.sourceExtensions).toEqual([".sh"]);
+      expect(config.sourceRoots).toEqual(["."]);
+    });
+
+    it("produces aider-style patch system prompt", () => {
+      const config = createShellPlanConfig({ mode: "default" }, "");
+      expect(config.implementSystem).toContain("aider-style");
+      expect(config.implementSystem).toContain("<<<<<<< SEARCH");
+      expect(config.implementSystem).toContain(">>>>>>> REPLACE");
+      expect(config.implementSystem).toContain("Shell");
+    });
+
+    it("has format and lint toolchain steps in order", () => {
+      const config = createShellPlanConfig({ mode: "default" }, "");
+      expect(config.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual(["format", "lint"]);
+    });
+
+    it("sets baselineCheck to true (whole-repo shellcheck cannot be scoped to a diff)", () => {
+      const config = createShellPlanConfig({ mode: "default" }, "");
+      expect(config.baselineCheck).toBe(true);
+    });
   });
 });
