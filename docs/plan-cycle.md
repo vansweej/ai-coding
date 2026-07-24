@@ -270,7 +270,7 @@ bun run pipeline rust-plan-cycle <workspace> --plan <file> [options]  # alias, f
 | `--plan <file>` | Path to plan file (required, or use `--input` for a single-step plan) | — |
 | `--language <name>` | Default language for phases lacking a `Language:` directive | `typescript` (or `rust` when invoked as `rust-plan-cycle`) |
 | `--max-retries <n>` | Max local retries per phase | 3 |
-| `--profile <name>` | Model profile (`local`, `copilot-default`, `hybrid`, `anthropic-sonnet`) | `copilot-default` |
+| `--profile <name>` | Model profile (`local`, `copilot-default`, `hybrid`, `anthropic-sonnet`, `bedrock-sonnet`) | `copilot-default` |
 
 ### Examples
 
@@ -293,12 +293,28 @@ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --profile loc
 
 # Run on native Anthropic Claude Sonnet (recommended — see the token-cap note below)
 ANTHROPIC_API_KEY=sk-ant-... bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --profile anthropic-sonnet
+
+# Run on Claude Sonnet via Amazon Bedrock (uses AWS SSO / credential chain, not an API key)
+aws sso login --profile my-company-profile
+export AWS_PROFILE=my-company-profile
+export AWS_BEDROCK_INFERENCE_PROFILE_ARN=arn:aws:bedrock:eu-west-1:123456789012:application-inference-profile/abc123
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --profile bedrock-sonnet
 ```
 
 > **Recommended profile:** `--profile anthropic-sonnet` raises the effective output token cap to
 > 8192 (both the Anthropic dispatcher default and the implement/fix LLM call options), which
 > avoids truncated multi-file patches on larger phases. See
 > [`docs/plan-cycle-languages.md`](plan-cycle-languages.md#token-cap-note) for details.
+> `--profile bedrock-sonnet` uses the same 8192 default and is the preferred profile when your
+> Claude access is provisioned through Amazon Bedrock rather than a native Anthropic API key.
+
+> **Bedrock notes:** `bedrock-sonnet` authenticates via the AWS SDK's default credential provider
+> chain (e.g. `aws sso login` + `AWS_PROFILE`), not an API key, and requires
+> `AWS_BEDROCK_INFERENCE_PROFILE_ARN` to be set. The target region is parsed from the ARN. SSO
+> session credentials are time-bounded (commonly 1–8 hours); start long unattended runs right
+> after a fresh login, since expiry mid-run surfaces as a dispatch error and aborts the run
+> (exit code 2, resumable — see [Resume workflow](resume-workflow.md)). Never commit the ARN or
+> any AWS profile name to source; both are account-specific and belong in the environment only.
 
 > **Note:** `plan-cycle` parses its plan from the `--plan` file (or a single-step plan built
 > from `--input`) rather than generating it via an LLM, so the `planner` role never fires on
@@ -577,7 +593,9 @@ bun run pipeline plan-cycle . --plan ../plans/feature.md
 4. Check that Ollama is running (if using the local profile)
 5. Check that a GitHub Copilot token is set (if using copilot-default or hybrid)
 6. Check that `ANTHROPIC_API_KEY` is set (if using anthropic-sonnet)
-7. Verify the resolved language's toolchain is available (see
+7. Check that `AWS_BEDROCK_INFERENCE_PROFILE_ARN` is set and AWS credentials are valid, e.g. via
+   `aws sso login` (if using bedrock-sonnet)
+8. Verify the resolved language's toolchain is available (see
    [`docs/plan-cycle-languages.md`](plan-cycle-languages.md) for required Nix flake tools)
 
 ---

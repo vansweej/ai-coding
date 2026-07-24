@@ -27,6 +27,9 @@ Profile names:
   hybrid           implementer/tester/debugger → gemma4:26b; fixer → claude-sonnet-4.6
   copilot-default  All roles → github-copilot/claude-sonnet-4.6
   anthropic-sonnet All roles → Anthropic claude-sonnet-5 (native Messages API); requires ANTHROPIC_API_KEY
+  bedrock-sonnet   All roles → Claude Sonnet on Amazon Bedrock (InvokeModel API); requires
+                   AWS_BEDROCK_INFERENCE_PROFILE_ARN and AWS credentials (e.g. \`aws sso login\`
+                   + AWS_PROFILE) resolved via the AWS SDK default provider chain
 
 Language names (--language):
   rust, typescript, python, cpp, haskell, julia, nix, shell

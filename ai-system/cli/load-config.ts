@@ -4,6 +4,10 @@ import type { ModelDispatcher } from "@ai-coding/shared";
 
 import { DEFAULT_PROFILE_NAME, findProfile } from "../config/model-profiles";
 import { AnthropicDispatcher } from "../core/orchestrator/anthropic-dispatcher";
+import {
+  BedrockDispatcher,
+  parseRegionFromBedrockArn,
+} from "../core/orchestrator/bedrock-dispatcher";
 import { CopilotDispatcher } from "../core/orchestrator/copilot-dispatcher";
 import { OllamaDispatcher } from "../core/orchestrator/ollama-dispatcher";
 import type { OrchestratorConfig } from "../core/orchestrator/orchestrate";
@@ -13,6 +17,9 @@ const COPILOT_MODEL_IDS = new Set(["claude-sonnet-4.6"]);
 
 /** Model IDs that indicate native Anthropic (Claude Messages API) models. */
 const ANTHROPIC_MODEL_IDS = new Set(["claude-sonnet-5"]);
+
+/** Model IDs that indicate Claude-on-Amazon-Bedrock models. */
+const BEDROCK_MODEL_IDS = new Set(["bedrock-sonnet"]);
 
 /**
  * Check if a model ID is a Copilot/cloud model.
@@ -35,11 +42,24 @@ function isAnthropicModel(modelId: string): boolean {
 }
 
 /**
+ * Check if a model ID is a Claude-on-Amazon-Bedrock model.
+ *
+ * @param modelId - The model ID to check.
+ * @returns true if the model is a Bedrock model, false otherwise.
+ */
+function isBedrockModel(modelId: string): boolean {
+  return BEDROCK_MODEL_IDS.has(modelId);
+}
+
+/**
  * Build the OrchestratorConfig by wiring dispatchers for every model ID in the selected profile.
  *
  * For Ollama models: runs Ollama reachability + model-availability preflight.
  * For Copilot models: requires GITHUB_COPILOT_TOKEN environment variable.
  * For Anthropic models: requires ANTHROPIC_API_KEY environment variable.
+ * For Bedrock models: requires AWS_BEDROCK_INFERENCE_PROFILE_ARN environment
+ * variable; AWS credentials are resolved via the AWS SDK's default provider
+ * chain (e.g. `aws sso login` + AWS_PROFILE), not read directly here.
  *
  * @param profileName - Profile name; defaults to DEFAULT_PROFILE_NAME.
  * @param ollamaUrl   - Override base URL for Ollama (for testing / remote).
@@ -54,9 +74,12 @@ export async function loadConfig(
   }
 
   const modelIds = [...new Set(Object.values(profile.roles))];
-  const ollamaModelIds = modelIds.filter((id) => !isCopilotModel(id) && !isAnthropicModel(id));
+  const ollamaModelIds = modelIds.filter(
+    (id) => !isCopilotModel(id) && !isAnthropicModel(id) && !isBedrockModel(id),
+  );
   const copilotModelIds = modelIds.filter((id) => isCopilotModel(id));
   const anthropicModelIds = modelIds.filter((id) => isAnthropicModel(id));
+  const bedrockModelIds = modelIds.filter((id) => isBedrockModel(id));
 
   // Check Ollama reachability and model availability only for Ollama models
   if (ollamaModelIds.length > 0) {
@@ -109,6 +132,24 @@ export async function loadConfig(
     }
   }
 
+  // Check for the Bedrock inference profile ARN if using Bedrock models.
+  // AWS credentials themselves are NOT checked here -- they are resolved
+  // lazily by the AWS SDK's default provider chain (e.g. an `aws sso login`
+  // session via AWS_PROFILE) the first time a dispatch is attempted.
+  let bedrockArn: string | undefined;
+  if (bedrockModelIds.length > 0) {
+    bedrockArn = process.env.AWS_BEDROCK_INFERENCE_PROFILE_ARN;
+    if (!bedrockArn) {
+      return {
+        ok: false,
+        error: new Error(
+          "Bedrock models require AWS_BEDROCK_INFERENCE_PROFILE_ARN environment variable to be set. " +
+            "Run `aws sso login` and export the inference profile ARN before retrying.",
+        ),
+      };
+    }
+  }
+
   // Wire dispatchers
   const ollama = new OllamaDispatcher(ollamaUrl);
   const copilotToken = process.env.GITHUB_COPILOT_TOKEN ?? "";
@@ -120,6 +161,12 @@ export async function loadConfig(
   for (const id of ollamaModelIds) dispatchers[id] = ollama;
   for (const id of copilotModelIds) dispatchers[id] = copilot;
   for (const id of anthropicModelIds) dispatchers[id] = anthropic;
+
+  if (bedrockArn !== undefined) {
+    const region = parseRegionFromBedrockArn(bedrockArn) ?? process.env.AWS_REGION ?? "us-east-1";
+    const bedrock = new BedrockDispatcher(bedrockArn, region);
+    for (const id of bedrockModelIds) dispatchers[id] = bedrock;
+  }
 
   return {
     ok: true,

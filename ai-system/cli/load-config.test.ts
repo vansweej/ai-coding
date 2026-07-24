@@ -6,12 +6,14 @@ describe("loadConfig", () => {
   const ORIG_OLLAMA_URL = process.env.OLLAMA_URL;
   const ORIG_COPILOT_TOKEN = process.env.GITHUB_COPILOT_TOKEN;
   const ORIG_ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+  const ORIG_BEDROCK_ARN = process.env.AWS_BEDROCK_INFERENCE_PROFILE_ARN;
 
   beforeEach(() => {
     // Clear Copilot token and Anthropic API key before each test
     const env = process.env as Record<string, string | undefined>;
     env.GITHUB_COPILOT_TOKEN = undefined;
     env.ANTHROPIC_API_KEY = undefined;
+    env.AWS_BEDROCK_INFERENCE_PROFILE_ARN = undefined;
   });
 
   afterEach(() => {
@@ -19,6 +21,7 @@ describe("loadConfig", () => {
     env.OLLAMA_URL = ORIG_OLLAMA_URL;
     env.GITHUB_COPILOT_TOKEN = ORIG_COPILOT_TOKEN;
     env.ANTHROPIC_API_KEY = ORIG_ANTHROPIC_API_KEY;
+    env.AWS_BEDROCK_INFERENCE_PROFILE_ARN = ORIG_BEDROCK_ARN;
   });
 
   it("returns a config with local profile and gemma4:26b dispatcher", async () => {
@@ -101,6 +104,24 @@ describe("loadConfig", () => {
     if (result.ok) {
       expect(result.value.profile?.name).toBe("anthropic-sonnet");
       expect(result.value.dispatchers["claude-sonnet-5"]).toBeDefined();
+    }
+  });
+
+  it("returns error for bedrock-sonnet profile when AWS_BEDROCK_INFERENCE_PROFILE_ARN is not set", async () => {
+    const result = await loadConfig("bedrock-sonnet");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("AWS_BEDROCK_INFERENCE_PROFILE_ARN");
+  });
+
+  it("returns a config with bedrock-sonnet profile when AWS_BEDROCK_INFERENCE_PROFILE_ARN is set", async () => {
+    const env = process.env as Record<string, string>;
+    env.AWS_BEDROCK_INFERENCE_PROFILE_ARN =
+      "arn:aws:bedrock:eu-west-1:953734003896:application-inference-profile/mekgfwxmx7tr";
+    const result = await loadConfig("bedrock-sonnet");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.profile?.name).toBe("bedrock-sonnet");
+      expect(result.value.dispatchers["bedrock-sonnet"]).toBeDefined();
     }
   });
 });

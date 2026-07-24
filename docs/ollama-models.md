@@ -5,9 +5,11 @@
 > the `implementer`/`tester`/`debugger` roles of `hybrid`) route through local
 > Ollama; `copilot-default` and the remaining `hybrid` roles route through
 > GitHub Copilot (`claude-sonnet-4.6`); `anthropic-sonnet` routes through the
-> native Anthropic Messages API (`claude-sonnet-5`). The `OllamaDispatcher` is
-> actively wired by `loadConfig` for any profile whose roles resolve to an
-> Ollama model ID (e.g. `gemma4:26b`).
+> native Anthropic Messages API (`claude-sonnet-5`); `bedrock-sonnet` routes
+> through Amazon Bedrock's InvokeModel API (Claude Sonnet via an application
+> inference profile ARN). The `OllamaDispatcher` is actively wired by
+> `loadConfig` for any profile whose roles resolve to an Ollama model ID (e.g.
+> `gemma4:26b`).
 
 ---
 

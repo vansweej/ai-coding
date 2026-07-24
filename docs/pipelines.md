@@ -314,6 +314,30 @@ const config: OrchestratorConfig = {
 };
 ```
 
+To route through Claude Sonnet hosted on Amazon Bedrock instead, use the
+`bedrock-sonnet` profile and `BedrockDispatcher`. The dispatcher takes the
+Bedrock application inference profile ARN as a constructor argument (read
+from `AWS_BEDROCK_INFERENCE_PROFILE_ARN`, never hardcoded, since it embeds an
+AWS account ID) and authenticates via the AWS SDK's default credential
+provider chain rather than an API key:
+
+```typescript
+import { BedrockDispatcher } from
+  "ai-system/core/orchestrator/bedrock-dispatcher";
+import { BEDROCK_SONNET_PROFILE } from
+  "ai-system/config/model-profiles";
+import type { OrchestratorConfig } from
+  "ai-system/core/orchestrator/orchestrate";
+
+const arn = process.env.AWS_BEDROCK_INFERENCE_PROFILE_ARN ?? "";
+const config: OrchestratorConfig = {
+  profile: BEDROCK_SONNET_PROFILE,
+  dispatchers: {
+    "bedrock-sonnet": new BedrockDispatcher(arn, "eu-west-1"),
+  },
+};
+```
+
 ### 2. Choose and create a pipeline
 
 **Note:** The `createDevCyclePipeline` API is deprecated. Use `runFeature()` with the

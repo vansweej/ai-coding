@@ -4,11 +4,13 @@
 
 TypeScript monorepo for an AI coding OS that routes requests to LLM models via
 named **model profiles** and runs multi-step agent pipelines. Uses **Bun** as
-runtime and package manager. LLM calls route through one of three providers
+runtime and package manager. LLM calls route through one of four providers
 depending on the active profile: **GitHub Copilot** (`claude-sonnet-4.6`, via
-`copilot-default`), local **Ollama** (`gemma4:26b`, via `local`), or native
-**Anthropic** (`claude-sonnet-5`, via `anthropic-sonnet`). The `hybrid` profile
-mixes Copilot and Ollama per role.
+`copilot-default`), local **Ollama** (`gemma4:26b`, via `local`), native
+**Anthropic** (`claude-sonnet-5`, via `anthropic-sonnet`), or **Claude on
+Amazon Bedrock** (via `bedrock-sonnet`, invoked through an application
+inference profile ARN using the AWS SDK credential chain). The `hybrid`
+profile mixes Copilot and Ollama per role.
 
 ### Directory Structure
 
@@ -25,7 +27,7 @@ ai-coding/
                              CodebaseBackend, indexCodebase, CodebaseStore, ParserPool, chunkFile
   ai-system/
     config/
-      model-profiles.ts    - ModelRole, ModelProfile, copilot-default, hybrid, and anthropic-sonnet profiles
+      model-profiles.ts    - ModelRole, ModelProfile, copilot-default, hybrid, anthropic-sonnet, and bedrock-sonnet profiles
       pipeline-registry.ts - Single source of truth for pipeline metadata
     core/
       model-router/        - action → ModelRole; role + profile → model ID

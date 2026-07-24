@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   ANTHROPIC_SONNET_PROFILE,
+  BEDROCK_SONNET_PROFILE,
   COPILOT_DEFAULT_PROFILE,
   DEFAULT_PROFILE_NAME,
   HYBRID_PROFILE,
@@ -138,6 +139,36 @@ describe("ANTHROPIC_SONNET_PROFILE", () => {
   });
 });
 
+describe("BEDROCK_SONNET_PROFILE", () => {
+  it("has name bedrock-sonnet", () => {
+    expect(BEDROCK_SONNET_PROFILE.name).toBe("bedrock-sonnet");
+  });
+
+  it("maps all roles to the bedrock-sonnet logical token", () => {
+    const roles = Object.values(BEDROCK_SONNET_PROFILE.roles);
+    for (const model of roles) {
+      expect(model).toBe("bedrock-sonnet");
+    }
+  });
+
+  it("has all nine roles defined", () => {
+    const expectedRoles = [
+      "planner",
+      "implementer",
+      "debugger",
+      "fixer",
+      "reviewer",
+      "tester",
+      "scaffolder",
+      "explorer",
+      "default",
+    ];
+    for (const role of expectedRoles) {
+      expect(BEDROCK_SONNET_PROFILE.roles).toHaveProperty(role);
+    }
+  });
+});
+
 describe("MODEL_PROFILES", () => {
   it("contains the local profile", () => {
     expect(MODEL_PROFILES.local).toBe(LOCAL_PROFILE);
@@ -153,6 +184,10 @@ describe("MODEL_PROFILES", () => {
 
   it("contains anthropic-sonnet", () => {
     expect(MODEL_PROFILES["anthropic-sonnet"]).toBe(ANTHROPIC_SONNET_PROFILE);
+  });
+
+  it("contains bedrock-sonnet", () => {
+    expect(MODEL_PROFILES["bedrock-sonnet"]).toBe(BEDROCK_SONNET_PROFILE);
   });
 });
 
