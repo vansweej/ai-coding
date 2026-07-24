@@ -174,6 +174,7 @@ async function runImplementAttempt(
   const llmOptions: LLMOptions = {
     system: options.languageConfig.implementSystem,
     temperature: action === "fix" ? 0.2 : 0.4,
+    maxTokens: 8192,
   };
   const result = await orchestrate(makeEvent(ctx, action, prompt), options.config, llmOptions);
   if (!result.ok) return result;

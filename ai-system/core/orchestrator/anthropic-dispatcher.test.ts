@@ -86,7 +86,7 @@ describe("AnthropicDispatcher", () => {
     }
   });
 
-  it("defaults max_tokens to 4096 when not provided", async () => {
+  it("defaults max_tokens to 8192 when not provided", async () => {
     let capturedBody: Record<string, unknown> | null = null;
 
     global.fetch = (async (_url: unknown, options: unknown) => {
@@ -112,7 +112,7 @@ describe("AnthropicDispatcher", () => {
 
     expect(capturedBody).toBeDefined();
     if (capturedBody) {
-      expect((capturedBody as Record<string, unknown>).max_tokens).toBe(4096);
+      expect((capturedBody as Record<string, unknown>).max_tokens).toBe(8192);
     }
   });
 

@@ -25,7 +25,7 @@ function buildImplementLlmOptions(
   const system = skillContent
     ? `${skillContent}\n\n---\n\n${languageConfig.implementSystem}`
     : languageConfig.implementSystem;
-  return { system, temperature: 0.4 };
+  return { system, temperature: 0.4, maxTokens: 8192 };
 }
 
 /**
