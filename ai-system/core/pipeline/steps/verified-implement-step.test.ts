@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +11,7 @@ import { LOCAL_PROFILE } from "../../../config/model-profiles";
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
 import {
+  buildBaselineContext,
   buildVerificationFailurePrompt,
   createVerifiedImplementStep,
 } from "./verified-implement-step";
@@ -62,6 +63,8 @@ function makeLanguageConfig(step: PipelineStep<AIRequestEvent>): DevCycleLanguag
     name: "typescript",
     implementSystem: "system prompt",
     languageHint: "TypeScript",
+    sourceExtensions: [".ts"],
+    sourceRoots: ["src"],
     toolchainSteps: (_workspace: string): readonly PipelineStep<AIRequestEvent>[] => [step],
   };
 }
@@ -174,5 +177,93 @@ describe("buildVerificationFailurePrompt", () => {
     expect(prompt).toContain("do it");
     expect(prompt).toContain("code");
     expect(prompt).toContain("error");
+  });
+});
+
+describe("buildBaselineContext", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "baseline-context-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const tsConfig = (roots: string[]): DevCycleLanguageConfig => ({
+    name: "typescript",
+    implementSystem: "sys",
+    languageHint: "TypeScript",
+    sourceExtensions: [".ts"],
+    sourceRoots: roots,
+    toolchainSteps: () => [],
+  });
+
+  it("returns empty string when no source files exist and no git diff", () => {
+    const result = buildBaselineContext(dir, tsConfig(["src"]));
+    expect(result).toBe("");
+  });
+
+  it("includes file contents for matching extensions", () => {
+    const srcDir = join(dir, "src");
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, "index.ts"), "export const x = 1;");
+    const result = buildBaselineContext(dir, tsConfig(["src"]));
+    expect(result).toContain("export const x = 1;");
+    expect(result).toContain("src/index.ts");
+  });
+
+  it("excludes files with non-matching extensions", () => {
+    const srcDir = join(dir, "src");
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, "index.ts"), "ts content");
+    writeFileSync(join(srcDir, "README.md"), "md content");
+    const result = buildBaselineContext(dir, tsConfig(["src"]));
+    expect(result).toContain("ts content");
+    expect(result).not.toContain("md content");
+  });
+
+  it("discovers files recursively into subdirectories", () => {
+    const srcDir = join(dir, "src");
+    const subDir = join(srcDir, "utils");
+    mkdirSync(srcDir);
+    mkdirSync(subDir);
+    writeFileSync(join(subDir, "helper.ts"), "export const h = 2;");
+    const result = buildBaselineContext(dir, tsConfig(["src"]));
+    expect(result).toContain("export const h = 2;");
+  });
+
+  it("searches all declared sourceRoots", () => {
+    const srcDir = join(dir, "src");
+    const libDir = join(dir, "lib");
+    mkdirSync(srcDir);
+    mkdirSync(libDir);
+    writeFileSync(join(srcDir, "a.ts"), "const a = 1;");
+    writeFileSync(join(libDir, "b.ts"), "const b = 2;");
+    const result = buildBaselineContext(dir, tsConfig(["src", "lib"]));
+    expect(result).toContain("const a = 1;");
+    expect(result).toContain("const b = 2;");
+  });
+
+  it("skips node_modules junk directory", () => {
+    const nmDir = join(dir, "node_modules", "pkg");
+    mkdirSync(nmDir, { recursive: true });
+    writeFileSync(join(nmDir, "index.ts"), "should be excluded");
+    const result = buildBaselineContext(dir, tsConfig(["."]));
+    expect(result).not.toContain("should be excluded");
+  });
+
+  it("defaults to workspace root when sourceRoots is undefined", () => {
+    writeFileSync(join(dir, "main.ts"), "export const main = true;");
+    const config: DevCycleLanguageConfig = {
+      name: "typescript",
+      implementSystem: "sys",
+      languageHint: "TypeScript",
+      sourceExtensions: [".ts"],
+      toolchainSteps: () => [],
+    };
+    const result = buildBaselineContext(dir, config);
+    expect(result).toContain("export const main = true;");
   });
 });

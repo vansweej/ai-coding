@@ -39,6 +39,8 @@ function languageConfig(shouldFail: boolean, calls?: string[]): DevCycleLanguage
     name: "typescript",
     implementSystem: "system",
     languageHint: "TypeScript",
+    sourceExtensions: [".ts"],
+    sourceRoots: ["src"],
     toolchainSteps: (_workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
       verifyStep(shouldFail, calls),
     ],

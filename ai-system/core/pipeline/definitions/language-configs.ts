@@ -1,7 +1,7 @@
 import { createCoverageGateStep, createNixShellStep } from "@ai-coding/pipeline";
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
-import type { CoverageDirective } from "../plan-parser";
+import type { CoverageDirective, LanguageName } from "../plan-parser";
 import { resolveCoverageThreshold } from "../steps/coverage-exemption";
 
 const DEFAULT_COVERAGE_THRESHOLD = 90;
@@ -10,11 +10,18 @@ const DEFAULT_CPP_BUILD_DIR = "build";
 /** Language-specific configuration for the unified dev-cycle pipeline. */
 export interface DevCycleLanguageConfig {
   /** Stable language identifier used by CLI arguments and tests. */
-  readonly name: "typescript" | "rust" | "cpp";
+  readonly name: LanguageName;
   /** System prompt for implementation and fix LLM calls. */
   readonly implementSystem: string;
   /** Short language hint included in user prompts. */
   readonly languageHint: string;
+  /** File extensions to collect when building source context (e.g. [".ts", ".tsx"]). */
+  readonly sourceExtensions: readonly string[];
+  /**
+   * Source root directories, relative to the workspace root, to search when
+   * collecting source context. When omitted, defaults to the workspace root (".").
+   */
+  readonly sourceRoots?: readonly string[];
   /** Verification steps run once after all implementation steps in a phase. */
   toolchainSteps(workspace: string): readonly PipelineStep<AIRequestEvent>[];
 }
@@ -23,6 +30,8 @@ export interface DevCycleLanguageConfig {
 export const TYPESCRIPT_CONFIG: DevCycleLanguageConfig = {
   name: "typescript",
   languageHint: "TypeScript",
+  sourceExtensions: [".ts"],
+  sourceRoots: ["src", "."],
   implementSystem:
     "You are a TypeScript coding assistant. Output ONLY implementation code in fenced code blocks. " +
     "Each block must have the format: ```<language> <relative-file-path>. " +
@@ -43,6 +52,8 @@ export const TYPESCRIPT_CONFIG: DevCycleLanguageConfig = {
 export const RUST_CONFIG: DevCycleLanguageConfig = {
   name: "rust",
   languageHint: "Rust",
+  sourceExtensions: [".rs"],
+  sourceRoots: ["src"],
   implementSystem:
     "You are a Rust coding assistant. Output ONLY implementation code in fenced code blocks. " +
     "Each block must have the format: ```<language> <relative-file-path>. " +
@@ -94,6 +105,8 @@ export function createRustPlanConfig(
   return {
     name: "rust",
     languageHint: "Rust",
+    sourceExtensions: [".rs"],
+    sourceRoots: ["src"],
     implementSystem:
       "You are a Rust coding assistant. Output ONLY aider-style SEARCH/REPLACE patches for files that need changes. " +
       "Each patch must have the format:\n" +
@@ -141,6 +154,8 @@ export const RUST_PLAN_CONFIG: DevCycleLanguageConfig = createRustPlanConfig(
 export const CPP_CONFIG: DevCycleLanguageConfig = {
   name: "cpp",
   languageHint: "C++",
+  sourceExtensions: [".cpp", ".h", ".hpp"],
+  sourceRoots: ["src", "include"],
   implementSystem:
     "You are a C++ coding assistant. Output ONLY implementation code in fenced code blocks. " +
     "Each block must have the format: ```<language> <relative-file-path>. " +
@@ -165,7 +180,7 @@ export const CPP_CONFIG: DevCycleLanguageConfig = {
 
 /** Built-in language configurations keyed by CLI language name. */
 export const DEV_CYCLE_LANGUAGE_CONFIGS: Readonly<
-  Record<DevCycleLanguageConfig["name"], DevCycleLanguageConfig>
+  Partial<Record<LanguageName, DevCycleLanguageConfig>>
 > = {
   typescript: TYPESCRIPT_CONFIG,
   rust: RUST_CONFIG,

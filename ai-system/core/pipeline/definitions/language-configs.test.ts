@@ -16,6 +16,27 @@ describe("language configs", () => {
     expect(DEV_CYCLE_LANGUAGE_CONFIGS.cpp).toBe(CPP_CONFIG);
   });
 
+  it("TYPESCRIPT_CONFIG declares correct source extensions and roots", () => {
+    expect(TYPESCRIPT_CONFIG.sourceExtensions).toEqual([".ts"]);
+    expect(TYPESCRIPT_CONFIG.sourceRoots).toEqual(["src", "."]);
+  });
+
+  it("RUST_CONFIG declares correct source extensions and roots", () => {
+    expect(RUST_CONFIG.sourceExtensions).toEqual([".rs"]);
+    expect(RUST_CONFIG.sourceRoots).toEqual(["src"]);
+  });
+
+  it("CPP_CONFIG declares correct source extensions and roots", () => {
+    expect(CPP_CONFIG.sourceExtensions).toEqual([".cpp", ".h", ".hpp"]);
+    expect(CPP_CONFIG.sourceRoots).toEqual(["src", "include"]);
+  });
+
+  it("createRustPlanConfig declares correct source extensions and roots", () => {
+    const config = createRustPlanConfig({ mode: "default" }, "");
+    expect(config.sourceExtensions).toEqual([".rs"]);
+    expect(config.sourceRoots).toEqual(["src"]);
+  });
+
   it("requires doc comments in every implement system prompt", () => {
     expect(TYPESCRIPT_CONFIG.implementSystem).toContain("doc comments");
     expect(RUST_CONFIG.implementSystem).toContain("doc comments");

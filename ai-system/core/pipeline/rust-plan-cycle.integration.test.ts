@@ -28,6 +28,8 @@ function testLanguageConfig(): DevCycleLanguageConfig {
     name: "rust",
     languageHint: "Rust",
     implementSystem: "You are a Rust coding assistant.",
+    sourceExtensions: [".rs"],
+    sourceRoots: ["src"],
     toolchainSteps: (_workspace: string) => [],
   };
 }

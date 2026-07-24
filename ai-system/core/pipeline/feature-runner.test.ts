@@ -62,6 +62,8 @@ function languageConfig(): DevCycleLanguageConfig {
     name: "typescript",
     implementSystem: "system",
     languageHint: "TypeScript",
+    sourceExtensions: [".ts"],
+    sourceRoots: ["src"],
     toolchainSteps: (_workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
       {
         name: "verify",
