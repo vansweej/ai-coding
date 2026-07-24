@@ -103,12 +103,39 @@ export const ANTHROPIC_SONNET_PROFILE: ModelProfile = {
   },
 };
 
+/**
+ * All roles route to a Claude Sonnet model hosted on Amazon Bedrock via the
+ * InvokeModel API.
+ *
+ * The model key here is a stable logical token, not a real model ID or ARN.
+ * The actual Bedrock (application) inference profile ARN to invoke is
+ * resolved from the AWS_BEDROCK_INFERENCE_PROFILE_ARN environment variable in
+ * load-config.ts -- never hardcoded here. This keeps the profile portable
+ * across AWS accounts/employers: swapping the target model is a one-line env
+ * change, not a source edit.
+ */
+export const BEDROCK_SONNET_PROFILE: ModelProfile = {
+  name: "bedrock-sonnet",
+  roles: {
+    planner: "bedrock-sonnet",
+    implementer: "bedrock-sonnet",
+    debugger: "bedrock-sonnet",
+    fixer: "bedrock-sonnet",
+    reviewer: "bedrock-sonnet",
+    tester: "bedrock-sonnet",
+    scaffolder: "bedrock-sonnet",
+    explorer: "bedrock-sonnet",
+    default: "bedrock-sonnet",
+  },
+};
+
 /** Registry of all built-in profiles, keyed by profile name. */
 export const MODEL_PROFILES: Readonly<Record<string, ModelProfile>> = {
   [LOCAL_PROFILE.name]: LOCAL_PROFILE,
   [COPILOT_DEFAULT_PROFILE.name]: COPILOT_DEFAULT_PROFILE,
   [HYBRID_PROFILE.name]: HYBRID_PROFILE,
   [ANTHROPIC_SONNET_PROFILE.name]: ANTHROPIC_SONNET_PROFILE,
+  [BEDROCK_SONNET_PROFILE.name]: BEDROCK_SONNET_PROFILE,
 };
 
 /** The profile name used when no explicit profile is requested. */

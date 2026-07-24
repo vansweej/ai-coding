@@ -23,7 +23,7 @@ agent) and extends it with:
 ai-coding/
   ai-system/
     config/
-      model-profiles.ts    ModelRole, ModelProfile, local, copilot-default, hybrid, and anthropic-sonnet profiles
+      model-profiles.ts    ModelRole, ModelProfile, local, copilot-default, hybrid, anthropic-sonnet, and bedrock-sonnet profiles
       pipeline-registry.ts Single source of truth for pipeline metadata
     core/
       mode-router/         source → AIMode ("editor" | "agentic")
@@ -71,6 +71,26 @@ All roles route to `gemma4:26b` via local Ollama:
 All roles route to `claude-sonnet-5` via the native Anthropic Messages API.
 Requires the `ANTHROPIC_API_KEY` environment variable. Provider selection is
 captured entirely in the profile — there is no separate model-override flag.
+
+### bedrock-sonnet
+
+All roles route to a Claude Sonnet model hosted on Amazon Bedrock via the
+InvokeModel API. Requires `AWS_BEDROCK_INFERENCE_PROFILE_ARN` (a Bedrock
+application inference profile ARN — never commit this, it embeds an AWS
+account ID) plus AWS credentials resolved through the AWS SDK's default
+provider chain, typically an `aws sso login` session selected via
+`AWS_PROFILE`. The target region is parsed from the ARN, so `AWS_REGION`
+need not be set separately.
+
+```bash
+aws sso login --profile my-company-profile
+export AWS_PROFILE=my-company-profile
+export AWS_BEDROCK_INFERENCE_PROFILE_ARN=arn:aws:bedrock:eu-west-1:123456789012:application-inference-profile/abc123
+bun run pipeline plan-cycle ./my-project --profile bedrock-sonnet --input "Add error handling"
+```
+
+SSO session credentials expire after a bounded time (often 1–8 hours); start
+long unattended runs right after a fresh `aws sso login`.
 
 ### Profile selection
 

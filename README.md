@@ -9,8 +9,11 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
   debugger, fixer…) to model IDs. Default: `copilot-default` (all roles → GitHub Copilot's
   `claude-sonnet-4.6`). Other built-in profiles: `local` (all roles → `gemma4:26b` via local
   Ollama; no cloud dependencies or API tokens required), `hybrid` (mixes Copilot and Ollama per
-  role), and `anthropic-sonnet` (all roles → `claude-sonnet-5` via the native Anthropic Messages
-  API; requires `ANTHROPIC_API_KEY`).
+  role), `anthropic-sonnet` (all roles → `claude-sonnet-5` via the native Anthropic Messages
+  API; requires `ANTHROPIC_API_KEY`), and `bedrock-sonnet` (all roles → Claude Sonnet on Amazon
+  Bedrock via the InvokeModel API; requires `AWS_BEDROCK_INFERENCE_PROFILE_ARN` and AWS
+  credentials resolved through the AWS SDK's default provider chain, e.g. `aws sso login` +
+  `AWS_PROFILE`).
 - **Pipelines** -- plan-file driven workflows that implement steps, write files, verify with the
   language toolchain, retry locally, escalate fixes when needed, and commit each successful phase.
   `plan-cycle` supports 8 languages (rust, typescript, python, cpp, haskell, julia, nix, shell),
@@ -131,6 +134,12 @@ bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md
 
 # Run on native Anthropic Claude Sonnet (native Messages API; recommended for larger multi-file phases)
 ANTHROPIC_API_KEY=sk-ant-... bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --profile anthropic-sonnet
+
+# Run on Claude Sonnet via Amazon Bedrock (InvokeModel API; uses AWS SSO / credential chain)
+aws sso login --profile my-company-profile
+export AWS_PROFILE=my-company-profile
+export AWS_BEDROCK_INFERENCE_PROFILE_ARN=arn:aws:bedrock:eu-west-1:123456789012:application-inference-profile/abc123
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --profile bedrock-sonnet
 ```
 
 All shell steps are nix-aware: if a `flake.nix` is detected in the workspace, commands are

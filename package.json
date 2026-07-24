@@ -27,5 +27,8 @@
   "optionalDependencies": {
     "@lancedb/lancedb-darwin-arm64": "0.27.2",
     "@lancedb/lancedb-linux-x64-gnu": "0.27.2"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1095.0"
   }
 }

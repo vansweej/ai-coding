@@ -252,7 +252,7 @@ ai-coding/
         phase-runner.ts              Per-phase language resolution, baseline check, execution, auto-commit
         feature-runner.ts            Parses plan and runs phases sequentially
     config/
-      model-profiles.ts              ModelRole, ModelProfile, copilot-default, hybrid, and anthropic-sonnet profiles
+      model-profiles.ts              ModelRole, ModelProfile, copilot-default, hybrid, anthropic-sonnet, and bedrock-sonnet profiles
       pipeline-registry.ts           Single source of truth for pipeline metadata
   opencode/
     mappings/                        OpenCode provider/model configs
@@ -407,6 +407,46 @@ The `plan-cycle` pipeline (and its `rust-plan-cycle` alias) parses its plan from
 than generating it via an LLM, so the `planner` role never fires on that path —
 only `implementer` (action `edit`) and `fixer` (action `fix`) roles actually
 dispatch to Sonnet during a plan-cycle run.
+
+### bedrock-sonnet profile
+
+All roles route to a Claude Sonnet model hosted on **Amazon Bedrock** via the
+`InvokeModel` API. Unlike the other three profiles, the model key
+(`bedrock-sonnet`) is a stable *logical* token, not a real model ID: the
+actual invoke target is a Bedrock **application inference profile ARN**,
+resolved from the `AWS_BEDROCK_INFERENCE_PROFILE_ARN` environment variable at
+`load-config.ts` time and injected into the `BedrockDispatcher` constructor.
+This keeps the profile portable across AWS accounts — the ARN embeds an
+account ID and must never be committed to source.
+
+Authentication uses the AWS SDK's default credential provider chain (e.g. an
+`aws sso login` session selected via `AWS_PROFILE`), not an API key. The
+target region is parsed from the ARN itself, so `AWS_REGION` is optional.
+The Bedrock client is configured with the SDK's standard retry strategy
+(`maxAttempts`), which automatically retries `ThrottlingException` and
+`ModelNotReadyException` with exponential backoff — important because a
+shared, quota-limited inference profile can throttle mid-run, and
+`plan-cycle`'s retry loop only retries *verification* failures, not
+transport errors.
+
+| Role          | Model             | Backend                                 |
+|---------------|-------------------|-------------------------------------------|
+| `planner`     | `bedrock-sonnet`  | Amazon Bedrock (InvokeModel API)        |
+| `implementer` | `bedrock-sonnet`  | Amazon Bedrock (InvokeModel API)        |
+| `debugger`    | `bedrock-sonnet`  | Amazon Bedrock (InvokeModel API)        |
+| `fixer`       | `bedrock-sonnet`  | Amazon Bedrock (InvokeModel API)        |
+| `reviewer`    | `bedrock-sonnet`  | Amazon Bedrock (InvokeModel API)        |
+| `tester`      | `bedrock-sonnet`  | Amazon Bedrock (InvokeModel API)        |
+| `scaffolder`  | `bedrock-sonnet`  | Amazon Bedrock (InvokeModel API)        |
+| `explorer`    | `bedrock-sonnet`  | Amazon Bedrock (InvokeModel API)        |
+| `default`     | `bedrock-sonnet`  | Amazon Bedrock (InvokeModel API)        |
+
+Requires `AWS_BEDROCK_INFERENCE_PROFILE_ARN` plus valid AWS credentials
+(`aws sso login` + `AWS_PROFILE`, or any other AWS SDK credential source).
+SSO session credentials are time-bounded (commonly 1–8 hours); a long
+unattended `plan-cycle` run should start right after a fresh login, since
+expiry mid-run surfaces as a dispatch error (not retried by the backoff
+above — it is not transient).
 
 ### Profile resolution
 
