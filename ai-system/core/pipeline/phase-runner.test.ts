@@ -154,13 +154,12 @@ describe("runPhase", () => {
             value:
               "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
           };
-        } else {
-          return {
-            ok: true,
-            value:
-              "src/index.ts\n<<<<<<< SEARCH\nexport const value = 1;\n=======\nexport const value = 2;\n>>>>>>> REPLACE",
-          };
         }
+        return {
+          ok: true,
+          value:
+            "src/index.ts\n<<<<<<< SEARCH\nexport const value = 1;\n=======\nexport const value = 2;\n>>>>>>> REPLACE",
+        };
       },
     };
     const result = await runPhase(MULTI_STEP_PHASE, {

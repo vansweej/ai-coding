@@ -263,14 +263,14 @@ export class CerebrumMemory {
       const request: MCPRequest = {
         jsonrpc: "2.0",
         id: ++this.requestId,
-        method: `tools/call`,
+        method: "tools/call",
         params: {
           name: toolName,
           arguments: params,
         },
       };
 
-      console.debug(`[CerebrumMemory] Sending MCP request:`, request);
+      console.debug("[CerebrumMemory] Sending MCP request:", request);
 
       // For now, fall back to mock mode
       return this.callMCPToolMock(toolName, params);

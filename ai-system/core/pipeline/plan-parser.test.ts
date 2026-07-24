@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { parsePlanFile } from "./plan-parser";
+import { KNOWN_LANGUAGES, parsePlanFile } from "./plan-parser";
 
 const VALID_MULTI_PHASE = `# Feature: Add error handling
 
@@ -180,6 +180,113 @@ Line three.
       expect(body).toContain("Line one.");
       expect(body).toContain("Line two.");
       expect(body).toContain("Line three.");
+    }
+  });
+
+  it("phase without Language directive has undefined language", () => {
+    const result = parsePlanFile(MINIMAL_PLAN);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.phases[0]?.language).toBeUndefined();
+  });
+
+  it("parses Language: rust directive", () => {
+    const content = `# Feature: Lang
+
+## Phase 1: Rust phase
+
+Commit message: feat: rust
+Language: rust
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.phases[0]?.language).toBe("rust");
+  });
+
+  it("parses Language: typescript directive", () => {
+    const content = `# Feature: Lang
+
+## Phase 1: TS phase
+
+Commit message: feat: ts
+Language: typescript
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.phases[0]?.language).toBe("typescript");
+  });
+
+  it("parses all eight known language values without error", () => {
+    for (const lang of KNOWN_LANGUAGES) {
+      const content = `# Feature: Lang
+
+## Phase 1: Phase
+
+Commit message: feat: ${lang}
+Language: ${lang}
+
+### Step 1: Do
+
+body
+`;
+      const result = parsePlanFile(content);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value.phases[0]?.language).toBe(lang);
+    }
+  });
+
+  it("returns error for an unknown language value", () => {
+    const content = `# Feature: Lang
+
+## Phase 1: Bad lang
+
+Commit message: feat: bad
+Language: cobol
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("unknown language");
+      expect(result.error.message).toContain("cobol");
+    }
+  });
+
+  it("language directive resets to undefined between phases", () => {
+    const content = `# Feature: Reset
+
+## Phase 1: With language
+
+Commit message: feat: one
+Language: python
+
+### Step 1: Do
+
+body
+
+## Phase 2: Without language
+
+Commit message: feat: two
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.phases[0]?.language).toBe("python");
+      expect(result.value.phases[1]?.language).toBeUndefined();
     }
   });
 });

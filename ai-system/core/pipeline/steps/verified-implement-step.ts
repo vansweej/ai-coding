@@ -147,7 +147,7 @@ export function buildBaselineContext(workspace: string, languageHint: string): s
         fileParts.push(`// ${relPath}\n${content}`);
       }
       if (fileParts.length > 0) {
-        parts.push("Existing project files:\n\n" + fileParts.join("\n\n---\n\n"));
+        parts.push(`Existing project files:\n\n${fileParts.join("\n\n---\n\n")}`);
       }
     }
   }
@@ -156,7 +156,7 @@ export function buildBaselineContext(workspace: string, languageHint: string): s
   try {
     const gitDiff = execSync("git diff", { cwd: workspace, encoding: "utf8" });
     if (gitDiff.trim()) {
-      parts.push("Current git diff:\n\n" + gitDiff);
+      parts.push(`Current git diff:\n\n${gitDiff}`);
     }
   } catch {
     // git diff failed; continue without it
