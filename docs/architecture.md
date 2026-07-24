@@ -16,7 +16,8 @@ the actual model backends.
 graph TD
     subgraph Definitions["Pipeline Definitions (ai-system/core/pipeline/definitions/)"]
         Dev["createDevCyclePipeline\nparameterized by language config"]
-        Lang["TYPESCRIPT_CONFIG · RUST_CONFIG · CPP_CONFIG"]
+        Lang["TYPESCRIPT_CONFIG · RUST_CONFIG · CPP_CONFIG\n(dev-cycle, interactive)"]
+        PlanFactories["PLAN_CONFIG_FACTORIES\n8 languages: rust · typescript · python · cpp\nhaskell · julia · nix · shell\n(plan-cycle, unattended)"]
         Doc["doc-cycle sketch"]
     end
 
@@ -52,6 +53,7 @@ graph TD
     Dev --> Lang
     Dev --> Runner
     Doc --> Runner
+    PlanFactories --> Runner
 
     Runner --> OrcStep
     Runner --> SkillStep
@@ -89,7 +91,7 @@ graph LR
     Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · VectorBackend\ncreateBestBackend · LanceStore\nchunkSkill"]
     Codebase["@ai-coding/codebase\nCodebaseBackend · indexCodebase\nCodebaseStore · ParserPool\nchunkFile · discoverFiles"]
     Pipeline["@ai-coding/pipeline\nrunPipeline · PipelineStep\nShellStep · NixShellStep\nCoverageGateStep"]
-    AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep · VerifiedImplementStep\nrust-plan-cycle · scaffold-rust · scaffold-cpp"]
+    AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep · VerifiedImplementStep\nplan-cycle (8 languages) · rust-plan-cycle alias · scaffold-rust · scaffold-cpp"]
 
     AISystem --> Pipeline
     AISystem --> Shared
@@ -242,10 +244,12 @@ ai-coding/
           verified-implement-step.ts implement → write files → verify → retry/escalate
         definitions/
           dev-cycle.ts               Unified [skills →] implement → write-files factory (Tier B: optional deletion)
-          language-configs.ts        TypeScript, Rust, and C++ prompts/toolchains
+          language-configs.ts        DevCycleLanguageConfig + PLAN_CONFIG_FACTORIES (8-language registry:
+                                       rust, typescript, python, cpp, haskell, julia, nix, shell)
           doc-cycle.ts               Deferred documentation pipeline sketch
-        plan-parser.ts               Structured markdown plan parser
-        phase-runner.ts              Per-phase execution and auto-commit
+        plan-parser.ts               Structured markdown plan parser (Feature/Phase/Step + per-phase
+                                       Coverage:/Language: directives)
+        phase-runner.ts              Per-phase language resolution, baseline check, execution, auto-commit
         feature-runner.ts            Parses plan and runs phases sequentially
     config/
       model-profiles.ts              ModelRole, ModelProfile, copilot-default, hybrid, and anthropic-sonnet profiles
@@ -254,6 +258,59 @@ ai-coding/
     mappings/                        OpenCode provider/model configs
   docs/                              Documentation (you are here)
 ```
+
+---
+
+## Plan-Cycle: Plan File Format and Language Registry
+
+`plan-cycle` (with `rust-plan-cycle` as a legacy alias forcing Rust) executes structured plan
+files unattended, across 8 languages. Each phase may declare its own language and coverage
+directive:
+
+```markdown
+# Feature: <name>
+
+## Phase N: <title>
+
+Commit message: <conventional commit>
+Coverage: skip | N% | (omitted for default 90%, Rust only)
+Language: rust | typescript | python | cpp | haskell | julia | nix | shell | (omitted to inherit default)
+
+### Step N: <title>
+
+<instruction>
+```
+
+Language resolution per phase: `phase.language ?? defaultLanguage` (from `--language`, or
+`"rust"` when invoked as the `rust-plan-cycle` alias, or `"typescript"` as the final fallback).
+A phase whose resolved language has no registered factory fails immediately with a clear error
+rather than silently using the wrong toolchain.
+
+### `PLAN_CONFIG_FACTORIES` registry
+
+`ai-system/core/pipeline/definitions/language-configs.ts` exports a `PlanConfigFactory` type —
+`(coverage, diff) => DevCycleLanguageConfig` — and a registry mapping all 8 `LanguageName` values
+to their factory:
+
+| Language | Toolchain | Coverage gate | `baselineCheck` |
+|----------|-----------|:---:|:---:|
+| `rust` | fmt → check → clippy → test → tarpaulin → coverage | ✅ fatal | — |
+| `typescript` | typecheck → lint → test | — | — |
+| `python` | format → lint → typecheck (warn-only) → test | — | — |
+| `cpp` | configure → build → test | — | — |
+| `haskell` | build (= typecheck) → lint → test | — | — |
+| `julia` | test (weak — no separate format/lint) | — | — |
+| `nix` | format → flake check | — | ✅ |
+| `shell` | format → guarded shellcheck | — | ✅ |
+
+`baselineCheck` languages (Nix, Shell) run their toolchain once on the untouched tree before any
+implementation attempt, since their whole-repo validators (`nix flake check`, repo-wide
+`shellcheck`) can't be scoped to a diff. A pre-existing failure there is a `BaselineCheckError`
+(environment error, exit code 3), not a retryable phase failure.
+
+See [`docs/plan-cycle.md`](plan-cycle.md) and
+[`docs/plan-cycle-languages.md`](plan-cycle-languages.md) for the full user-facing guide and
+per-language prerequisites.
 
 ---
 
@@ -346,8 +403,8 @@ scheme). Requires the `ANTHROPIC_API_KEY` environment variable.
 | `explorer`    | `claude-sonnet-5` | Anthropic (native Messages API)  |
 | `default`     | `claude-sonnet-5` | Anthropic (native Messages API)  |
 
-The `rust-plan-cycle` pipeline parses its plan from a file rather than
-generating it via an LLM, so the `planner` role never fires on that path —
+The `plan-cycle` pipeline (and its `rust-plan-cycle` alias) parses its plan from a file rather
+than generating it via an LLM, so the `planner` role never fires on that path —
 only `implementer` (action `edit`) and `fixer` (action `fix`) roles actually
 dispatch to Sonnet during a plan-cycle run.
 

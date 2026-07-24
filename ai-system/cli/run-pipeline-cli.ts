@@ -4,13 +4,25 @@ import { runPipeline } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 import { $ } from "bun";
 
-import { RUST_PLAN_CONFIG } from "../core/pipeline/definitions/language-configs";
+import { PLAN_CONFIG_FACTORIES } from "../core/pipeline/definitions/language-configs";
 import { runFeature } from "../core/pipeline/feature-runner";
+import { BaselineCheckError } from "../core/pipeline/phase-runner";
+import { KNOWN_LANGUAGES, type LanguageName } from "../core/pipeline/plan-parser";
 import { loadConfig } from "./load-config";
 import { parseArgs } from "./parse-args";
 import { selectPipeline } from "./select-pipeline";
 
 const PREVIEW_MAX_CHARS = 200;
+
+/** Returns true when the pipeline name is the legacy Rust-specific alias. */
+function isRustPlanCycleAlias(name: string): boolean {
+  return name === "rust-plan-cycle";
+}
+
+/** Returns true for any plan-cycle variant (primary name or alias). */
+function isPlanCycle(name: string): boolean {
+  return name === "plan-cycle" || name === "rust-plan-cycle";
+}
 
 function previewOutput(output: string): string {
   const trimmed = output.trim();
@@ -89,7 +101,8 @@ async function main(): Promise<void> {
     console.error(`Error: ${argsResult.error.message}`);
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
-  const { pipelineName, workspace, input, planPath, maxRetries, profileName } = argsResult.value;
+  const { pipelineName, workspace, input, planPath, maxRetries, profileName, language } =
+    argsResult.value;
 
   const configResult = await loadConfig(profileName);
   if (!configResult.ok) {
@@ -97,10 +110,25 @@ async function main(): Promise<void> {
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
 
-  const languageConfig = RUST_PLAN_CONFIG;
+  // Resolve default language: rust-plan-cycle alias always forces rust;
+  // otherwise honour --language, falling back to typescript.
+  let defaultLanguage: LanguageName;
+  if (isRustPlanCycleAlias(pipelineName)) {
+    defaultLanguage = "rust";
+  } else if (language !== undefined) {
+    if (!(KNOWN_LANGUAGES as readonly string[]).includes(language)) {
+      console.error(
+        `Error: unknown --language value "${language}". Must be one of: ${KNOWN_LANGUAGES.join(", ")}`,
+      );
+      process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+    }
+    defaultLanguage = language as LanguageName;
+  } else {
+    defaultLanguage = "typescript";
+  }
 
   // Enforce isolated run branch for plan-cycle pipelines
-  if (pipelineName === "rust-plan-cycle") {
+  if (isPlanCycle(pipelineName)) {
     const currentBranch = await getCurrentBranch(workspace);
     if (currentBranch === undefined) {
       console.error("Error: unable to determine current git branch");
@@ -108,37 +136,42 @@ async function main(): Promise<void> {
     }
     if (isProtectedBranch(currentBranch)) {
       console.error(
-        `Error: rust-plan-cycle must run on a dedicated feature branch, not "${currentBranch}"`,
+        `Error: plan-cycle must run on a dedicated feature branch, not "${currentBranch}"`,
       );
       process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
     }
-    // Guard: rust-plan-cycle requires either --plan or --input
+    // Guard: plan-cycle requires either --plan or --input
     if (planPath === undefined && input === "") {
-      console.error('Error: rust-plan-cycle requires either --plan <file> or --input "..."');
+      console.error('Error: plan-cycle requires either --plan <file> or --input "..."');
       process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
     }
   }
 
-  if (pipelineName === "rust-plan-cycle" && (planPath !== undefined || input !== "")) {
+  if (isPlanCycle(pipelineName) && (planPath !== undefined || input !== "")) {
     const planContent =
       planPath !== undefined ? readFileSync(planPath, "utf8") : buildSingleStepPlan(input);
     const outcome = await runFeature(planContent, {
       config: configResult.value,
       workspace,
-      languageConfig,
+      defaultLanguage,
+      factories: PLAN_CONFIG_FACTORIES,
       retryConfig: { maxLocalRetries: maxRetries },
     });
 
     if (!outcome.ok) {
       console.error(`Feature failed: ${outcome.error.message}`);
-      // Determine if this is a resumable failure or environment error
-      // For now, treat all feature failures as resumable (exit code 2)
+      // A BaselineCheckError means the untouched tree was already broken before
+      // any implementation attempt — treat as an environment error, not a
+      // resumable phase failure.
+      if (outcome.error instanceof BaselineCheckError) {
+        process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+      }
       process.exit(EXIT_CODES.RESUMABLE_FAILURE);
     }
 
     console.log(`Running feature: ${outcome.value.feature}`);
     console.log(`Workspace:       ${workspace}`);
-    console.log(`Language:        ${languageConfig.name}`);
+    console.log(`Language:        ${defaultLanguage}`);
     for (const phase of outcome.value.phases) {
       console.log(`[ok] Phase ${phase.phaseNumber}: ${phase.commitMessage}`);
     }

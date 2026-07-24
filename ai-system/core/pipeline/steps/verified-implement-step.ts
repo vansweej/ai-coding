@@ -13,6 +13,69 @@ import { parsePatch } from "./parse-patch";
 
 const IMPLEMENT_RESULT_NAME = "verified-implement-output";
 
+/** Directories that are always skipped during recursive source discovery. */
+const JUNK_DIRS = new Set([
+  ".git",
+  "node_modules",
+  "target",
+  "build",
+  "dist",
+  ".venv",
+  "__pycache__",
+  "result",
+  ".direnv",
+  "dist-newstyle",
+  ".stack-work",
+]);
+
+/** Maximum number of source files collected for context to prevent prompt bloat. */
+const MAX_SOURCE_FILES = 100;
+
+/**
+ * Recursively discover source files under the given root directories.
+ *
+ * Skips well-known junk directories and stops once MAX_SOURCE_FILES is reached.
+ * Each root is resolved relative to the workspace.
+ */
+function discoverSourceFiles(
+  workspace: string,
+  roots: readonly string[],
+  exts: readonly string[],
+): string[] {
+  const extSet = new Set(exts);
+  const found: string[] = [];
+
+  for (const root of roots) {
+    if (found.length >= MAX_SOURCE_FILES) break;
+    const rootAbs = resolve(workspace, root);
+    if (!existsSync(rootAbs)) continue;
+
+    const stack: string[] = [rootAbs];
+    while (stack.length > 0 && found.length < MAX_SOURCE_FILES) {
+      const dir = stack.pop() as string;
+      try {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isDirectory()) {
+            if (!JUNK_DIRS.has(entry.name)) {
+              stack.push(join(dir, entry.name));
+            }
+          } else if (entry.isFile()) {
+            const dotIndex = entry.name.lastIndexOf(".");
+            const ext = dotIndex >= 0 ? entry.name.slice(dotIndex) : "";
+            if (extSet.has(ext) && found.length < MAX_SOURCE_FILES) {
+              found.push(join(dir, entry.name));
+            }
+          }
+        }
+      } catch {
+        // Directory unreadable; skip.
+      }
+    }
+  }
+
+  return found;
+}
+
 /** Retry limits for verified implementation. */
 export interface RetryConfig {
   /** Local implementer attempts after the initial attempt. Defaults to 3. */
@@ -99,64 +162,33 @@ function formatPhaseInstruction(steps: readonly Step[], phaseFeedback?: string):
   return [stepInstructions, "", "Phase verification feedback:", phaseFeedback].join("\n");
 }
 
-/** Map language hint to file extension for sibling discovery. */
-function languageExtension(languageHint: string): string {
-  switch (languageHint) {
-    case "Rust":
-      return ".rs";
-    case "TypeScript":
-      return ".ts";
-    case "C++":
-      return ".cpp";
-    default:
-      return ".rs";
-  }
-}
-
 /**
  * Build a baseline context that includes relevant file contents and git diff.
  *
- * This is supplied on every attempt (not just attempt-0) and includes:
- *   - Existing source files in the workspace
- *   - Current git diff of the working tree
- *
- * This ensures the model has up-to-date context for computing SEARCH anchors
- * and understanding what has changed so far.
+ * Uses config-driven recursive source discovery across all declared sourceRoots,
+ * skipping junk directories. Supplied on every attempt so the model always has
+ * up-to-date context for computing SEARCH anchors.
  */
-export function buildBaselineContext(workspace: string, languageHint: string): string {
-  const ext = languageExtension(languageHint);
-  const srcDir = resolve(workspace, "src");
-
+export function buildBaselineContext(workspace: string, config: DevCycleLanguageConfig): string {
+  const roots = config.sourceRoots ?? ["."];
+  const files = discoverSourceFiles(workspace, roots, config.sourceExtensions);
   const parts: string[] = [];
 
-  // Include existing source files
-  if (existsSync(srcDir)) {
-    const files: string[] = [];
-    const entries = readdirSync(srcDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isFile() && entry.name.endsWith(ext)) {
-        files.push(join(srcDir, entry.name));
-      }
+  if (files.length > 0) {
+    const fileParts: string[] = [];
+    for (const file of files) {
+      const relPath = relative(workspace, file);
+      const content = readFileSync(file, "utf8");
+      fileParts.push(`// ${relPath}\n${content}`);
     }
-
-    if (files.length > 0) {
-      const fileParts: string[] = [];
-      for (const file of files) {
-        const relPath = relative(workspace, file);
-        const content = readFileSync(file, "utf8");
-        fileParts.push(`// ${relPath}\n${content}`);
-      }
-      if (fileParts.length > 0) {
-        parts.push("Existing project files:\n\n" + fileParts.join("\n\n---\n\n"));
-      }
-    }
+    parts.push(`Existing project files:\n\n${fileParts.join("\n\n---\n\n")}`);
   }
 
   // Include current git diff
   try {
     const gitDiff = execSync("git diff", { cwd: workspace, encoding: "utf8" });
     if (gitDiff.trim()) {
-      parts.push("Current git diff:\n\n" + gitDiff);
+      parts.push(`Current git diff:\n\n${gitDiff}`);
     }
   } catch {
     // git diff failed; continue without it
@@ -174,6 +206,7 @@ async function runImplementAttempt(
   const llmOptions: LLMOptions = {
     system: options.languageConfig.implementSystem,
     temperature: action === "fix" ? 0.2 : 0.4,
+    maxTokens: 8192,
   };
   const result = await orchestrate(makeEvent(ctx, action, prompt), options.config, llmOptions);
   if (!result.ok) return result;
@@ -257,19 +290,9 @@ async function implementAllPhaseSteps(
  * Used to refresh file contents on each retry so the model can compute
  * SEARCH anchors against the present state.
  */
-function readCurrentFileContents(workspace: string, languageHint: string): string {
-  const ext = languageExtension(languageHint);
-  const srcDir = resolve(workspace, "src");
-
-  if (!existsSync(srcDir)) return "";
-
-  const files: string[] = [];
-  const entries = readdirSync(srcDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.isFile() && entry.name.endsWith(ext)) {
-      files.push(join(srcDir, entry.name));
-    }
-  }
+function readCurrentFileContents(workspace: string, config: DevCycleLanguageConfig): string {
+  const roots = config.sourceRoots ?? ["."];
+  const files = discoverSourceFiles(workspace, roots, config.sourceExtensions);
 
   if (files.length === 0) return "";
 
@@ -298,10 +321,7 @@ export function createVerifiedImplementStep(
       const originalInstruction = ctx.event.payload.input ?? "";
       const phaseSteps = options.steps;
       const verificationSteps = options.languageConfig.toolchainSteps(options.workspace);
-      const baselineContext = buildBaselineContext(
-        options.workspace,
-        options.languageConfig.languageHint,
-      );
+      const baselineContext = buildBaselineContext(options.workspace, options.languageConfig);
       let prompt = baselineContext
         ? buildImplementationPrompt(options.languageConfig, originalInstruction, baselineContext)
         : originalInstruction;
@@ -341,7 +361,7 @@ export function createVerifiedImplementStep(
         // Refresh current file contents on each retry for accurate SEARCH anchor matching
         const currentFileContents = readCurrentFileContents(
           options.workspace,
-          options.languageConfig.languageHint,
+          options.languageConfig,
         );
         prompt = buildVerificationFailurePrompt(
           phaseSteps === undefined ? originalInstruction : formatPhaseInstruction(phaseSteps),
@@ -359,7 +379,7 @@ export function createVerifiedImplementStep(
         // Refresh current file contents before escalation attempt
         const currentFileContents = readCurrentFileContents(
           options.workspace,
-          options.languageConfig.languageHint,
+          options.languageConfig,
         );
         const fixPrompt = buildVerificationFailurePrompt(
           phaseSteps === undefined ? originalInstruction : formatPhaseInstruction(phaseSteps),

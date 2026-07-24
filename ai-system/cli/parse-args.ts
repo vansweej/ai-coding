@@ -10,12 +10,15 @@ export interface CliArgs {
   readonly maxRetries?: number;
   /** Profile name override. Falls back to AI_CODING_MODEL_PROFILE env var, then the default. */
   readonly profileName: string;
+  /** Default language for plan-cycle phases lacking a Language: directive. */
+  readonly language?: string;
 }
 
-const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--max-retries <n>] [--profile <name>]
+const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--max-retries <n>] [--profile <name>] [--language <name>]
 
 Pipeline names:
-  rust-plan-cycle  Unattended plan executor: parse plan → per-phase implement → verify/retry → commit; resumable
+  plan-cycle       Unattended plan executor: parse plan → per-phase implement → verify/retry → commit; resumable
+  rust-plan-cycle  Alias for plan-cycle --language rust
   scaffold-rust    Rust: cargo init + generate flake.nix
   scaffold-cpp     C++: generate CMakeLists.txt + src/main.cpp + flake.nix
 
@@ -25,11 +28,15 @@ Profile names:
   copilot-default  All roles → github-copilot/claude-sonnet-4.6
   anthropic-sonnet All roles → Anthropic claude-sonnet-5 (native Messages API); requires ANTHROPIC_API_KEY
 
+Language names (--language):
+  rust, typescript, python, cpp, haskell, julia, nix, shell
+
 Examples:
   bun run pipeline scaffold-rust /tmp/my-rust-project
   bun run pipeline scaffold-cpp /tmp/my-cpp-project
+  bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --language typescript --profile anthropic-sonnet
   bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md --profile hybrid
-  bun run pipeline rust-plan-cycle ./my-project --input "Add tests" --max-retries 3`;
+  bun run pipeline plan-cycle ./my-project --input "Add tests" --language typescript --max-retries 3`;
 
 function readFlag(args: readonly string[], flag: string): Result<string | undefined> {
   const index = args.indexOf(flag);
@@ -86,6 +93,10 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
   const maxRetries = parseMaxRetries(rawMaxRetries.value);
   if (!maxRetries.ok) return maxRetries;
 
+  const languageResult = readFlag(args, "--language");
+  if (!languageResult.ok) return languageResult;
+  const language = languageResult.value;
+
   let profileName = process.env.AI_CODING_MODEL_PROFILE ?? DEFAULT_PROFILE_NAME;
   const profileFlagIndex = args.indexOf("--profile");
   if (profileFlagIndex !== -1) {
@@ -108,6 +119,7 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
       planPath,
       maxRetries: maxRetries.value,
       profileName,
+      language,
     },
   };
 }

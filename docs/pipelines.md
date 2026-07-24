@@ -9,7 +9,8 @@ context so they can read each other's outputs.
 
 The generic pipeline infrastructure lives in `@ai-coding/pipeline` with no
 dependency on AI-specific types. Language-specific step implementations
-(`OrchestratorStep`) and pipeline definitions (Rust, C++, TypeScript) live in
+(`OrchestratorStep`) and pipeline definitions (8 languages via `plan-cycle`:
+Rust, TypeScript, Python, C++, Haskell, Julia, Nix, Shell) live in
 `ai-system/core/pipeline/`, which imports from both `@ai-coding/pipeline` and
 `@ai-coding/shared`.
 
@@ -315,10 +316,11 @@ const config: OrchestratorConfig = {
 
 ### 2. Choose and create a pipeline
 
-**Note:** The `createDevCyclePipeline` API is deprecated. Use `runFeature()` with `RUST_PLAN_CONFIG` for plan-based execution instead.
+**Note:** The `createDevCyclePipeline` API is deprecated. Use `runFeature()` with the
+`PLAN_CONFIG_FACTORIES` registry for plan-based execution instead.
 
 ```typescript
-import { RUST_PLAN_CONFIG } from
+import { PLAN_CONFIG_FACTORIES } from
   "ai-system/core/pipeline/definitions/language-configs";
 import { runFeature } from
   "ai-system/core/pipeline/feature-runner";
@@ -326,13 +328,15 @@ import { runFeature } from
 const planContent = `# Feature: Add retry logic
 ## Phase 1: Implement
 Commit message: feat: add retry logic
+Language: rust
 ### Step 1: Implement
 Add exponential backoff to HTTP client`;
 
 const outcome = await runFeature(planContent, {
   config,
-  workspace: "/path/to/my-rust-project",
-  languageConfig: RUST_PLAN_CONFIG,
+  workspace: "/path/to/my-project",
+  defaultLanguage: "rust",       // used when a phase has no Language: directive
+  factories: PLAN_CONFIG_FACTORIES,
   retryConfig: { maxLocalRetries: 2 },
 });
 ```
@@ -366,37 +370,60 @@ for (const phase of outcome.value.phases) {
 | Shell command, build tool, test runner | `createNixShellStep` (preferred) or `createShellStep` |
 | Validate prior output | `createCoverageGateStep` or a custom step |
 
-### Step 2 -- Add a new language to the unified dev-cycle (DEPRECATED — Tier B)
+### Step 2 -- Add a new language to plan-cycle
 
-**Note:** The `dev-cycle` pipeline and `--language` flag have been retired. This section documents the old API for reference only. New language support should be added to `RUST_PLAN_CONFIG` in `language-configs.ts`.
-
-To support a new language in the legacy dev-cycle (if re-enabled), add a `DevCycleLanguageConfig` constant in
-`ai-system/core/pipeline/definitions/language-configs.ts` and register it in
-`DEV_CYCLE_LANGUAGE_CONFIGS`:
+`plan-cycle` supports 8 languages today (Rust, TypeScript, Python, C++, Haskell, Julia, Nix,
+Shell) via `PLAN_CONFIG_FACTORIES` in `language-configs.ts`. To add another, add a
+`create<Lang>PlanConfig` factory and register it:
 
 ```typescript
 // ai-system/core/pipeline/definitions/language-configs.ts
 
 import { createNixShellStep } from "@ai-coding/pipeline";
 
-export const GO_CONFIG: DevCycleLanguageConfig = {
-  name: "go",  // extend the name union type first
-  languageHint: "Go",
-  implementSystem:
-    "You are a Go coding assistant. Output ONLY implementation code in fenced code blocks. " +
-    "Each block must have the format: ```<language> <relative-file-path>. " +
-    "Use idiomatic Go patterns and include doc comments on all exported items. " +
-    "Do not include any explanation or prose outside the code blocks.",
-  toolchainSteps: (workspace: string) => [
-    createNixShellStep<AIRequestEvent>("fmt", ["gofmt", "-l", "."], { cwd: workspace }),
-    createNixShellStep<AIRequestEvent>("vet", ["go", "vet", "./..."], { cwd: workspace }),
-    createNixShellStep<AIRequestEvent>("test", ["go", "test", "./..."], { cwd: workspace }),
-  ],
+const GO_PLAN_IDIOMS =
+  "Use idiomatic Go patterns, explicit error returns (not panics), and doc comments on all " +
+  "exported items. Ensure all necessary imports are present.";
+
+export function createGoPlanConfig(
+  _coverage: CoverageDirective,
+  _diff: string,
+): DevCycleLanguageConfig {
+  return {
+    name: "go", // add "go" to LanguageName + KNOWN_LANGUAGES in plan-parser.ts first
+    languageHint: "Go",
+    sourceExtensions: [".go"],
+    sourceRoots: ["."],
+    implementSystem: buildPatchSystem("Go", GO_PLAN_IDIOMS),
+    toolchainSteps: (workspace: string) => [
+      createNixShellStep<AIRequestEvent>("fmt", ["gofmt", "-l", "."], {
+        cwd: workspace,
+        timeoutMs: 60_000, // always set an explicit timeout — the 60s default is too low for most build tools
+      }),
+      createNixShellStep<AIRequestEvent>("vet", ["go", "vet", "./..."], {
+        cwd: workspace,
+        timeoutMs: 120_000,
+      }),
+      createNixShellStep<AIRequestEvent>("test", ["go", "test", "./..."], {
+        cwd: workspace,
+        timeoutMs: 300_000,
+      }),
+    ],
+  };
+}
+```
+
+Then register it in `PLAN_CONFIG_FACTORIES`:
+
+```typescript
+export const PLAN_CONFIG_FACTORIES: Readonly<Partial<Record<LanguageName, PlanConfigFactory>>> = {
+  // ...existing entries...
+  go: createGoPlanConfig,
 };
 ```
 
-Then add `"go"` to the `DevCycleLanguageConfig["name"]` union, register it in
-`DEV_CYCLE_LANGUAGE_CONFIGS`, and add a `--language go` case in `parseLanguage()` (if re-enabling dev-cycle).
+See [`docs/plan-cycle-languages.md`](plan-cycle-languages.md#adding-a-new-language) for the full
+checklist, including `baselineCheck` guidance for whole-repo validators.
 
 ### Step 3 -- Create a genuinely new workflow
 

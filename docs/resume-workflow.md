@@ -496,5 +496,5 @@ $ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
 ## See Also
 
 - [`README.md`](../README.md) — Quick start and pipeline overview
-- [`docs/rust-plan-cycle.md`](rust-plan-cycle.md) — rust-plan-cycle comprehensive guide
+- [`docs/plan-cycle.md`](plan-cycle.md) — plan-cycle comprehensive guide
 - [`docs/memory-client.md`](memory-client.md) — Cerebrum memory system details

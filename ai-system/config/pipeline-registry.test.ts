@@ -3,8 +3,12 @@ import { describe, expect, it } from "bun:test";
 import { PIPELINE_NAMES, PIPELINE_REGISTRY, findPipelineEntry } from "./pipeline-registry";
 
 describe("PIPELINE_REGISTRY", () => {
-  it("contains 4 entries", () => {
-    expect(PIPELINE_REGISTRY).toHaveLength(4);
+  it("contains 5 entries", () => {
+    expect(PIPELINE_REGISTRY).toHaveLength(5);
+  });
+
+  it("includes plan-cycle", () => {
+    expect(PIPELINE_REGISTRY.some((e) => e.name === "plan-cycle")).toBe(true);
   });
 
   it("includes rust-plan-cycle", () => {

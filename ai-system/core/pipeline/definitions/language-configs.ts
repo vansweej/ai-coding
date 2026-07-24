@@ -1,20 +1,93 @@
 import { createCoverageGateStep, createNixShellStep } from "@ai-coding/pipeline";
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
-import type { CoverageDirective } from "../plan-parser";
+import type { CoverageDirective, LanguageName } from "../plan-parser";
 import { resolveCoverageThreshold } from "../steps/coverage-exemption";
 
 const DEFAULT_COVERAGE_THRESHOLD = 90;
 const DEFAULT_CPP_BUILD_DIR = "build";
 
+/**
+ * Build the `implementSystem` prompt for plan-cycle configs that use aider-style
+ * SEARCH/REPLACE patches.
+ *
+ * @param languageHint - Human-readable language name used in the opening sentence (e.g. "Rust").
+ * @param idioms       - Language-specific coding rules appended after the patch format block.
+ */
+function buildPatchSystem(languageHint: string, idioms: string): string {
+  return `You are a ${languageHint} coding assistant. Output ONLY aider-style SEARCH/REPLACE patches for files that need changes. Each patch must have the format:\n<file-path>\n<<<<<<< SEARCH\n<exact anchor text>\n=======\n<replacement text>\n>>>>>>> REPLACE\n\n${idioms} Do not include any explanation or prose outside the patches.`;
+}
+
+const RUST_PLAN_IDIOMS =
+  "Follow Rust idioms: use Result/Option, avoid unwrap in production code, prefer ownership over cloning, and include idiomatic doc comments on all public items. " +
+  "Generate compilable Rust code. Ensure all use statements are present and all types, functions, and macros referenced are either in the standard prelude or explicitly imported.";
+
+const TS_PLAN_IDIOMS =
+  "Use named exports, strict types, Result patterns for fallible operations, and idiomatic doc comments on all public items. " +
+  "Generate compilable TypeScript code. Ensure all imports are present.";
+
+const PYTHON_PLAN_IDIOMS =
+  "Use type hints on all function signatures, follow PEP 8 conventions, prefer explicit error handling over broad exception catching, and include docstrings on all public functions and classes. " +
+  "Generate code compatible with the project's ruff and mypy configuration. Ensure all imports are present.";
+
+const CPP_PLAN_IDIOMS =
+  "Use C++20 idioms, modern target-based CMake conventions, RAII for resource management, and include doc comments on all public items. " +
+  "Generate compilable C++ code. Ensure all necessary #include directives are present.";
+
+const HASKELL_PLAN_IDIOMS =
+  "Follow idiomatic Haskell: prefer pure functions, use Maybe/Either for error handling, avoid partial functions (head, fromJust) in production code, and include Haddock doc comments on all exported items. " +
+  "Generate compilable Haskell code. Ensure all necessary imports are present.";
+
+const JULIA_PLAN_IDIOMS =
+  "Follow idiomatic Julia: use multiple dispatch appropriately, prefer type-stable functions, avoid global mutable state, and include docstrings on all exported functions and types. " +
+  "Ensure the code loads and runs without syntax errors.";
+
+const NIX_PLAN_IDIOMS =
+  "Follow idiomatic Nix: use let-in bindings for clarity, prefer attribute sets over positional arguments, keep derivations pure, and include comments explaining non-obvious expressions. " +
+  "Generate syntactically valid Nix expressions.";
+
+const SHELL_PLAN_IDIOMS =
+  "Follow POSIX-compatible shell idioms where possible, quote all variable expansions, start scripts with `set -euo pipefail`, and ensure the script passes shellcheck. " +
+  "Generate syntactically valid shell code.";
+
+/**
+ * Factory that creates a language-specific plan-cycle config from the phase's
+ * coverage directive and current git diff.  Registered factories are keyed by
+ * LanguageName so the phase-runner can look one up without knowing the language
+ * at compile time.
+ */
+export type PlanConfigFactory = (
+  coverage: CoverageDirective,
+  diff: string,
+) => DevCycleLanguageConfig;
+
 /** Language-specific configuration for the unified dev-cycle pipeline. */
 export interface DevCycleLanguageConfig {
   /** Stable language identifier used by CLI arguments and tests. */
-  readonly name: "typescript" | "rust" | "cpp";
+  readonly name: LanguageName;
   /** System prompt for implementation and fix LLM calls. */
   readonly implementSystem: string;
   /** Short language hint included in user prompts. */
   readonly languageHint: string;
+  /** File extensions to collect when building source context (e.g. [".ts", ".tsx"]). */
+  readonly sourceExtensions: readonly string[];
+  /**
+   * Source root directories, relative to the workspace root, to search when
+   * collecting source context. When omitted, defaults to the workspace root (".").
+   */
+  readonly sourceRoots?: readonly string[];
+  /**
+   * When true, `runPhase` runs `toolchainSteps` once on the untouched tree
+   * BEFORE any implementation attempt for the phase. A failure here indicates
+   * the workspace was already broken (e.g. a stale `nix flake check` or a
+   * pre-existing whole-repo lint failure) rather than something the phase's
+   * implementation introduced, so it is treated as an environment error
+   * (`BaselineCheckError`) rather than an ordinary phase failure.
+   *
+   * Intended for whole-repo validators that cannot be scoped to a diff
+   * (e.g. `nix flake check`, `shellcheck` across all scripts).
+   */
+  readonly baselineCheck?: boolean;
   /** Verification steps run once after all implementation steps in a phase. */
   toolchainSteps(workspace: string): readonly PipelineStep<AIRequestEvent>[];
 }
@@ -23,6 +96,8 @@ export interface DevCycleLanguageConfig {
 export const TYPESCRIPT_CONFIG: DevCycleLanguageConfig = {
   name: "typescript",
   languageHint: "TypeScript",
+  sourceExtensions: [".ts"],
+  sourceRoots: ["src", "."],
   implementSystem:
     "You are a TypeScript coding assistant. Output ONLY implementation code in fenced code blocks. " +
     "Each block must have the format: ```<language> <relative-file-path>. " +
@@ -43,6 +118,8 @@ export const TYPESCRIPT_CONFIG: DevCycleLanguageConfig = {
 export const RUST_CONFIG: DevCycleLanguageConfig = {
   name: "rust",
   languageHint: "Rust",
+  sourceExtensions: [".rs"],
+  sourceRoots: ["src"],
   implementSystem:
     "You are a Rust coding assistant. Output ONLY implementation code in fenced code blocks. " +
     "Each block must have the format: ```<language> <relative-file-path>. " +
@@ -94,18 +171,9 @@ export function createRustPlanConfig(
   return {
     name: "rust",
     languageHint: "Rust",
-    implementSystem:
-      "You are a Rust coding assistant. Output ONLY aider-style SEARCH/REPLACE patches for files that need changes. " +
-      "Each patch must have the format:\n" +
-      "<file-path>\n" +
-      "<<<<<<< SEARCH\n" +
-      "<exact anchor text>\n" +
-      "=======\n" +
-      "<replacement text>\n" +
-      ">>>>>>> REPLACE\n\n" +
-      "Follow Rust idioms: use Result/Option, avoid unwrap in production code, prefer ownership over cloning, and include idiomatic doc comments on all public items. " +
-      "Generate compilable Rust code. Ensure all use statements are present and all types, functions, and macros referenced are either in the standard prelude or explicitly imported. " +
-      "Do not include any explanation or prose outside the patches.",
+    sourceExtensions: [".rs"],
+    sourceRoots: ["src"],
+    implementSystem: buildPatchSystem("Rust", RUST_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt"], { cwd: workspace }),
       createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], {
@@ -137,10 +205,295 @@ export const RUST_PLAN_CONFIG: DevCycleLanguageConfig = createRustPlanConfig(
   "",
 );
 
+/**
+ * TypeScript plan-cycle configuration.
+ *
+ * Uses aider-style SEARCH/REPLACE patches like the Rust plan-cycle, but runs
+ * the Bun/Biome toolchain instead of Cargo. No coverage gate is applied —
+ * the test step runs `bun test` with a generous timeout to accommodate the full
+ * suite without a separate tarpaulin step.
+ *
+ * The `coverage` and `diff` parameters are accepted for `PlanConfigFactory`
+ * compatibility; TypeScript plan-cycle does not currently gate on coverage.
+ */
+export function createTsPlanConfig(
+  _coverage: CoverageDirective,
+  _diff: string,
+): DevCycleLanguageConfig {
+  return {
+    name: "typescript",
+    languageHint: "TypeScript",
+    sourceExtensions: [".ts"],
+    sourceRoots: ["src", "."],
+    implementSystem: buildPatchSystem("TypeScript", TS_PLAN_IDIOMS),
+    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+      createNixShellStep<AIRequestEvent>("typecheck", ["bun", "run", "typecheck"], {
+        cwd: workspace,
+      }),
+      createNixShellStep<AIRequestEvent>("lint", ["bunx", "biome", "check", "--write", "."], {
+        cwd: workspace,
+      }),
+      createNixShellStep<AIRequestEvent>("test", ["bun", "test"], {
+        cwd: workspace,
+        timeoutMs: 300_000,
+      }),
+    ],
+  };
+}
+
+/**
+ * Python plan-cycle configuration.
+ *
+ * Toolchain: `ruff format --check` → `ruff check` → `mypy .` (warning-only —
+ * fatal on ruff, non-fatal on mypy until the project is fully typed) → `pytest -q`.
+ *
+ * The `coverage` and `diff` parameters are accepted for `PlanConfigFactory`
+ * compatibility; Python plan-cycle does not currently gate on coverage.
+ */
+export function createPythonPlanConfig(
+  _coverage: CoverageDirective,
+  _diff: string,
+): DevCycleLanguageConfig {
+  return {
+    name: "python",
+    languageHint: "Python",
+    sourceExtensions: [".py"],
+    sourceRoots: ["src", "."],
+    implementSystem: buildPatchSystem("Python", PYTHON_PLAN_IDIOMS),
+    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+      createNixShellStep<AIRequestEvent>("format", ["ruff", "format", "--check", "."], {
+        cwd: workspace,
+        timeoutMs: 60_000,
+      }),
+      createNixShellStep<AIRequestEvent>("lint", ["ruff", "check", "."], {
+        cwd: workspace,
+        timeoutMs: 60_000,
+      }),
+      // Warning-only until the project is fully typed; tighten to fatal later.
+      createNixShellStep<AIRequestEvent>("typecheck", ["mypy", "."], {
+        cwd: workspace,
+        timeoutMs: 120_000,
+        failOnNonZero: false,
+      }),
+      createNixShellStep<AIRequestEvent>("test", ["pytest", "-q"], {
+        cwd: workspace,
+        timeoutMs: 300_000,
+      }),
+    ],
+  };
+}
+
+/**
+ * C++ plan-cycle configuration.
+ *
+ * Toolchain: `cmake -S . -B build` → `cmake --build build` →
+ * `ctest --test-dir build`.
+ *
+ * The `coverage` and `diff` parameters are accepted for `PlanConfigFactory`
+ * compatibility; C++ plan-cycle does not currently gate on coverage.
+ */
+export function createCppPlanConfig(
+  _coverage: CoverageDirective,
+  _diff: string,
+): DevCycleLanguageConfig {
+  return {
+    name: "cpp",
+    languageHint: "C++",
+    sourceExtensions: [".cpp", ".h", ".hpp"],
+    sourceRoots: ["src", "include"],
+    implementSystem: buildPatchSystem("C++", CPP_PLAN_IDIOMS),
+    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+      createNixShellStep<AIRequestEvent>(
+        "configure",
+        ["cmake", "-S", ".", "-B", DEFAULT_CPP_BUILD_DIR],
+        { cwd: workspace, timeoutMs: 120_000 },
+      ),
+      createNixShellStep<AIRequestEvent>("build", ["cmake", "--build", DEFAULT_CPP_BUILD_DIR], {
+        cwd: workspace,
+        timeoutMs: 300_000,
+      }),
+      createNixShellStep<AIRequestEvent>(
+        "test",
+        ["ctest", "--test-dir", DEFAULT_CPP_BUILD_DIR, "--output-on-failure"],
+        { cwd: workspace, timeoutMs: 300_000 },
+      ),
+    ],
+  };
+}
+
+/**
+ * Haskell plan-cycle configuration.
+ *
+ * Toolchain: `cabal build` (doubles as typecheck) → `hlint .` → `cabal test`.
+ * Build and test steps use a 600s timeout to accommodate GHC compile times.
+ *
+ * The `coverage` and `diff` parameters are accepted for `PlanConfigFactory`
+ * compatibility; Haskell plan-cycle does not currently gate on coverage.
+ */
+export function createHaskellPlanConfig(
+  _coverage: CoverageDirective,
+  _diff: string,
+): DevCycleLanguageConfig {
+  return {
+    name: "haskell",
+    languageHint: "Haskell",
+    sourceExtensions: [".hs"],
+    sourceRoots: ["src", "app"],
+    implementSystem: buildPatchSystem("Haskell", HASKELL_PLAN_IDIOMS),
+    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+      // cabal build doubles as the typecheck step for Haskell.
+      createNixShellStep<AIRequestEvent>("build", ["cabal", "build"], {
+        cwd: workspace,
+        timeoutMs: 600_000,
+      }),
+      createNixShellStep<AIRequestEvent>("lint", ["hlint", "."], {
+        cwd: workspace,
+        timeoutMs: 120_000,
+      }),
+      createNixShellStep<AIRequestEvent>("test", ["cabal", "test"], {
+        cwd: workspace,
+        timeoutMs: 600_000,
+      }),
+    ],
+  };
+}
+
+/**
+ * Julia plan-cycle configuration.
+ *
+ * Toolchain: `julia --project -e 'using Pkg; Pkg.test()'` only. This is a weak
+ * verification signal — it exercises the project's own test suite but has no
+ * separate format/lint step. A 900s timeout accommodates Julia's package
+ * precompilation overhead on cold runs.
+ *
+ * The `coverage` and `diff` parameters are accepted for `PlanConfigFactory`
+ * compatibility; Julia plan-cycle does not currently gate on coverage.
+ */
+export function createJuliaPlanConfig(
+  _coverage: CoverageDirective,
+  _diff: string,
+): DevCycleLanguageConfig {
+  return {
+    name: "julia",
+    languageHint: "Julia",
+    sourceExtensions: [".jl"],
+    sourceRoots: ["src"],
+    implementSystem: buildPatchSystem("Julia", JULIA_PLAN_IDIOMS),
+    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+      createNixShellStep<AIRequestEvent>(
+        "test",
+        ["julia", "--project", "-e", "using Pkg; Pkg.test()"],
+        { cwd: workspace, timeoutMs: 900_000 },
+      ),
+    ],
+  };
+}
+
+/**
+ * Nix plan-cycle configuration.
+ *
+ * Toolchain: `nixpkgs-fmt --check .` → `nix flake check`. `nix flake check`
+ * cannot be scoped to a diff, so `baselineCheck` is enabled: the whole-repo
+ * check runs once on the untouched tree before any implementation attempt,
+ * and a pre-existing failure is treated as an environment error rather than
+ * something the phase's implementation introduced. A 900s timeout
+ * accommodates flake evaluation cost.
+ *
+ * The `coverage` and `diff` parameters are accepted for `PlanConfigFactory`
+ * compatibility; Nix plan-cycle does not currently gate on coverage.
+ */
+export function createNixPlanConfig(
+  _coverage: CoverageDirective,
+  _diff: string,
+): DevCycleLanguageConfig {
+  return {
+    name: "nix",
+    languageHint: "Nix",
+    sourceExtensions: [".nix"],
+    sourceRoots: ["."],
+    baselineCheck: true,
+    implementSystem: buildPatchSystem("Nix", NIX_PLAN_IDIOMS),
+    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+      createNixShellStep<AIRequestEvent>("format", ["nixpkgs-fmt", "--check", "."], {
+        cwd: workspace,
+        timeoutMs: 60_000,
+      }),
+      createNixShellStep<AIRequestEvent>("check", ["nix", "flake", "check"], {
+        cwd: workspace,
+        timeoutMs: 900_000,
+      }),
+    ],
+  };
+}
+
+/**
+ * Shell plan-cycle configuration.
+ *
+ * Toolchain: `shfmt -d .` → a guarded shellcheck wrapper that lists tracked
+ * `.sh` files via `git ls-files` and only invokes shellcheck when the
+ * repository actually has shell scripts (an empty file list would otherwise
+ * make shellcheck itself fail with "no files specified"). Whole-repo
+ * shellcheck cannot be scoped to a diff, so `baselineCheck` is enabled: the
+ * check runs once on the untouched tree before any implementation attempt,
+ * and a pre-existing failure is treated as an environment error.
+ *
+ * The `coverage` and `diff` parameters are accepted for `PlanConfigFactory`
+ * compatibility; Shell plan-cycle does not currently gate on coverage.
+ */
+export function createShellPlanConfig(
+  _coverage: CoverageDirective,
+  _diff: string,
+): DevCycleLanguageConfig {
+  return {
+    name: "shell",
+    languageHint: "Shell",
+    sourceExtensions: [".sh"],
+    sourceRoots: ["."],
+    baselineCheck: true,
+    implementSystem: buildPatchSystem("Shell", SHELL_PLAN_IDIOMS),
+    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+      createNixShellStep<AIRequestEvent>("format", ["shfmt", "-d", "."], {
+        cwd: workspace,
+        timeoutMs: 60_000,
+      }),
+      createNixShellStep<AIRequestEvent>(
+        "lint",
+        ["sh", "-c", 'files=$(git ls-files "*.sh"); [ -z "$files" ] || shellcheck $files'],
+        { cwd: workspace, timeoutMs: 120_000 },
+      ),
+    ],
+  };
+}
+
+/**
+ * Registry of plan-config factories keyed by language name.
+ *
+ * A phase runner looks up the factory for the phase's language (or the run's
+ * default language), calls it with the phase's coverage directive and current
+ * git diff, and obtains a fully-configured `DevCycleLanguageConfig`.
+ *
+ * Languages not yet registered here fail cleanly with an "unregistered language"
+ * error rather than silently falling back to the wrong toolchain.
+ *
+ * All 8 known languages are registered.
+ */
+export const PLAN_CONFIG_FACTORIES: Readonly<Partial<Record<LanguageName, PlanConfigFactory>>> = {
+  rust: createRustPlanConfig,
+  typescript: createTsPlanConfig,
+  python: createPythonPlanConfig,
+  cpp: createCppPlanConfig,
+  haskell: createHaskellPlanConfig,
+  julia: createJuliaPlanConfig,
+  nix: createNixPlanConfig,
+  shell: createShellPlanConfig,
+};
+
 /** C++/CMake verification and implementation rules. */
 export const CPP_CONFIG: DevCycleLanguageConfig = {
   name: "cpp",
   languageHint: "C++",
+  sourceExtensions: [".cpp", ".h", ".hpp"],
+  sourceRoots: ["src", "include"],
   implementSystem:
     "You are a C++ coding assistant. Output ONLY implementation code in fenced code blocks. " +
     "Each block must have the format: ```<language> <relative-file-path>. " +
@@ -165,7 +518,7 @@ export const CPP_CONFIG: DevCycleLanguageConfig = {
 
 /** Built-in language configurations keyed by CLI language name. */
 export const DEV_CYCLE_LANGUAGE_CONFIGS: Readonly<
-  Record<DevCycleLanguageConfig["name"], DevCycleLanguageConfig>
+  Partial<Record<LanguageName, DevCycleLanguageConfig>>
 > = {
   typescript: TYPESCRIPT_CONFIG,
   rust: RUST_CONFIG,

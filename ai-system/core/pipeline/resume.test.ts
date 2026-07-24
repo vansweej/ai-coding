@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { $ } from "bun";
 import { detectResumeState, resetToPhaseCommit } from "./resume";
 

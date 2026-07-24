@@ -1,13 +1,31 @@
+import { execSync } from "node:child_process";
 import { $ } from "bun";
 
-import type { Result } from "@ai-coding/pipeline";
+import type { PipelineContext, Result, StepResult } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
-import type { DevCycleLanguageConfig } from "./definitions/language-configs";
-import type { Phase } from "./plan-parser";
+import {
+  type DevCycleLanguageConfig,
+  PLAN_CONFIG_FACTORIES,
+  type PlanConfigFactory,
+} from "./definitions/language-configs";
+import type { LanguageName, Phase } from "./plan-parser";
 import type { RetryConfig } from "./steps/verified-implement-step";
 import { createVerifiedImplementStep } from "./steps/verified-implement-step";
+
+/**
+ * Error indicating a baseline-green precondition check failed on the untouched
+ * tree, before any implementation attempt. Distinguishes environment/toolchain
+ * failures (should halt the whole run) from ordinary phase verification
+ * failures (which retry/escalate normally).
+ */
+export class BaselineCheckError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BaselineCheckError";
+  }
+}
 
 /** Summary returned after a phase succeeds. */
 export interface PhaseRunResult {
@@ -27,9 +45,29 @@ export type CommitPhase = (
 export interface RunPhaseOptions {
   readonly config: OrchestratorConfig;
   readonly workspace: string;
-  readonly languageConfig: DevCycleLanguageConfig;
+  /**
+   * Default language used when a phase has no `Language:` directive.
+   * Always set explicitly — no silent fallback.
+   */
+  readonly defaultLanguage: LanguageName;
+  /**
+   * Factory registry used to resolve the per-phase `DevCycleLanguageConfig`.
+   * Defaults to `PLAN_CONFIG_FACTORIES` when omitted.
+   * Languages absent from the registry cause an immediate error so unimplemented
+   * language support fails loudly rather than silently using the wrong toolchain.
+   */
+  readonly factories?: Readonly<Partial<Record<LanguageName, PlanConfigFactory>>>;
   readonly retryConfig?: RetryConfig;
   readonly commitPhase?: CommitPhase;
+}
+
+/** Capture the current working-tree diff; returns empty string if git is unavailable. */
+function safeGitDiff(workspace: string): string {
+  try {
+    return execSync("git diff", { cwd: workspace, encoding: "utf8" });
+  } catch {
+    return "";
+  }
 }
 
 /** Commit all phase changes with the plan-authored commit message and Phase trailer. */
@@ -68,11 +106,60 @@ function buildPhaseInstruction(phase: Phase): string {
     .join("\n\n---\n\n");
 }
 
+/**
+ * Run a language config's toolchainSteps once against the untouched tree,
+ * before any implementation attempt. Any step failure is wrapped in a
+ * BaselineCheckError so callers can distinguish it from a normal phase failure.
+ */
+async function runBaselineCheck(
+  workspace: string,
+  languageConfig: DevCycleLanguageConfig,
+): Promise<Result<void>> {
+  const steps = languageConfig.toolchainSteps(workspace);
+  const ctx: PipelineContext<AIRequestEvent> = {
+    event: buildStepEvent(""),
+    results: new Map<string, StepResult>(),
+  };
+  for (const step of steps) {
+    const result = await step.execute(ctx);
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: new BaselineCheckError(
+          `Baseline check failed at step "${step.name}" before any implementation attempt: ${result.error.message}`,
+        ),
+      };
+    }
+    ctx.results.set(step.name, result.value);
+  }
+  return { ok: true, value: undefined };
+}
+
 /** Run every implementation step in a phase, verify once, then auto-commit. */
 export async function runPhase(
   phase: Phase,
   options: RunPhaseOptions,
 ): Promise<Result<PhaseRunResult>> {
+  // Resolve the language for this phase (per-phase directive wins over default)
+  const language = phase.language ?? options.defaultLanguage;
+  const factories = options.factories ?? PLAN_CONFIG_FACTORIES;
+  const factory = factories[language];
+  if (factory === undefined) {
+    return {
+      ok: false,
+      error: new Error(
+        `Phase ${phase.number} uses unregistered language "${language}". Add a factory to PLAN_CONFIG_FACTORIES or pass a custom factories map.`,
+      ),
+    };
+  }
+  const diff = safeGitDiff(options.workspace);
+  const languageConfig: DevCycleLanguageConfig = factory(phase.coverage, diff);
+
+  if (languageConfig.baselineCheck) {
+    const baselineResult = await runBaselineCheck(options.workspace, languageConfig);
+    if (!baselineResult.ok) return baselineResult;
+  }
+
   // Store phase context in memory if memory client is available
   if (options.config.memory) {
     const phaseContext = JSON.stringify({
@@ -89,7 +176,7 @@ export async function runPhase(
   const verifiedStep = createVerifiedImplementStep(`phase-${phase.number}`, {
     config: options.config,
     workspace: options.workspace,
-    languageConfig: options.languageConfig,
+    languageConfig: languageConfig,
     retryConfig: options.retryConfig,
     steps: phase.steps,
   });

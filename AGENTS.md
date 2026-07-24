@@ -33,7 +33,9 @@ ai-coding/
       orchestrator/        - Single LLM call lifecycle; CopilotDispatcher, OllamaDispatcher, AnthropicDispatcher
       pipeline/
         steps/             - OrchestratorStep, SkillResolverStep, VerifiedImplementStep
-        definitions/       - unified dev-cycle language configs, scaffold-*
+        definitions/       - dev-cycle language configs (interactive), PLAN_CONFIG_FACTORIES
+                             8-language registry for plan-cycle (rust, typescript, python, cpp,
+                             haskell, julia, nix, shell), scaffold-*
     cli/
       parse-args.ts        - CLI args (--profile, --input, --plan, --language flags)
       load-config.ts       - Builds OrchestratorConfig with selected profile

@@ -10,8 +10,8 @@ describe("loadConfig", () => {
   beforeEach(() => {
     // Clear Copilot token and Anthropic API key before each test
     const env = process.env as Record<string, string | undefined>;
-    delete env.GITHUB_COPILOT_TOKEN;
-    delete env.ANTHROPIC_API_KEY;
+    env.GITHUB_COPILOT_TOKEN = undefined;
+    env.ANTHROPIC_API_KEY = undefined;
   });
 
   afterEach(() => {
