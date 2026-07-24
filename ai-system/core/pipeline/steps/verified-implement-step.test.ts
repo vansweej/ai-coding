@@ -10,6 +10,7 @@ import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@
 import { LOCAL_PROFILE } from "../../../config/model-profiles";
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
+import type { Step } from "../plan-parser";
 import {
   buildBaselineContext,
   buildVerificationFailurePrompt,
@@ -217,6 +218,47 @@ describe("createVerifiedImplementStep", () => {
     expect(result.ok).toBe(true);
     expect(readFileSync(join(workspace, "src/index.ts"), "utf8")).toBe("export const value = 1;");
     expect(dispatcher.prompts).toHaveLength(3);
+  });
+
+  it("retries only the failing step in a multi-step phase, not already-applied steps", async () => {
+    // Mirrors a real bedrock-sonnet run: a two-step phase where step 1's
+    // patch succeeds and is written to disk immediately, then step 2's
+    // patch fails to parse. The retry must target ONLY step 2 -- re-sending
+    // step 1's instruction (already satisfied) causes the model to
+    // (incorrectly) report "everything is already implemented" instead of
+    // fixing step 2.
+    const steps: Step[] = [
+      { number: 1, title: "Create a.ts", body: "Create src/a.ts exporting a=1" },
+      { number: 2, title: "Create b.ts", body: "Create src/b.ts exporting b=2" },
+    ];
+    const dispatcher = sequenceDispatcher([
+      "src/a.ts\n<<<<<<< SEARCH\n=======\nexport const a = 1;\n>>>>>>> REPLACE",
+      "Looking at the current file contents, step 1 is already fully implemented.",
+      "src/b.ts\n<<<<<<< SEARCH\n=======\nexport const b = 2;\n>>>>>>> REPLACE",
+    ]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(0)),
+      steps,
+      retryConfig: { maxLocalRetries: 1, maxEscalationRetries: 0 },
+    });
+
+    const result = await step.execute({ event: makeEvent("Add both files"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(workspace, "src/a.ts"), "utf8")).toBe("export const a = 1;");
+    expect(readFileSync(join(workspace, "src/b.ts"), "utf8")).toBe("export const b = 2;");
+
+    // The retry prompt (3rd dispatch call) must target step 2 only -- it
+    // should NOT re-send step 1's title/instruction.
+    expect(dispatcher.prompts).toHaveLength(3);
+    expect(dispatcher.prompts[2]).toContain("Create src/b.ts exporting b=2");
+    expect(dispatcher.prompts[2]).not.toContain("Create src/a.ts exporting a=1");
   });
 });
 

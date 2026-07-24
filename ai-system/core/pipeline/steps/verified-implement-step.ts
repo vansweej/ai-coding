@@ -285,6 +285,44 @@ async function implementAllPhaseSteps(
   return { ok: true, value: implementations.join("\n\n") };
 }
 
+/** Outcome of attempting a run of phase steps starting at a given index. */
+type PhaseStepsOutcome =
+  | { readonly ok: true; readonly value: string }
+  | { readonly ok: false; readonly error: Error; readonly failedAtIndex: number };
+
+/**
+ * Implement phase steps starting at `startIndex`, using `buildStepPrompt` to
+ * construct each step's prompt.
+ *
+ * On failure, reports the index of the failing step so the caller can retry
+ * from exactly that step rather than re-sending already-applied steps. This
+ * matters because a multi-step phase applies each step's patch immediately
+ * as it succeeds: if a LATER step fails, re-sending ALL steps (including
+ * ones already correctly applied) confuses the model -- having just been
+ * shown that steps 1..N-1 are already present in the current file contents,
+ * it tends to report "everything is already implemented" in prose instead
+ * of fixing the one step that actually failed.
+ */
+async function implementPhaseSteps(
+  ctx: PipelineContext<AIRequestEvent>,
+  options: VerifiedImplementStepOptions,
+  steps: readonly Step[],
+  startIndex: number,
+  buildStepPrompt: (step: Step) => string,
+  action: AIAction = "edit",
+): Promise<PhaseStepsOutcome> {
+  const implementations: string[] = [];
+  for (let i = startIndex; i < steps.length; i++) {
+    const step = steps[i] as Step;
+    const result = await implementAndWrite(ctx, options, buildStepPrompt(step), action);
+    if (!result.ok) {
+      return { ok: false, error: result.error, failedAtIndex: i };
+    }
+    implementations.push(result.value);
+  }
+  return { ok: true, value: implementations.join("\n\n") };
+}
+
 /**
  * Read the current on-disk content of all source files in the workspace.
  * Used to refresh file contents on each retry so the model can compute
@@ -328,20 +366,86 @@ export function createVerifiedImplementStep(
       let implementation = "";
       let lastError: Error | undefined;
       let attemptNumber = 0;
+      // Only meaningful when phaseSteps is defined. Tracks how many of the
+      // phase's steps have been successfully applied so far (0..steps.length).
+      // A value less than steps.length means a retry should resume from
+      // exactly that step rather than re-sending already-applied steps.
+      let stepCursor = 0;
 
       const totalImplementerAttempts = 1 + maxLocalRetries;
       for (; attemptNumber < totalImplementerAttempts; attemptNumber++) {
-        const implementResult =
-          phaseSteps === undefined
-            ? await implementAndWrite(ctx, options, prompt, "edit")
-            : attemptNumber === 0
-              ? await implementAllPhaseSteps(ctx, options, phaseSteps, baselineContext)
+        let implementResult: Result<string>;
+
+        if (phaseSteps === undefined) {
+          implementResult =
+            attemptNumber === 0
+              ? await implementAndWrite(ctx, options, prompt, "edit")
               : await implementAndWrite(
                   ctx,
                   options,
                   buildImplementationPrompt(options.languageConfig, prompt),
                   "edit",
                 );
+        } else if (attemptNumber === 0) {
+          const phaseResult = await implementPhaseSteps(ctx, options, phaseSteps, 0, (step) =>
+            buildImplementationPrompt(options.languageConfig, step.body, baselineContext),
+          );
+          if (phaseResult.ok) {
+            stepCursor = phaseSteps.length;
+            implementResult = phaseResult;
+          } else {
+            stepCursor = phaseResult.failedAtIndex;
+            implementResult = phaseResult;
+          }
+        } else if (stepCursor < phaseSteps.length) {
+          // Recovering from a step-level implement failure (not a
+          // verification failure): retry ONLY the remaining steps, starting
+          // at the one that failed, with the error and refreshed file
+          // contents attached to that step's own instruction. Re-sending
+          // already-applied steps here is what caused the model to
+          // (incorrectly) report "everything is already implemented"
+          // instead of fixing the one step that actually failed.
+          const currentFileContents = readCurrentFileContents(
+            options.workspace,
+            options.languageConfig,
+          );
+          const errorMessage = lastError?.message ?? "Implementation failed without diagnostics";
+          const phaseResult = await implementPhaseSteps(
+            ctx,
+            options,
+            phaseSteps,
+            stepCursor,
+            (step) =>
+              buildImplementationPrompt(
+                options.languageConfig,
+                buildVerificationFailurePrompt(
+                  formatPhaseInstruction([step]),
+                  "",
+                  errorMessage,
+                  currentFileContents,
+                ),
+              ),
+          );
+          if (phaseResult.ok) {
+            stepCursor = phaseSteps.length;
+            implementResult = phaseResult;
+          } else {
+            stepCursor = phaseResult.failedAtIndex;
+            implementResult = phaseResult;
+          }
+        } else {
+          // All phase steps have been successfully applied at least once;
+          // this retry is recovering from a VERIFICATION failure (not an
+          // implement-level failure), so fall back to the full combined
+          // instruction plus error -- a cross-step issue may require
+          // revisiting any of the already-applied steps.
+          implementResult = await implementAndWrite(
+            ctx,
+            options,
+            buildImplementationPrompt(options.languageConfig, prompt),
+            "edit",
+          );
+        }
 
         if (implementResult.ok) {
           implementation = implementResult.value;
@@ -391,18 +495,53 @@ export function createVerifiedImplementStep(
           options.workspace,
           options.languageConfig,
         );
-        const fixPrompt = buildVerificationFailurePrompt(
-          phaseSteps === undefined ? originalInstruction : formatPhaseInstruction(phaseSteps),
-          implementation,
-          lastError?.message ?? "Verification failed without diagnostics",
-          currentFileContents,
-        );
-        const fixResult = await implementAndWrite(
-          ctx,
-          options,
-          buildImplementationPrompt(options.languageConfig, fixPrompt),
-          "fix",
-        );
+        const errorMessage = lastError?.message ?? "Verification failed without diagnostics";
+
+        let fixResult: Result<string>;
+
+        if (phaseSteps !== undefined && stepCursor < phaseSteps.length) {
+          // Local retries were exhausted while a specific step still hadn't
+          // been successfully applied. Escalate on ONLY that remaining step
+          // (same reasoning as the local loop above), rather than re-sending
+          // already-applied steps.
+          const phaseResult = await implementPhaseSteps(
+            ctx,
+            options,
+            phaseSteps,
+            stepCursor,
+            (step) =>
+              buildImplementationPrompt(
+                options.languageConfig,
+                buildVerificationFailurePrompt(
+                  formatPhaseInstruction([step]),
+                  "",
+                  errorMessage,
+                  currentFileContents,
+                ),
+              ),
+            "fix",
+          );
+          if (phaseResult.ok) {
+            stepCursor = phaseSteps.length;
+            fixResult = phaseResult;
+          } else {
+            stepCursor = phaseResult.failedAtIndex;
+            fixResult = phaseResult;
+          }
+        } else {
+          const fixPrompt = buildVerificationFailurePrompt(
+            phaseSteps === undefined ? originalInstruction : formatPhaseInstruction(phaseSteps),
+            implementation,
+            errorMessage,
+            currentFileContents,
+          );
+          fixResult = await implementAndWrite(
+            ctx,
+            options,
+            buildImplementationPrompt(options.languageConfig, fixPrompt),
+            "fix",
+          );
+        }
 
         if (fixResult.ok) {
           implementation = fixResult.value;
