@@ -442,5 +442,5 @@ await memory.remember("context", 0.5, "session:abc123");
 ## See Also
 
 - [`README.md`](../README.md) — Quick start and pipeline overview
-- [`docs/rust-plan-cycle.md`](rust-plan-cycle.md) — rust-plan-cycle comprehensive guide
+- [`docs/plan-cycle.md`](plan-cycle.md) — plan-cycle comprehensive guide
 - [`docs/resume-workflow.md`](resume-workflow.md) — Deep dive into resume mechanism

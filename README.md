@@ -6,12 +6,15 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
 ## Architecture
 
 - **Model profiles** -- named configurations mapping semantic roles (planner, implementer,
-  debugger, fixer…) to model IDs. Default: `local` (all roles → `gemma4:26b` via local Ollama).
-  No cloud dependencies or API tokens required. Other built-in profiles: `copilot-default` and
-  `hybrid` (GitHub Copilot), and `anthropic-sonnet` (all roles → `claude-sonnet-5` via the native
-  Anthropic Messages API; requires `ANTHROPIC_API_KEY`).
+  debugger, fixer…) to model IDs. Default: `copilot-default` (all roles → GitHub Copilot's
+  `claude-sonnet-4.6`). Other built-in profiles: `local` (all roles → `gemma4:26b` via local
+  Ollama; no cloud dependencies or API tokens required), `hybrid` (mixes Copilot and Ollama per
+  role), and `anthropic-sonnet` (all roles → `claude-sonnet-5` via the native Anthropic Messages
+  API; requires `ANTHROPIC_API_KEY`).
 - **Pipelines** -- plan-file driven workflows that implement steps, write files, verify with the
   language toolchain, retry locally, escalate fixes when needed, and commit each successful phase.
+  `plan-cycle` supports 8 languages (rust, typescript, python, cpp, haskell, julia, nix, shell),
+  selectable per-phase or via `--language`.
 - **Scaffold pipelines** -- generate new Rust and C++ projects including a `flake.nix` dev shell
   and a lightweight `AGENTS.md` with build commands and a language-skill reference
 - **Codebase indexer** -- indexes git repositories into a local LanceDB vector store using
@@ -48,17 +51,21 @@ custom tool will return an explicit error message.
 ## Running pipelines
 
 ```bash
-bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--language <typescript|rust|cpp>] [--max-retries <n>] [--profile <name>]
+bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--language <name>] [--max-retries <n>] [--profile <name>]
 ```
 
-| Pipeline name     | Steps                                                              | Language   |
-|-------------------|--------------------------------------------------------------------|------------|
-| `scaffold-rust`   | cargo init → generate flake.nix → write files → write AGENTS.md               | Rust       |
-| `scaffold-cpp`    | generate files → write files → cmake configure → write AGENTS.md               | C++        |
-| `dev-cycle`       | plan file → implement steps → verify/retry → per-phase commit       | TS/Rust/C++|
-| `rust-dev-cycle`  | alias for `dev-cycle --language rust`                              | Rust       |
-| `cmake-dev-cycle` | alias for `dev-cycle --language cpp`                               | C++        |
-| `rust-plan-cycle` | unattended plan execution with memory tracking and resumable failures | Rust       |
+| Pipeline name     | Steps                                                                  | Language(s)   |
+|-------------------|-------------------------------------------------------------------------|---------------|
+| `plan-cycle`      | unattended plan execution with memory tracking and resumable failures  | rust, typescript, python, cpp, haskell, julia, nix, shell (per-phase `Language:` directive or `--language`) |
+| `rust-plan-cycle` | alias for `plan-cycle --language rust`                                 | Rust          |
+| `scaffold-rust`   | cargo init → generate flake.nix → write files → write AGENTS.md         | Rust          |
+| `scaffold-cpp`    | generate files → write files → cmake configure → write AGENTS.md       | C++           |
+
+`--language <name>` sets the default language for phases that don't declare their own
+`Language:` directive in the plan file. Omit it to default to `typescript`, or invoke the
+`rust-plan-cycle` alias to force `rust` regardless of `--language`. See
+[`docs/plan-cycle-languages.md`](docs/plan-cycle-languages.md) for the full per-language
+toolchain reference and Nix flake dev-shell prerequisites.
 
 ## Codebase indexer
 
@@ -113,17 +120,17 @@ bun run pipeline scaffold-rust /tmp/my-rust-project
 mkdir /tmp/my-cpp-project
 bun run pipeline scaffold-cpp /tmp/my-cpp-project
 
-# Run the dev cycle from a structured plan file (uses local profile by default)
-bun run pipeline dev-cycle ./my-project --plan ./plans/feature.md
+# Run an unattended plan-cycle on a TypeScript project
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --language typescript
 
-# Run a backward-compatible single-step Rust request
-bun run pipeline dev-cycle ./my-rust-project --language rust --input "Add a config module"
+# Run a polyglot plan (each phase declares its own Language: directive — no --language needed)
+bun run pipeline plan-cycle ./my-project --plan ./plans/rate-limit.md
 
-# Run the unattended Rust plan cycle (requires feature branch)
+# Run the unattended Rust plan cycle (requires feature branch; rust-plan-cycle forces rust)
 bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md
 
-# Run the unattended Rust plan cycle on Anthropic Claude Sonnet (native Messages API)
-ANTHROPIC_API_KEY=sk-ant-... bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md --profile anthropic-sonnet
+# Run on native Anthropic Claude Sonnet (native Messages API; recommended for larger multi-file phases)
+ANTHROPIC_API_KEY=sk-ant-... bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --profile anthropic-sonnet
 ```
 
 All shell steps are nix-aware: if a `flake.nix` is detected in the workspace, commands are
@@ -139,21 +146,27 @@ ollama pull nomic-embed-text  # required for codebase indexing and skill retriev
 
 ---
 
-## Unattended Rust Plan Cycle (`rust-plan-cycle`)
+## Unattended Plan Cycle (`plan-cycle`)
 
-The `rust-plan-cycle` pipeline executes multi-phase Rust plans **unattended** with automatic
-repair, memory tracking, and resumable failures. It is designed for CI/CD workflows and
-autonomous agent execution.
+The `plan-cycle` pipeline executes multi-phase, **multi-language** plans **unattended** with
+automatic repair, memory tracking, and resumable failures. It is designed for CI/CD workflows and
+autonomous agent execution. `rust-plan-cycle` is a legacy-compatible alias that forces the Rust
+language regardless of `--language`.
 
 ### Key Features
 
 - **Unattended execution**: Runs all phases without human intervention
-- **Automatic repair**: Retries failed steps locally with diagnostics; escalates to Copilot if needed
+- **Multi-language**: 8 languages (rust, typescript, python, cpp, haskell, julia, nix, shell),
+  selectable per-phase via a `Language:` directive or globally via `--language`
+- **Automatic repair**: Retries failed steps locally with diagnostics; escalates to the fixer
+  role if needed
 - **Memory tracking**: Stores phase context and completion status for resumability
 - **Resumable failures**: Exit code 2 indicates a phase exhausted its repair budget but can be resumed
 - **Branch enforcement**: Must run on a dedicated feature branch (not main/master/develop)
-- **Fatal coverage gate**: Coverage threshold is enforced; failures block the phase
-- **Auto-format**: `cargo fmt` runs automatically (not just check)
+- **Fatal coverage gate**: Rust only — coverage threshold is enforced; failures block the phase
+- **Baseline-green precondition**: Nix and Shell run their whole-repo validator (`nix flake check`,
+  `shellcheck`) once on the untouched tree before any implementation attempt; a pre-existing
+  failure is an environment error (exit 3), not a retryable phase failure
 
 ### Usage
 
@@ -161,18 +174,25 @@ autonomous agent execution.
 # Run from a feature branch (required)
 git checkout -b feat/my-feature
 
-# Execute the plan
+# Execute a TypeScript plan
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --language typescript
+
+# Execute a polyglot plan (each phase declares its own Language:)
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
+
+# Execute a Rust plan via the legacy alias
 bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md
 
 # Exit codes:
 #   0 = all phases passed
 #   2 = phase exhausted repair budget (resumable — run again to continue)
-#   3 = input/environment error (bad plan, wrong branch, missing toolchain)
+#   3 = input/environment error (bad plan, wrong branch, missing toolchain, baseline check failure)
 ```
 
 ### Plan File Format
 
-Create a plan file with phases and steps:
+Create a plan file with phases and steps. `Language:` and `Coverage:` directives are optional —
+omit `Language:` to inherit the run's default language:
 
 ```markdown
 # Feature: Add authentication module
@@ -180,6 +200,7 @@ Create a plan file with phases and steps:
 ## Phase 1: Create auth module
 
 Commit message: feat: add auth module structure
+Language: rust
 
 ### Step 1: Create auth module
 
@@ -192,6 +213,8 @@ Add a login function to src/auth/mod.rs.
 ## Phase 2: Add tests
 
 Commit message: feat: add auth tests
+Language: rust
+Coverage: 85%
 
 ### Step 1: Add unit tests
 
@@ -207,7 +230,7 @@ If a phase fails and exhausts its repair budget (exit code 2):
 ```bash
 # Fix the issue manually or wait for the next retry
 # Then resume from where it left off
-bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 
 # The pipeline detects the last completed phase and skips to the next one
 # No need to manually reset or specify a starting phase
@@ -235,25 +258,35 @@ git-based resume only.
 |-----------|---------|--------|
 | 0 | All phases passed | Feature is complete |
 | 2 | Phase exhausted repair budget | Fix the issue and run again to resume |
-| 3 | Input/environment error | Fix the error (bad plan, wrong branch, missing toolchain) and retry |
+| 3 | Input/environment error (incl. baseline check failure) | Fix the error and retry |
 
 ### Troubleshooting
 
-**"Error: rust-plan-cycle must run on a dedicated feature branch"**
+**"Error: plan-cycle must run on a dedicated feature branch"**
 - You are on main, master, or develop
 - Create a feature branch: `git checkout -b feat/my-feature`
 
+**"Phase N uses unregistered language"**
+- Check spelling against the 8 known languages
+- See [`docs/plan-cycle-languages.md`](docs/plan-cycle-languages.md)
+
+**"Baseline check failed... before any implementation attempt"**
+- Nix or Shell phase — the whole-repo validator was already failing before this run started
+- Fix the pre-existing issue directly, then re-run
+
 **"Phase exhausted repair budget (exit code 2)"**
-- The phase failed after local retries and Copilot escalation
+- The phase failed after local retries and fixer escalation
 - Review the error message and fix the issue manually
 - Run the pipeline again to resume from the next phase
 
-**"Coverage gate failed"**
+**"Coverage gate failed"** (Rust only)
 - Test coverage is below the threshold (default 90%)
-- Add more tests or adjust the coverage directive in the plan file
-- See [`docs/rust-plan-cycle.md`](docs/rust-plan-cycle.md) for coverage directives
+- Add more tests or adjust the `Coverage:` directive in the plan file
+- See [`docs/plan-cycle.md`](docs/plan-cycle.md) for coverage directives
 
-See [`docs/rust-plan-cycle.md`](docs/rust-plan-cycle.md) for full documentation.
+See [`docs/plan-cycle.md`](docs/plan-cycle.md) for full documentation and
+[`docs/plan-cycle-languages.md`](docs/plan-cycle-languages.md) for the per-language toolchain
+reference and Nix flake dev-shell prerequisites.
 
 ---
 
@@ -277,7 +310,7 @@ Examples:
 ```
 /scaffold-rust /tmp/my-rust-project
 /scaffold-cpp /tmp/my-cpp-project
-/pipeline rust-dev-cycle ./my-project --input "Add a config module"
+/pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
 ```
 
 Command files are deployed globally to `~/.config/opencode/commands/` via Home Manager.
@@ -298,9 +331,9 @@ Scaffold me a new Rust project at /tmp/my-rust-project
 OpenCode will call the `pipeline` tool with `name="scaffold-rust"` and
 `workspace="/tmp/my-rust-project"` and report the result.
 
-The tool accepts all five pipeline names (`scaffold-rust`, `scaffold-cpp`,
-`dev-cycle`, `rust-dev-cycle`, `cmake-dev-cycle`) and an optional `input`
-argument for dev-cycle pipelines.
+The tool accepts all registered pipeline names (`plan-cycle`, `rust-plan-cycle`,
+`scaffold-rust`, `scaffold-cpp`) and an optional `input`/`plan` argument for
+`plan-cycle`/`rust-plan-cycle` runs.
 
 ### Using a file as pipeline input
 
