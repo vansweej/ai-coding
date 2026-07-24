@@ -88,7 +88,14 @@
             buildPhase = ''
               export HOME=$TMPDIR/home
               mkdir -p $HOME
-              export BUN_INSTALL_CACHE_DIR=${bunCache}
+              # Copy the FOD cache into a writable dir before installing: newer
+              # bun versions write temp/lock files into BUN_INSTALL_CACHE_DIR,
+              # which fails with "AccessDenied" if it points directly at the
+              # read-only ${bunCache} store path. cp -r (not -rL) is sufficient
+              # since the FOD's installPhase already dereferenced symlinks.
+              cp -r ${bunCache} $TMPDIR/bun-cache
+              chmod -R u+w $TMPDIR/bun-cache
+              export BUN_INSTALL_CACHE_DIR=$TMPDIR/bun-cache
               bun install --frozen-lockfile --no-progress
             '';
 
