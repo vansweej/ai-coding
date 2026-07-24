@@ -31,18 +31,18 @@ describe("language configs", () => {
 
   it("RUST_CONFIG declares correct source extensions and roots", () => {
     expect(RUST_CONFIG.sourceExtensions).toEqual([".rs"]);
-    expect(RUST_CONFIG.sourceRoots).toEqual(["src"]);
+    expect(RUST_CONFIG.sourceRoots).toEqual(["src", "crates", "."]);
   });
 
   it("CPP_CONFIG declares correct source extensions and roots", () => {
     expect(CPP_CONFIG.sourceExtensions).toEqual([".cpp", ".h", ".hpp"]);
-    expect(CPP_CONFIG.sourceRoots).toEqual(["src", "include"]);
+    expect(CPP_CONFIG.sourceRoots).toEqual(["src", "include", "."]);
   });
 
   it("createRustPlanConfig declares correct source extensions and roots", () => {
     const config = createRustPlanConfig({ mode: "default" }, "");
     expect(config.sourceExtensions).toEqual([".rs"]);
-    expect(config.sourceRoots).toEqual(["src"]);
+    expect(config.sourceRoots).toEqual(["src", "crates", "."]);
   });
 
   it("requires doc comments in every implement system prompt", () => {
@@ -240,7 +240,7 @@ describe("language configs", () => {
     it("declares correct source extensions and roots", () => {
       const config = createCppPlanConfig({ mode: "default" }, "");
       expect(config.sourceExtensions).toEqual([".cpp", ".h", ".hpp"]);
-      expect(config.sourceRoots).toEqual(["src", "include"]);
+      expect(config.sourceRoots).toEqual(["src", "include", "."]);
     });
 
     it("produces aider-style patch system prompt", () => {
@@ -270,7 +270,7 @@ describe("language configs", () => {
     it("declares correct source extensions and roots", () => {
       const config = createHaskellPlanConfig({ mode: "default" }, "");
       expect(config.sourceExtensions).toEqual([".hs"]);
-      expect(config.sourceRoots).toEqual(["src", "app"]);
+      expect(config.sourceRoots).toEqual(["src", "app", "."]);
     });
 
     it("produces aider-style patch system prompt", () => {
@@ -300,7 +300,7 @@ describe("language configs", () => {
     it("declares correct source extensions and roots", () => {
       const config = createJuliaPlanConfig({ mode: "default" }, "");
       expect(config.sourceExtensions).toEqual([".jl"]);
-      expect(config.sourceRoots).toEqual(["src"]);
+      expect(config.sourceRoots).toEqual(["src", "."]);
     });
 
     it("produces aider-style patch system prompt", () => {

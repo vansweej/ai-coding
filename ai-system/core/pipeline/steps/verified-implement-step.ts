@@ -342,22 +342,32 @@ export function createVerifiedImplementStep(
                   buildImplementationPrompt(options.languageConfig, prompt),
                   "edit",
                 );
-        if (!implementResult.ok) return implementResult;
-        implementation = implementResult.value;
 
-        const verificationResult = await runVerification(ctx, verificationSteps);
-        if (verificationResult.ok) {
-          return {
-            ok: true,
-            value: {
-              stepName: name,
-              output: `Verified implementation after ${attemptNumber + 1} local attempt(s)`,
-              durationMs: Date.now() - startedAt,
-            },
-          };
+        if (implementResult.ok) {
+          implementation = implementResult.value;
+
+          const verificationResult = await runVerification(ctx, verificationSteps);
+          if (verificationResult.ok) {
+            return {
+              ok: true,
+              value: {
+                stepName: name,
+                output: `Verified implementation after ${attemptNumber + 1} local attempt(s)`,
+                durationMs: Date.now() - startedAt,
+              },
+            };
+          }
+          lastError = verificationResult.error;
+        } else {
+          // The model returned prose instead of patches, or a SEARCH anchor
+          // did not match the current file contents. This is retryable, not
+          // fatal: feed the error back on the next attempt (with refreshed
+          // file contents) instead of aborting the whole feature. Without
+          // this, a single chatty or malformed response would kill an
+          // otherwise-recoverable unattended run.
+          lastError = implementResult.error;
         }
 
-        lastError = verificationResult.error;
         // Refresh current file contents on each retry for accurate SEARCH anchor matching
         const currentFileContents = readCurrentFileContents(
           options.workspace,
@@ -393,21 +403,27 @@ export function createVerifiedImplementStep(
           buildImplementationPrompt(options.languageConfig, fixPrompt),
           "fix",
         );
-        if (!fixResult.ok) return fixResult;
-        implementation = fixResult.value;
 
-        const verificationResult = await runVerification(ctx, verificationSteps);
-        if (verificationResult.ok) {
-          return {
-            ok: true,
-            value: {
-              stepName: name,
-              output: `Verified implementation after escalation attempt ${escalationAttempt + 1}`,
-              durationMs: Date.now() - startedAt,
-            },
-          };
+        if (fixResult.ok) {
+          implementation = fixResult.value;
+
+          const verificationResult = await runVerification(ctx, verificationSteps);
+          if (verificationResult.ok) {
+            return {
+              ok: true,
+              value: {
+                stepName: name,
+                output: `Verified implementation after escalation attempt ${escalationAttempt + 1}`,
+                durationMs: Date.now() - startedAt,
+              },
+            };
+          }
+          lastError = verificationResult.error;
+        } else {
+          // Same reasoning as the local loop above: a parse/apply failure
+          // during escalation is retryable, not fatal.
+          lastError = fixResult.error;
         }
-        lastError = verificationResult.error;
       }
 
       return {

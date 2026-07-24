@@ -119,7 +119,9 @@ export const RUST_CONFIG: DevCycleLanguageConfig = {
   name: "rust",
   languageHint: "Rust",
   sourceExtensions: [".rs"],
-  sourceRoots: ["src"],
+  // "src" for single-crate projects, "crates" for cargo workspaces
+  // (crates/<name>/src/*.rs), and "." as a catch-all for non-standard layouts.
+  sourceRoots: ["src", "crates", "."],
   implementSystem:
     "You are a Rust coding assistant. Output ONLY implementation code in fenced code blocks. " +
     "Each block must have the format: ```<language> <relative-file-path>. " +
@@ -172,7 +174,7 @@ export function createRustPlanConfig(
     name: "rust",
     languageHint: "Rust",
     sourceExtensions: [".rs"],
-    sourceRoots: ["src"],
+    sourceRoots: ["src", "crates", "."],
     implementSystem: buildPatchSystem("Rust", RUST_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt"], { cwd: workspace }),
@@ -300,7 +302,7 @@ export function createCppPlanConfig(
     name: "cpp",
     languageHint: "C++",
     sourceExtensions: [".cpp", ".h", ".hpp"],
-    sourceRoots: ["src", "include"],
+    sourceRoots: ["src", "include", "."],
     implementSystem: buildPatchSystem("C++", CPP_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>(
@@ -338,7 +340,7 @@ export function createHaskellPlanConfig(
     name: "haskell",
     languageHint: "Haskell",
     sourceExtensions: [".hs"],
-    sourceRoots: ["src", "app"],
+    sourceRoots: ["src", "app", "."],
     implementSystem: buildPatchSystem("Haskell", HASKELL_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
       // cabal build doubles as the typecheck step for Haskell.
@@ -377,7 +379,7 @@ export function createJuliaPlanConfig(
     name: "julia",
     languageHint: "Julia",
     sourceExtensions: [".jl"],
-    sourceRoots: ["src"],
+    sourceRoots: ["src", "."],
     implementSystem: buildPatchSystem("Julia", JULIA_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>(
@@ -493,7 +495,7 @@ export const CPP_CONFIG: DevCycleLanguageConfig = {
   name: "cpp",
   languageHint: "C++",
   sourceExtensions: [".cpp", ".h", ".hpp"],
-  sourceRoots: ["src", "include"],
+  sourceRoots: ["src", "include", "."],
   implementSystem:
     "You are a C++ coding assistant. Output ONLY implementation code in fenced code blocks. " +
     "Each block must have the format: ```<language> <relative-file-path>. " +

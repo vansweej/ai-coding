@@ -169,6 +169,55 @@ describe("createVerifiedImplementStep", () => {
       expect(result.error.message).toContain("compile error");
     }
   });
+
+  it("recovers in the local loop when the model returns prose instead of a patch on the first attempt", async () => {
+    const dispatcher = sequenceDispatcher([
+      "I need to see the current contents of src/index.ts to make the correct patch.",
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+    ]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(0)),
+      retryConfig: { maxLocalRetries: 1, maxEscalationRetries: 0 },
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(workspace, "src/index.ts"), "utf8")).toBe("export const value = 1;");
+    // The corrective re-prompt must carry the parse failure back to the model.
+    expect(dispatcher.prompts[1]).toContain("is missing");
+    expect(dispatcher.prompts[1]).toContain("SEARCH");
+  });
+
+  it("recovers in the escalation loop when the fixer returns prose instead of a patch on its first attempt", async () => {
+    const dispatcher = sequenceDispatcher([
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 'bad';\n>>>>>>> REPLACE",
+      "Let me look at the current file before proposing a fix.",
+      "src/index.ts\n<<<<<<< SEARCH\nexport const value = 'bad';\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+    ]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(1)),
+      retryConfig: { maxLocalRetries: 0, maxEscalationRetries: 2 },
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(workspace, "src/index.ts"), "utf8")).toBe("export const value = 1;");
+    expect(dispatcher.prompts).toHaveLength(3);
+  });
 });
 
 describe("buildVerificationFailurePrompt", () => {
