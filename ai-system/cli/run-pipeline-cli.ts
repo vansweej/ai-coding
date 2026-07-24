@@ -6,6 +6,7 @@ import { $ } from "bun";
 
 import { PLAN_CONFIG_FACTORIES } from "../core/pipeline/definitions/language-configs";
 import { runFeature } from "../core/pipeline/feature-runner";
+import { BaselineCheckError } from "../core/pipeline/phase-runner";
 import { KNOWN_LANGUAGES, type LanguageName } from "../core/pipeline/plan-parser";
 import { loadConfig } from "./load-config";
 import { parseArgs } from "./parse-args";
@@ -159,8 +160,12 @@ async function main(): Promise<void> {
 
     if (!outcome.ok) {
       console.error(`Feature failed: ${outcome.error.message}`);
-      // Determine if this is a resumable failure or environment error
-      // For now, treat all feature failures as resumable (exit code 2)
+      // A BaselineCheckError means the untouched tree was already broken before
+      // any implementation attempt — treat as an environment error, not a
+      // resumable phase failure.
+      if (outcome.error instanceof BaselineCheckError) {
+        process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+      }
       process.exit(EXIT_CODES.RESUMABLE_FAILURE);
     }
 

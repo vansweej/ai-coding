@@ -52,6 +52,18 @@ export interface DevCycleLanguageConfig {
    * collecting source context. When omitted, defaults to the workspace root (".").
    */
   readonly sourceRoots?: readonly string[];
+  /**
+   * When true, `runPhase` runs `toolchainSteps` once on the untouched tree
+   * BEFORE any implementation attempt for the phase. A failure here indicates
+   * the workspace was already broken (e.g. a stale `nix flake check` or a
+   * pre-existing whole-repo lint failure) rather than something the phase's
+   * implementation introduced, so it is treated as an environment error
+   * (`BaselineCheckError`) rather than an ordinary phase failure.
+   *
+   * Intended for whole-repo validators that cannot be scoped to a diff
+   * (e.g. `nix flake check`, `shellcheck` across all scripts).
+   */
+  readonly baselineCheck?: boolean;
   /** Verification steps run once after all implementation steps in a phase. */
   toolchainSteps(workspace: string): readonly PipelineStep<AIRequestEvent>[];
 }

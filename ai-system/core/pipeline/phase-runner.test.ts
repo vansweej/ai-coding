@@ -11,7 +11,7 @@ import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@
 import { LOCAL_PROFILE } from "../../config/model-profiles";
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig, PlanConfigFactory } from "./definitions/language-configs";
-import { runPhase } from "./phase-runner";
+import { BaselineCheckError, runPhase } from "./phase-runner";
 import type { Phase } from "./plan-parser";
 
 function dispatcher(response: string): ModelDispatcher {
@@ -49,6 +49,59 @@ function languageConfig(shouldFail: boolean, calls?: string[]): DevCycleLanguage
 
 function makeFactory(shouldFail: boolean, calls?: string[]): PlanConfigFactory {
   return () => languageConfig(shouldFail, calls);
+}
+
+/** Language config with a toolchain step that logs each invocation and can fail on the first call only. */
+function baselineLanguageConfig(
+  baselineCheck: boolean,
+  failFirstCall: boolean,
+  callLog: string[],
+): DevCycleLanguageConfig {
+  let callCount = 0;
+  return {
+    name: "typescript",
+    implementSystem: "system",
+    languageHint: "TypeScript",
+    sourceExtensions: [".ts"],
+    sourceRoots: ["src"],
+    baselineCheck,
+    toolchainSteps: (_workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+      {
+        name: "verify",
+        execute: async (): Promise<Result<StepResult>> => {
+          callCount += 1;
+          callLog.push(`call-${callCount}`);
+          if (failFirstCall && callCount === 1) {
+            return { ok: false, error: new Error("baseline broken") };
+          }
+          return { ok: true, value: { stepName: "verify", output: "ok", durationMs: 0 } };
+        },
+      },
+    ],
+  };
+}
+
+function makeBaselineFactory(
+  baselineCheck: boolean,
+  failFirstCall: boolean,
+  callLog: string[],
+): PlanConfigFactory {
+  return () => baselineLanguageConfig(baselineCheck, failFirstCall, callLog);
+}
+
+/** Model dispatcher that records how many times it was invoked. */
+function countingDispatcher(response: string): {
+  readonly dispatcher: ModelDispatcher;
+  readonly callCount: () => number;
+} {
+  let count = 0;
+  const modelDispatcher: ModelDispatcher = {
+    dispatch: async (_request: DispatchRequest): Promise<Result<string>> => {
+      count += 1;
+      return { ok: true, value: response };
+    },
+  };
+  return { dispatcher: modelDispatcher, callCount: () => count };
 }
 
 function config(response: string): OrchestratorConfig {
@@ -193,5 +246,78 @@ describe("runPhase", () => {
     expect(prompts[1]).toContain("Do two");
     expect(verifyCalls).toEqual(["verify"]);
     expect(commits).toEqual(["feat: add core"]);
+  });
+
+  it("skips baseline check when languageConfig.baselineCheck is unset", async () => {
+    const callLog: string[] = [];
+    const { dispatcher: modelDispatcher, callCount } = countingDispatcher(
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+    );
+    const result = await runPhase(PHASE, {
+      config: { profile: LOCAL_PROFILE, dispatchers: { "gemma4:26b": modelDispatcher } },
+      workspace,
+      defaultLanguage: "typescript",
+      factories: { typescript: makeBaselineFactory(false, false, callLog) },
+      commitPhase: async () => ({ ok: true, value: "" }),
+    });
+
+    expect(result.ok).toBe(true);
+    // Only the post-implementation verification call, no baseline call.
+    expect(callLog).toEqual(["call-1"]);
+    expect(callCount()).toBe(1);
+  });
+
+  it("runs a baseline check before implement when baselineCheck is true, and proceeds when it passes", async () => {
+    const callLog: string[] = [];
+    const commits: string[] = [];
+    const { dispatcher: modelDispatcher, callCount } = countingDispatcher(
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+    );
+    const result = await runPhase(PHASE, {
+      config: { profile: LOCAL_PROFILE, dispatchers: { "gemma4:26b": modelDispatcher } },
+      workspace,
+      defaultLanguage: "typescript",
+      factories: { typescript: makeBaselineFactory(true, false, callLog) },
+      commitPhase: async (_workspace, message) => {
+        commits.push(message);
+        return { ok: true, value: message };
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    // Baseline call + post-implementation verification call.
+    expect(callLog).toEqual(["call-1", "call-2"]);
+    expect(callCount()).toBe(1);
+    expect(commits).toEqual(["feat: add core"]);
+  });
+
+  it("halts with BaselineCheckError and skips implementation when the baseline check fails", async () => {
+    const callLog: string[] = [];
+    const commits: string[] = [];
+    const { dispatcher: modelDispatcher, callCount } = countingDispatcher(
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+    );
+    const result = await runPhase(PHASE, {
+      config: { profile: LOCAL_PROFILE, dispatchers: { "gemma4:26b": modelDispatcher } },
+      workspace,
+      defaultLanguage: "typescript",
+      factories: { typescript: makeBaselineFactory(true, true, callLog) },
+      commitPhase: async (_workspace, message) => {
+        commits.push(message);
+        return { ok: true, value: message };
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(BaselineCheckError);
+      expect(result.error.message).toContain("Baseline check failed");
+      expect(result.error.message).toContain("before any implementation attempt");
+    }
+    // Baseline call only — verification (post-implement) never reached.
+    expect(callLog).toEqual(["call-1"]);
+    // The implementer was never invoked.
+    expect(callCount()).toBe(0);
+    expect(commits).toEqual([]);
   });
 });

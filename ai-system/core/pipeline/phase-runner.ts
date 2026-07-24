@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { $ } from "bun";
 
-import type { Result } from "@ai-coding/pipeline";
+import type { PipelineContext, Result, StepResult } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
@@ -13,6 +13,19 @@ import {
 import type { LanguageName, Phase } from "./plan-parser";
 import type { RetryConfig } from "./steps/verified-implement-step";
 import { createVerifiedImplementStep } from "./steps/verified-implement-step";
+
+/**
+ * Error indicating a baseline-green precondition check failed on the untouched
+ * tree, before any implementation attempt. Distinguishes environment/toolchain
+ * failures (should halt the whole run) from ordinary phase verification
+ * failures (which retry/escalate normally).
+ */
+export class BaselineCheckError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BaselineCheckError";
+  }
+}
 
 /** Summary returned after a phase succeeds. */
 export interface PhaseRunResult {
@@ -93,6 +106,35 @@ function buildPhaseInstruction(phase: Phase): string {
     .join("\n\n---\n\n");
 }
 
+/**
+ * Run a language config's toolchainSteps once against the untouched tree,
+ * before any implementation attempt. Any step failure is wrapped in a
+ * BaselineCheckError so callers can distinguish it from a normal phase failure.
+ */
+async function runBaselineCheck(
+  workspace: string,
+  languageConfig: DevCycleLanguageConfig,
+): Promise<Result<void>> {
+  const steps = languageConfig.toolchainSteps(workspace);
+  const ctx: PipelineContext<AIRequestEvent> = {
+    event: buildStepEvent(""),
+    results: new Map<string, StepResult>(),
+  };
+  for (const step of steps) {
+    const result = await step.execute(ctx);
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: new BaselineCheckError(
+          `Baseline check failed at step "${step.name}" before any implementation attempt: ${result.error.message}`,
+        ),
+      };
+    }
+    ctx.results.set(step.name, result.value);
+  }
+  return { ok: true, value: undefined };
+}
+
 /** Run every implementation step in a phase, verify once, then auto-commit. */
 export async function runPhase(
   phase: Phase,
@@ -112,6 +154,12 @@ export async function runPhase(
   }
   const diff = safeGitDiff(options.workspace);
   const languageConfig: DevCycleLanguageConfig = factory(phase.coverage, diff);
+
+  if (languageConfig.baselineCheck) {
+    const baselineResult = await runBaselineCheck(options.workspace, languageConfig);
+    if (!baselineResult.ok) return baselineResult;
+  }
+
   // Store phase context in memory if memory client is available
   if (options.config.memory) {
     const phaseContext = JSON.stringify({
