@@ -25,7 +25,10 @@ export interface PatchApplyError {
  * Apply a series of patch edits to the filesystem.
  *
  * For each edit:
- *   - If `isCreate` is true: write the replacement text to a new file (fail if it exists).
+ *   - If `isCreate` is true: write the replacement text to a new file. If the
+ *     file already exists with byte-identical content, this is a no-op
+ *     success (idempotent retry); if it exists with different content, this
+ *     fails.
  *   - Otherwise: read the current file, verify the search anchor occurs exactly once,
  *     and replace it with the replacement text.
  *
@@ -68,8 +71,22 @@ export async function applyPatch(
 
     try {
       if (edit.isCreate) {
-        // File creation mode: fail if the file already exists
+        // File creation mode: fail if the file already exists with DIFFERENT
+        // content. If the content is byte-identical, treat this as a no-op
+        // success instead of an error -- this makes create-mode idempotent
+        // under retry. It matters because a multi-step phase applies each
+        // step's patch immediately as it succeeds; if a LATER step in the
+        // same round fails, the retry re-issues ALL steps (including this
+        // already-applied create) as one combined edit. Without this,
+        // re-issuing an already-satisfied create step would abort the retry
+        // instead of letting it proceed to the step that actually needs
+        // fixing.
         if (existsSync(absolutePath)) {
+          const currentContent = readFileSync(absolutePath, "utf8");
+          if (currentContent === edit.replace) {
+            applied.push({ filePath: edit.filePath, created: false });
+            continue;
+          }
           return {
             ok: false,
             error: {

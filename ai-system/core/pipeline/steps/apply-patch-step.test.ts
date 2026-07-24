@@ -86,7 +86,7 @@ describe("applyPatch", () => {
     expect(content).toBe("export const value = 42;");
   });
 
-  it("fails when creating a file that already exists", async () => {
+  it("fails when creating a file that already exists with different content", async () => {
     // Setup: create a file
     const filePath = join(tempDir, "existing.ts");
     writeFileSync(filePath, "old content", "utf8");
@@ -106,6 +106,34 @@ describe("applyPatch", () => {
 
     expect(result.error.reason).toBe("exists");
     expect(result.error.message).toContain("already exists");
+  });
+
+  it("treats create-mode as a no-op success when the file already has identical content", async () => {
+    // Simulates a retry re-issuing an already-applied create step: a prior
+    // attempt in the same phase round already wrote this exact content
+    // before a later step failed, and the retry re-sends all steps combined.
+    const filePath = join(tempDir, "already-created.ts");
+    writeFileSync(filePath, "export const value = 1;", "utf8");
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "already-created.ts",
+        search: "",
+        replace: "export const value = 1;",
+        isCreate: true,
+      },
+    ];
+
+    const result = await applyPatch(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected ok result");
+
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0]?.filePath).toBe("already-created.ts");
+    expect(result.value[0]?.created).toBe(false);
+
+    // File content is unchanged.
+    expect(readFileSync(filePath, "utf8")).toBe("export const value = 1;");
   });
 
   it("returns not-found when anchor is not in the file", async () => {
