@@ -79,4 +79,27 @@ describe("createShellStep", () => {
     if (!result.ok) return;
     expect(result.value.durationMs).toBeGreaterThanOrEqual(0);
   });
+
+  it("includes both stdout and stderr in the output", async () => {
+    const step = createShellStep<TestEvent>("combined-step", [
+      "sh",
+      "-c",
+      "echo to-out; echo to-err >&2",
+    ]);
+    const result = await step.execute(testCtx);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.output).toContain("to-out");
+    expect(result.value.output).toContain("to-err");
+  });
+
+  it("returns empty output when command prints nothing", async () => {
+    const step = createShellStep<TestEvent>("silent-step", ["true"]);
+    const result = await step.execute(testCtx);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.output).toBe("");
+  });
 });
