@@ -469,6 +469,32 @@ export function createVerifiedImplementStep(
           // file contents) instead of aborting the whole feature. Without
           // this, a single chatty or malformed response would kill an
           // otherwise-recoverable unattended run.
+          //
+          // If a PRIOR attempt in this run already wrote a successful
+          // implementation (implementation !== ""), re-verify the CURRENT
+          // (unchanged) tree before giving up: the model may be correctly
+          // reporting that no further code changes are needed (e.g.
+          // "already implemented"), in which case that prior write already
+          // left the tree in a passing state and verification simply
+          // hadn't been re-run since (it only runs after a successful
+          // implement). Guarded on a prior successful write specifically
+          // so this can never fire on a cold, never-implemented tree --
+          // otherwise a baseline that happens to already pass its own
+          // toolchain (e.g. existing tests unrelated to the new feature)
+          // could cause a false "verified" result with nothing implemented.
+          if (implementation !== "") {
+            const recheck = await runVerification(ctx, verificationSteps);
+            if (recheck.ok) {
+              return {
+                ok: true,
+                value: {
+                  stepName: name,
+                  output: `Verified implementation after ${attemptNumber + 1} local attempt(s) (model reported no further changes needed; re-verified current state)`,
+                  durationMs: Date.now() - startedAt,
+                },
+              };
+            }
+          }
           lastError = implementResult.error;
         }
 
@@ -560,7 +586,27 @@ export function createVerifiedImplementStep(
           lastError = verificationResult.error;
         } else {
           // Same reasoning as the local loop above: a parse/apply failure
-          // during escalation is retryable, not fatal.
+          // during escalation is retryable, not fatal. Also, if a PRIOR
+          // attempt already wrote a successful implementation, re-verify
+          // the current (unchanged) state before giving up -- the model
+          // may be correctly reporting that no further changes are needed.
+          // Guarded on a prior successful write for the same reason as the
+          // local loop: never let a cold, never-implemented tree pass by
+          // coincidence of its own baseline already satisfying the
+          // toolchain.
+          if (implementation !== "") {
+            const recheck = await runVerification(ctx, verificationSteps);
+            if (recheck.ok) {
+              return {
+                ok: true,
+                value: {
+                  stepName: name,
+                  output: `Verified implementation after escalation attempt ${escalationAttempt + 1} (model reported no further changes needed; re-verified current state)`,
+                  durationMs: Date.now() - startedAt,
+                },
+              };
+            }
+          }
           lastError = fixResult.error;
         }
       }

@@ -59,6 +59,36 @@ function verificationStep(failuresBeforeSuccess: number): PipelineStep<AIRequest
   };
 }
 
+/**
+ * A verification step that reflects the ACTUAL on-disk content of a file,
+ * unlike `verificationStep` above (which passes/fails purely by call count).
+ * Used for tests that must distinguish "verification re-run against
+ * unchanged, still-broken code" from "verification passing because the
+ * code was genuinely fixed" -- a real toolchain (e.g. `cargo test`) is
+ * deterministic against file content, so re-running it against unchanged
+ * broken code must keep failing.
+ */
+function contentCheckingVerificationStep(
+  filePath: string,
+  expectedContent: string,
+): PipelineStep<AIRequestEvent> {
+  return {
+    name: "verify",
+    execute: async (): Promise<Result<StepResult>> => {
+      let actual: string;
+      try {
+        actual = readFileSync(filePath, "utf8");
+      } catch {
+        return { ok: false, error: new Error("file not found") };
+      }
+      if (actual !== expectedContent) {
+        return { ok: false, error: new Error(`expected "${expectedContent}", got "${actual}"`) };
+      }
+      return { ok: true, value: { stepName: "verify", output: "ok", durationMs: 0 } };
+    },
+  };
+}
+
 function makeLanguageConfig(step: PipelineStep<AIRequestEvent>): DevCycleLanguageConfig {
   return {
     name: "typescript",
@@ -206,10 +236,16 @@ describe("createVerifiedImplementStep", () => {
       profile: LOCAL_PROFILE,
       dispatchers: { "gemma4:26b": dispatcher },
     };
+    // Content-aware verification: passes only once the file actually
+    // contains the fixed value, so a prose ("no changes") response that
+    // leaves the file at its still-broken content cannot cause a false
+    // pass on re-verification.
     const step = createVerifiedImplementStep("verified", {
       config,
       workspace,
-      languageConfig: makeLanguageConfig(verificationStep(1)),
+      languageConfig: makeLanguageConfig(
+        contentCheckingVerificationStep(join(workspace, "src/index.ts"), "export const value = 1;"),
+      ),
       retryConfig: { maxLocalRetries: 0, maxEscalationRetries: 2 },
     });
 
