@@ -16,8 +16,9 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
   `AWS_PROFILE`).
 - **Pipelines** -- plan-file driven workflows that implement steps, write files, verify with the
   language toolchain, retry locally, escalate fixes when needed, and commit each successful phase.
-  `plan-cycle` supports 9 languages (rust, typescript, python, cpp, docs, haskell, julia, nix, shell),
-  selectable per-phase or via `--language`.
+  `plan-cycle` auto-routes each touched file to a toolchain (rust, typescript, python, cpp,
+  haskell, julia, nix, shell) based on what's available in the workspace's devShell
+  (`flake.nix`); files with no matching or available toolchain are edit-only.
 - **Scaffold pipelines** -- generate new Rust and C++ projects including a `flake.nix` dev shell
   and a lightweight `AGENTS.md` with build commands and a language-skill reference
 - **Codebase indexer** -- indexes git repositories into a local LanceDB vector store using
@@ -54,21 +55,20 @@ custom tool will return an explicit error message.
 ## Running pipelines
 
 ```bash
-bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--language <name>] [--max-retries <n>] [--profile <name>] [-v | --verbose]
+bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--max-retries <n>] [--profile <name>] [-v | --verbose]
 ```
 
 | Pipeline name     | Steps                                                                  | Language(s)   |
 |-------------------|-------------------------------------------------------------------------|---------------|
-| `plan-cycle`      | unattended plan execution with memory tracking and resumable failures  | rust, typescript, python, cpp, docs, haskell, julia, nix, shell (per-phase `Language:` directive or `--language`) |
-| `rust-plan-cycle` | alias for `plan-cycle --language rust`                                 | Rust          |
+| `plan-cycle`      | unattended plan execution with memory tracking and resumable failures  | rust, typescript, python, cpp, haskell, julia, nix, shell (auto-routed per file from the workspace's devShell) |
 | `scaffold-rust`   | cargo init → generate flake.nix → write files → write AGENTS.md         | Rust          |
 | `scaffold-cpp`    | generate files → write files → cmake configure → write AGENTS.md       | C++           |
 
-`--language <name>` sets the default language for phases that don't declare their own
-`Language:` directive in the plan file. Omit it to default to `typescript`, or invoke the
-`rust-plan-cycle` alias to force `rust` regardless of `--language`. See
-[`docs/plan-cycle-languages.md`](docs/plan-cycle-languages.md) for the full per-language
-toolchain reference and Nix flake dev-shell prerequisites.
+Each phase's toolchain is auto-detected per file from the workspace's devShell (`flake.nix`) —
+there is no language selection flag or directive. A file with no available toolchain in the
+devShell (e.g. no `cargo` present) or no matching toolchain at all (e.g. `.md`/`.json`) is
+treated as edit-only. See [`docs/plan-cycle-languages.md`](docs/plan-cycle-languages.md) for the
+full per-language toolchain reference and Nix flake dev-shell prerequisites.
 
 `-v` / `--verbose` streams a live per-phase/step progress feed (start, finish, retry, failure) to
 **stderr** while a plan-cycle run executes, using nerd-font glyphs and color on a TTY (plain ASCII
@@ -128,14 +128,11 @@ bun run pipeline scaffold-rust /tmp/my-rust-project
 mkdir /tmp/my-cpp-project
 bun run pipeline scaffold-cpp /tmp/my-cpp-project
 
-# Run an unattended plan-cycle on a TypeScript project
-bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --language typescript
+# Run an unattended plan-cycle
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 
-# Run a polyglot plan (each phase declares its own Language: directive — no --language needed)
+# Run a polyglot plan (each touched file is auto-routed to its own toolchain)
 bun run pipeline plan-cycle ./my-project --plan ./plans/rate-limit.md
-
-# Run the unattended Rust plan cycle (requires feature branch; rust-plan-cycle forces rust)
-bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md
 
 # Run on native Anthropic Claude Sonnet (native Messages API; recommended for larger multi-file phases)
 ANTHROPIC_API_KEY=sk-ant-... bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --profile anthropic-sonnet
@@ -164,15 +161,16 @@ ollama pull nomic-embed-text  # required for codebase indexing and skill retriev
 
 The `plan-cycle` pipeline executes multi-phase, **multi-language** plans **unattended** with
 automatic repair, memory tracking, and resumable failures. It is designed for CI/CD workflows and
-autonomous agent execution. `rust-plan-cycle` is a legacy-compatible alias that forces the Rust
-language regardless of `--language`.
+autonomous agent execution. Each phase's toolchain is auto-routed per touched file from the
+workspace's devShell — there is no way to force a specific language.
 
 ### Key Features
 
 - **Unattended execution**: Runs all phases without human intervention
-- **Multi-language**: 9 languages (rust, typescript, python, cpp, docs, haskell, julia, nix, shell),
-  selectable per-phase via a `Language:` directive or globally via `--language`. `docs` is a
-  no-op toolchain for documentation-only phases (no compiler, linter, or coverage gate).
+- **Multi-language**: auto-routes each touched file to a toolchain (rust, typescript, python, cpp,
+  haskell, julia, nix, shell) based on what's available in the workspace's devShell
+  (`flake.nix`). Files with no matching or available toolchain (e.g. `.md`/`.json`) are
+  edit-only.
 - **Automatic repair**: Retries failed steps locally with diagnostics; escalates to the fixer
   role if needed
 - **Memory tracking**: Stores phase context and completion status for resumability
@@ -191,14 +189,11 @@ language regardless of `--language`.
 # Run from a feature branch (required)
 git checkout -b feat/my-feature
 
-# Execute a TypeScript plan
-bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --language typescript
-
-# Execute a polyglot plan (each phase declares its own Language:)
+# Execute a plan (each touched file is auto-routed to its own toolchain)
 bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 
-# Execute a Rust plan via the legacy alias
-bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md
+# Execute a Rust plan
+bun run pipeline plan-cycle ./my-rust-project --plan ./plans/feature.md
 
 # Execute with a live progress feed on stderr
 bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --verbose
@@ -211,8 +206,7 @@ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --verbose
 
 ### Plan File Format
 
-Create a plan file with phases and steps. `Language:` and `Coverage:` directives are optional —
-omit `Language:` to inherit the run's default language:
+Create a plan file with phases and steps. A `Coverage:` directive is optional per phase:
 
 ```markdown
 # Feature: Add authentication module
@@ -220,7 +214,6 @@ omit `Language:` to inherit the run's default language:
 ## Phase 1: Create auth module
 
 Commit message: feat: add auth module structure
-Language: rust
 
 ### Step 1: Create auth module
 
@@ -233,7 +226,6 @@ Add a login function to src/auth/mod.rs.
 ## Phase 2: Add tests
 
 Commit message: feat: add auth tests
-Language: rust
 Coverage: 85%
 
 ### Step 1: Add unit tests
@@ -287,7 +279,7 @@ git-based resume only.
 - Create a feature branch: `git checkout -b feat/my-feature`
 
 **"Phase N uses unregistered language"**
-- Check spelling against the 9 known languages
+- The toolchain auto-routed from the workspace's devShell doesn't match a known toolchain
 - See [`docs/plan-cycle-languages.md`](docs/plan-cycle-languages.md)
 
 **"Baseline check failed... before any implementation attempt"**
@@ -330,7 +322,7 @@ Examples:
 ```
 /scaffold-rust /tmp/my-rust-project
 /scaffold-cpp /tmp/my-cpp-project
-/pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
+/pipeline plan-cycle ./my-project --plan ./plans/feature.md
 ```
 
 Command files are deployed globally to `~/.config/opencode/commands/` via Home Manager.
@@ -351,9 +343,9 @@ Scaffold me a new Rust project at /tmp/my-rust-project
 OpenCode will call the `pipeline` tool with `name="scaffold-rust"` and
 `workspace="/tmp/my-rust-project"` and report the result.
 
-The tool accepts all registered pipeline names (`plan-cycle`, `rust-plan-cycle`,
+The tool accepts all registered pipeline names (`plan-cycle`,
 `scaffold-rust`, `scaffold-cpp`) and an optional `input`/`plan` argument for
-`plan-cycle`/`rust-plan-cycle` runs.
+`plan-cycle` runs.
 
 ### Using a file as pipeline input
 

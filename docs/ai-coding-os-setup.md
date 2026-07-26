@@ -31,7 +31,7 @@ ai-coding/
       orchestrator/        Single LLM call lifecycle; CopilotDispatcher, OllamaDispatcher, AnthropicDispatcher
       pipeline/
         steps/             OrchestratorStep (LLM), NixShellStep, FileWriterStep
-        definitions/       rust-plan-cycle, scaffold-rust, scaffold-cpp
+        definitions/       plan-cycle, scaffold-rust, scaffold-cpp
     cli/
       parse-args.ts        CLI argument parsing (--profile, --input flags)
       load-config.ts       Builds OrchestratorConfig with local profile (Ollama-only)
@@ -148,7 +148,7 @@ bun run pipeline <name> <workspace> [--input "task description"] [--profile <nam
 
 | Name              | Stack | Steps                                                        |
 |-------------------|-------|--------------------------------------------------------------|
-| `rust-plan-cycle` | Rust  | plan → implement → fmt → clippy → test → coverage; resumable |
+| `plan-cycle`      | auto-routed (rust, typescript, python, cpp, haskell, julia, nix, shell) | plan → implement → verify (per-file toolchain) → coverage (Rust); resumable |
 | `scaffold-rust`   | Rust  | cargo init + generate flake.nix                              |
 | `scaffold-cpp`    | C++   | generate CMakeLists.txt + src/main.cpp + flake.nix           |
 
@@ -158,21 +158,21 @@ bun run pipeline <name> <workspace> [--input "task description"] [--profile <nam
 # Scaffold a new Rust project
 bun run pipeline scaffold-rust /tmp/my-rust-project
 
-# Run rust-plan-cycle with a plan file
-bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
+# Run plan-cycle with a plan file
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 
 # Specify the model profile explicitly
-bun run pipeline rust-plan-cycle ./my-project --profile local --input "Add error handling"
+bun run pipeline plan-cycle ./my-project --profile local --input "Add error handling"
 
 # Use Anthropic Claude Sonnet via the native Messages API
 export ANTHROPIC_API_KEY=sk-ant-...
-bun run pipeline rust-plan-cycle ./my-project --profile anthropic-sonnet --input "Add error handling"
+bun run pipeline plan-cycle ./my-project --profile anthropic-sonnet --input "Add error handling"
 ```
 
 ### From OpenCode (slash command)
 
 ```
-/rust-plan-cycle ./my-project --plan ./plans/feature.md
+/pipeline plan-cycle ./my-project --plan ./plans/feature.md
 ```
 
 The `/pipeline` command is installed globally via Home Manager and available in
@@ -199,7 +199,7 @@ See [docs/agent-reference.md](./agent-reference.md) for full agent documentation
 ```
 @planner I want to add retry logic to the HTTP client. What's the best approach?
 
-@debugger The rust-plan-cycle pipeline is writing files to the wrong directory. Diagnose.
+@debugger The plan-cycle pipeline is writing files to the wrong directory. Diagnose.
 
 @reviewer Review the changes in the last commit for correctness and style.
 
@@ -273,7 +273,7 @@ and a pointer to the relevant language skill. Scaffold pipelines (`scaffold-rust
 3. **Explore first** — switch to the `explore` agent (Tab), ask questions about unfamiliar code
 4. **Plan** — switch to the `plan` agent, describe the change
 5. **Implement** — switch to `build`, tell it to follow the plan
-6. **Run a pipeline** — for self-contained tasks: `/rust-plan-cycle . --input "Add error handling"`
+6. **Run a pipeline** — for self-contained tasks: `/pipeline plan-cycle . --input "Add error handling"`
 7. **Review** — `@reviewer` checks the diff before committing
 8. **Commit** — the `build` agent commits with conventional commit messages
 

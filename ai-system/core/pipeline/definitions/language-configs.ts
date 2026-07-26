@@ -1,8 +1,26 @@
 import { createCoverageGateStep, createNixShellStep } from "@ai-coding/pipeline";
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
-import type { CoverageDirective, LanguageName } from "../plan-parser";
+import type { CoverageDirective } from "../plan-parser";
 import { resolveCoverageThreshold } from "../steps/coverage-exemption";
+
+/**
+ * Stable identifier for a toolchain. Purely an internal registry key -- NOT
+ * a plan-file directive (the `Language:` directive was removed along with
+ * `--language`; routing is now derived entirely from the workspace's
+ * devShell palette via `route()`). "docs" is deliberately absent: it is the
+ * no-toolchain floor every unmapped file extension already falls back to,
+ * not a real toolchain.
+ */
+export type ToolchainId =
+  | "rust"
+  | "typescript"
+  | "python"
+  | "cpp"
+  | "haskell"
+  | "julia"
+  | "nix"
+  | "shell";
 
 const DEFAULT_COVERAGE_THRESHOLD = 90;
 const DEFAULT_CPP_BUILD_DIR = "build";
@@ -50,13 +68,10 @@ const SHELL_PLAN_IDIOMS =
   "Follow POSIX-compatible shell idioms where possible, quote all variable expansions, start scripts with `set -euo pipefail`, and ensure the script passes shellcheck. " +
   "Generate syntactically valid shell code.";
 
-const DOCS_PLAN_IDIOMS =
-  "Write clear, well-structured Markdown; match the surrounding document's tone and heading levels; do not touch unrelated sections.";
-
 /**
  * Factory that creates a language-specific plan-cycle config from the phase's
- * coverage directive and current git diff.  Registered factories are keyed by
- * LanguageName so the phase-runner can look one up without knowing the language
+ * coverage directive and current git diff. Registered factories are keyed by
+ * ToolchainId so a caller can look one up without knowing the toolchain
  * at compile time.
  */
 export type PlanConfigFactory = (
@@ -67,7 +82,7 @@ export type PlanConfigFactory = (
 /** Language-specific configuration for the unified dev-cycle pipeline. */
 export interface DevCycleLanguageConfig {
   /** Stable language identifier used by CLI arguments and tests. */
-  readonly name: LanguageName;
+  readonly name: ToolchainId;
   /** System prompt for implementation and fix LLM calls. */
   readonly implementSystem: string;
   /** Short language hint included in user prompts. */
@@ -218,12 +233,6 @@ export function createRustPlanConfig(
     },
   };
 }
-
-/** Exported constant for RUST_PLAN_CONFIG with the default 90% fatal gate. */
-export const RUST_PLAN_CONFIG: DevCycleLanguageConfig = createRustPlanConfig(
-  { mode: "threshold", percent: 90 },
-  "",
-);
 
 /**
  * TypeScript plan-cycle configuration.
@@ -486,36 +495,6 @@ export function createShellPlanConfig(
 }
 
 /**
- * Docs (no-op toolchain) plan-cycle configuration.
- *
- * A documentation-only phase (e.g. a README or architecture-doc edit) has
- * nothing to compile, lint, or test — Markdown isn't verified by any
- * toolchain. `toolchainSteps` is intentionally an empty array: the phase
- * still applies its patch and commits normally, but no compiler, linter, or
- * coverage gate ever runs. This exists so a documentation phase inside a
- * compiled-language repo (e.g. a Rust workspace) doesn't drag in that
- * language's full toolchain purely because there is no lighter alternative
- * to inherit.
- *
- * The `coverage` and `diff` parameters are accepted for `PlanConfigFactory`
- * compatibility; docs plan-cycle never gates on coverage (there is nothing
- * to instrument).
- */
-export function createDocsPlanConfig(
-  _coverage: CoverageDirective,
-  _diff: string,
-): DevCycleLanguageConfig {
-  return {
-    name: "docs",
-    languageHint: "Markdown",
-    sourceExtensions: [".md"],
-    sourceRoots: ["docs", "."],
-    implementSystem: buildPatchSystem("Markdown", DOCS_PLAN_IDIOMS),
-    toolchainSteps: (): readonly PipelineStep<AIRequestEvent>[] => [],
-  };
-}
-
-/**
  * Registry of plan-config factories keyed by language name.
  *
  * A phase runner looks up the factory for the phase's language (or the run's
@@ -525,14 +504,16 @@ export function createDocsPlanConfig(
  * Languages not yet registered here fail cleanly with an "unregistered language"
  * error rather than silently falling back to the wrong toolchain.
  *
- * All 9 known languages are registered.
+ * All 8 known toolchains are registered. This registry now only serves the
+ * legacy `ToolchainId`-keyed `DevCycleLanguageConfig` machinery (still used
+ * by the standalone dev-cycle pipeline); the plan-cycle/devShell-router path
+ * (`ToolchainDescriptor`/`route()`) is the one production code actually uses.
  */
-export const PLAN_CONFIG_FACTORIES: Readonly<Partial<Record<LanguageName, PlanConfigFactory>>> = {
+export const PLAN_CONFIG_FACTORIES: Readonly<Partial<Record<ToolchainId, PlanConfigFactory>>> = {
   rust: createRustPlanConfig,
   typescript: createTsPlanConfig,
   python: createPythonPlanConfig,
   cpp: createCppPlanConfig,
-  docs: createDocsPlanConfig,
   haskell: createHaskellPlanConfig,
   julia: createJuliaPlanConfig,
   nix: createNixPlanConfig,
@@ -569,7 +550,7 @@ export const CPP_CONFIG: DevCycleLanguageConfig = {
 
 /** Built-in language configurations keyed by CLI language name. */
 export const DEV_CYCLE_LANGUAGE_CONFIGS: Readonly<
-  Partial<Record<LanguageName, DevCycleLanguageConfig>>
+  Partial<Record<ToolchainId, DevCycleLanguageConfig>>
 > = {
   typescript: TYPESCRIPT_CONFIG,
   rust: RUST_CONFIG,
@@ -577,16 +558,14 @@ export const DEV_CYCLE_LANGUAGE_CONFIGS: Readonly<
 };
 
 /**
- * Descriptor for one toolchain in the devShell-routed model (the eventual
- * replacement for the `--language`/`Language:` knob -- see P1
- * `devShellPalette`). Reuses the same toolchain step bodies and idiom
- * fragments as the `LanguageName`-keyed registry above; this is purely an
- * ADDITIVE re-keying by extension and marker tool, and does not yet change
- * how any phase is routed (that is `route()`, a later phase).
+ * Descriptor for one toolchain in the devShell-routed model -- the
+ * replacement for the former `--language`/`Language:` knob (removed; see
+ * `devShellPalette` and `route()`). Reuses the same toolchain step bodies
+ * and idiom fragments as the legacy `ToolchainId`-keyed registry above.
  */
 export interface ToolchainDescriptor {
-  /** Stable identifier, reusing the existing LanguageName values. */
-  readonly id: LanguageName;
+  /** Stable identifier. */
+  readonly id: ToolchainId;
   /** Human-readable language name used in implement-prompt idiom text. */
   readonly languageHint: string;
   /**
@@ -633,15 +612,13 @@ export interface ToolchainDescriptor {
 const DEFAULT_PLAN_COVERAGE: CoverageDirective = { mode: "threshold", percent: 90 };
 
 /**
- * Registry of toolchain descriptors keyed by LanguageName, reusing the
+ * Registry of toolchain descriptors keyed by ToolchainId, reusing the
  * existing `create*PlanConfig` factories and `*_PLAN_IDIOMS` fragments so
  * there is exactly one source of truth for each toolchain's steps and idioms.
  * `docs` is intentionally absent: it is not a real toolchain but the
  * no-toolchain floor that any unmapped file extension already falls back to.
  */
-export const TOOLCHAIN_DESCRIPTORS: Readonly<
-  Record<Exclude<LanguageName, "docs">, ToolchainDescriptor>
-> = {
+export const TOOLCHAIN_DESCRIPTORS: Readonly<Record<ToolchainId, ToolchainDescriptor>> = {
   rust: {
     id: "rust",
     languageHint: "Rust",
@@ -727,7 +704,7 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<
  * Locked route table (memory e06640ae): one canonical toolchain per source
  * extension; `.nix`/`.sh` map to whole-repo validators.
  */
-export const EXTENSION_TO_TOOLCHAIN: Readonly<Record<string, LanguageName>> = {
+export const EXTENSION_TO_TOOLCHAIN: Readonly<Record<string, ToolchainId>> = {
   ".rs": "rust",
   ".ts": "typescript",
   ".tsx": "typescript",

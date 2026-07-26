@@ -3,16 +3,12 @@ import { describe, expect, it } from "bun:test";
 import { PIPELINE_NAMES, PIPELINE_REGISTRY, findPipelineEntry } from "./pipeline-registry";
 
 describe("PIPELINE_REGISTRY", () => {
-  it("contains 5 entries", () => {
-    expect(PIPELINE_REGISTRY).toHaveLength(5);
+  it("contains 4 entries", () => {
+    expect(PIPELINE_REGISTRY).toHaveLength(4);
   });
 
   it("includes plan-cycle", () => {
     expect(PIPELINE_REGISTRY.some((e) => e.name === "plan-cycle")).toBe(true);
-  });
-
-  it("includes rust-plan-cycle", () => {
-    expect(PIPELINE_REGISTRY.some((e) => e.name === "rust-plan-cycle")).toBe(true);
   });
 
   it("includes doc-cycle", () => {
@@ -53,9 +49,9 @@ describe("PIPELINE_NAMES", () => {
 });
 
 describe("findPipelineEntry", () => {
-  it("returns the rust-plan-cycle entry", () => {
-    const entry = findPipelineEntry("rust-plan-cycle");
-    expect(entry?.name).toBe("rust-plan-cycle");
+  it("returns the plan-cycle entry", () => {
+    const entry = findPipelineEntry("plan-cycle");
+    expect(entry?.name).toBe("plan-cycle");
   });
 
   it("returns undefined for unknown pipeline", () => {

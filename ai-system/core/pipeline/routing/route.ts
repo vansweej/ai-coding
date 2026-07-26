@@ -6,9 +6,9 @@ import {
   EXTENSION_TO_TOOLCHAIN,
   TOOLCHAIN_DESCRIPTORS,
   type ToolchainDescriptor,
+  type ToolchainId,
   buildPatchSystem,
 } from "../definitions/language-configs";
-import type { LanguageName } from "../plan-parser";
 
 /** Extensions that are always eligible for context/prompt inclusion regardless of palette. */
 const ALWAYS_INCLUDED_EXTENSIONS: readonly string[] = [".md"];
@@ -58,12 +58,12 @@ export function route(filePath: string, palette: ReadonlySet<string>): Toolchain
   }
 
   const extension = filePath.slice(lastDot).toLowerCase();
-  const languageName: LanguageName | undefined = EXTENSION_TO_TOOLCHAIN[extension];
-  if (languageName === undefined) {
+  const toolchainId: ToolchainId | undefined = EXTENSION_TO_TOOLCHAIN[extension];
+  if (toolchainId === undefined) {
     return null;
   }
 
-  const descriptor = TOOLCHAIN_DESCRIPTORS[languageName as Exclude<LanguageName, "docs">];
+  const descriptor = TOOLCHAIN_DESCRIPTORS[toolchainId];
   if (!isAvailable(descriptor, palette)) {
     return null;
   }
@@ -86,8 +86,8 @@ export function route(filePath: string, palette: ReadonlySet<string>): Toolchain
 export function paletteExtensions(palette: ReadonlySet<string>): readonly string[] {
   const extensions = new Set<string>(ALWAYS_INCLUDED_EXTENSIONS);
 
-  for (const [extension, languageName] of Object.entries(EXTENSION_TO_TOOLCHAIN)) {
-    const descriptor = TOOLCHAIN_DESCRIPTORS[languageName as Exclude<LanguageName, "docs">];
+  for (const [extension, toolchainId] of Object.entries(EXTENSION_TO_TOOLCHAIN)) {
+    const descriptor = TOOLCHAIN_DESCRIPTORS[toolchainId];
     if (isAvailable(descriptor, palette)) {
       extensions.add(extension);
     }

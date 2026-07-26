@@ -14,9 +14,8 @@ import { selectPipeline } from "./select-pipeline";
 
 const PREVIEW_MAX_CHARS = 200;
 
-/** Returns true for any plan-cycle variant (primary name or alias). */
 function isPlanCycle(name: string): boolean {
-  return name === "plan-cycle" || name === "rust-plan-cycle";
+  return name === "plan-cycle";
 }
 
 function previewOutput(output: string): string {
@@ -78,7 +77,7 @@ function isProtectedBranch(branch: string): boolean {
 }
 
 /**
- * Exit code contract for rust-plan-cycle:
+ * Exit code contract for plan-cycle:
  *   - 0: all phases pass
  *   - 2: aborted-but-resumable failure (phase exhausted repair budget)
  *   - 3: input/environment errors (bad plan file, wrong branch, missing toolchain)

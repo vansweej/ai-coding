@@ -7,11 +7,9 @@ import {
   EXTENSION_TO_TOOLCHAIN,
   PLAN_CONFIG_FACTORIES,
   RUST_CONFIG,
-  RUST_PLAN_CONFIG,
   TOOLCHAIN_DESCRIPTORS,
   TYPESCRIPT_CONFIG,
   createCppPlanConfig,
-  createDocsPlanConfig,
   createHaskellPlanConfig,
   createJuliaPlanConfig,
   createNixPlanConfig,
@@ -82,28 +80,31 @@ describe("language configs", () => {
     ]);
   });
 
-  it("RUST_PLAN_CONFIG uses autofix fmt instead of check", () => {
-    const steps = RUST_PLAN_CONFIG.toolchainSteps("/tmp/ws");
-    const fmtStep = steps.find((step) => step.name === "fmt");
+  it("createRustPlanConfig with the default 90% gate uses autofix fmt instead of check", () => {
+    const config = createRustPlanConfig({ mode: "threshold", percent: 90 }, "");
+    const steps = config.toolchainSteps("/tmp/ws");
+    const fmtStep = steps.find((step: { name: string }) => step.name === "fmt");
     expect(fmtStep).toBeDefined();
     // The fmt step should be created with ["cargo", "fmt"] not ["cargo", "fmt", "--check"]
     // We can't directly inspect the command, but we can verify the step exists
-    expect(steps.map((step) => step.name)).toContain("fmt");
+    expect(steps.map((step: { name: string }) => step.name)).toContain("fmt");
   });
 
-  it("RUST_PLAN_CONFIG has fatal coverage gate", () => {
-    const steps = RUST_PLAN_CONFIG.toolchainSteps("/tmp/ws");
-    const coverageStep = steps.find((step) => step.name === "coverage");
+  it("createRustPlanConfig with the default 90% gate has a fatal coverage gate", () => {
+    const config = createRustPlanConfig({ mode: "threshold", percent: 90 }, "");
+    const steps = config.toolchainSteps("/tmp/ws");
+    const coverageStep = steps.find((step: { name: string }) => step.name === "coverage");
     expect(coverageStep).toBeDefined();
     // The coverage step should be fatal (warnOnly: false) for the default 90% gate
-    expect(steps.map((step) => step.name)).toContain("coverage");
-    expect(steps.map((step) => step.name)).toContain("tarpaulin");
+    expect(steps.map((step: { name: string }) => step.name)).toContain("coverage");
+    expect(steps.map((step: { name: string }) => step.name)).toContain("tarpaulin");
   });
 
-  it("RUST_PLAN_CONFIG includes aider-style patch format in implementSystem", () => {
-    expect(RUST_PLAN_CONFIG.implementSystem).toContain("aider-style");
-    expect(RUST_PLAN_CONFIG.implementSystem).toContain("<<<<<<< SEARCH");
-    expect(RUST_PLAN_CONFIG.implementSystem).toContain(">>>>>>> REPLACE");
+  it("createRustPlanConfig with the default 90% gate includes aider-style patch format in implementSystem", () => {
+    const config = createRustPlanConfig({ mode: "threshold", percent: 90 }, "");
+    expect(config.implementSystem).toContain("aider-style");
+    expect(config.implementSystem).toContain("<<<<<<< SEARCH");
+    expect(config.implementSystem).toContain(">>>>>>> REPLACE");
   });
 
   it("RUST_CONFIG remains unchanged with check fmt", () => {
@@ -205,31 +206,15 @@ describe("language configs", () => {
     expect(PLAN_CONFIG_FACTORIES.typescript).toBe(createTsPlanConfig);
   });
 
-  it("PLAN_CONFIG_FACTORIES registers all 9 known languages", () => {
+  it("PLAN_CONFIG_FACTORIES registers all 8 known toolchains", () => {
     expect(PLAN_CONFIG_FACTORIES.rust).toBe(createRustPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.typescript).toBe(createTsPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.python).toBe(createPythonPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.cpp).toBe(createCppPlanConfig);
-    expect(PLAN_CONFIG_FACTORIES.docs).toBe(createDocsPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.haskell).toBe(createHaskellPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.julia).toBe(createJuliaPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.nix).toBe(createNixPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.shell).toBe(createShellPlanConfig);
-  });
-
-  describe("createDocsPlanConfig", () => {
-    it("returns an empty toolchainSteps array (no compiler, linter, or coverage gate)", () => {
-      const config = createDocsPlanConfig({ mode: "default" }, "");
-      expect(config.toolchainSteps("/tmp/ws")).toEqual([]);
-    });
-
-    it("declares correct source extensions, roots, and language hint", () => {
-      const config = createDocsPlanConfig({ mode: "default" }, "");
-      expect(config.name).toBe("docs");
-      expect(config.languageHint).toBe("Markdown");
-      expect(config.sourceExtensions).toEqual([".md"]);
-      expect(config.sourceRoots).toEqual(["docs", "."]);
-    });
   });
 
   describe("createPythonPlanConfig", () => {

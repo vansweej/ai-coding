@@ -145,14 +145,14 @@ type ResolvedVerifiedImplementStepOptions = VerifiedImplementStepOptions & {
  * latest attempt actually touched).
  *
  * `name` is a required field on `DevCycleLanguageConfig` but is never read
- * anywhere in this file -- `"docs"` is used as an inert sentinel.
+ * anywhere in this file -- `"typescript"` is used as an inert sentinel.
  */
 export function buildPaletteLanguageConfig(
   workspace: string,
   palette: ReadonlySet<string>,
 ): DevCycleLanguageConfig {
   return {
-    name: "docs",
+    name: "typescript",
     languageHint: paletteLanguageHint(palette),
     implementSystem: composeImplementSystem(palette),
     sourceExtensions: paletteExtensions(palette),

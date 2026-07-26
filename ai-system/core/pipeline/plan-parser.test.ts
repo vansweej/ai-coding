@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { KNOWN_LANGUAGES, parsePlanFile } from "./plan-parser";
+import { parsePlanFile } from "./plan-parser";
 
 const VALID_MULTI_PHASE = `# Feature: Add error handling
 
@@ -183,16 +183,15 @@ Line three.
     }
   });
 
-  it("phase without Language directive has undefined language", () => {
-    const result = parsePlanFile(MINIMAL_PLAN);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.phases[0]?.language).toBeUndefined();
-  });
-
-  it("parses Language: rust directive", () => {
+  it("Language: lines are no longer a recognised directive (removed with --language)", () => {
+    // The Language: directive was removed along with --language -- routing
+    // is now derived entirely from the workspace's devShell palette (see
+    // route()). A stray "Language:" line before any step heading is simply
+    // ignored (not an error), matching the same tolerance any other
+    // unrecognised line outside a step body already has.
     const content = `# Feature: Lang
 
-## Phase 1: Rust phase
+## Phase 1: Phase
 
 Commit message: feat: rust
 Language: rust
@@ -203,73 +202,18 @@ body
 `;
     const result = parsePlanFile(content);
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.phases[0]?.language).toBe("rust");
-  });
-
-  it("parses Language: typescript directive", () => {
-    const content = `# Feature: Lang
-
-## Phase 1: TS phase
-
-Commit message: feat: ts
-Language: typescript
-
-### Step 1: Do
-
-body
-`;
-    const result = parsePlanFile(content);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.phases[0]?.language).toBe("typescript");
-  });
-
-  it("parses Language: docs directive", () => {
-    const content = `# Feature: Lang
-
-## Phase 1: Docs phase
-
-Commit message: docs: update readme
-Language: docs
-
-### Step 1: Do
-
-body
-`;
-    const result = parsePlanFile(content);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.phases[0]?.language).toBe("docs");
-  });
-
-  it("KNOWN_LANGUAGES includes docs", () => {
-    expect(KNOWN_LANGUAGES).toContain("docs");
-  });
-
-  it("parses all nine known language values without error", () => {
-    for (const lang of KNOWN_LANGUAGES) {
-      const content = `# Feature: Lang
-
-## Phase 1: Phase
-
-Commit message: feat: ${lang}
-Language: ${lang}
-
-### Step 1: Do
-
-body
-`;
-      const result = parsePlanFile(content);
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.value.phases[0]?.language).toBe(lang);
+    if (result.ok) {
+      expect(result.value.phases[0]).not.toHaveProperty("language");
     }
   });
 
-  it("returns error for an unknown language value", () => {
-    const content = `# Feature: Lang
+  it("returns an error for an invalid coverage percent", () => {
+    const content = `# Feature: Bad coverage
 
-## Phase 1: Bad lang
+## Phase 1: Phase
 
-Commit message: feat: bad
-Language: cobol
+Commit message: feat: thing
+Coverage: 150%
 
 ### Step 1: Do
 
@@ -278,36 +222,28 @@ body
     const result = parsePlanFile(content);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.message).toContain("unknown language");
-      expect(result.error.message).toContain("cobol");
+      expect(result.error.message).toContain("invalid coverage percent");
+      expect(result.error.message).toContain("150%");
     }
   });
 
-  it("language directive resets to undefined between phases", () => {
-    const content = `# Feature: Reset
+  it("returns an error for an invalid coverage directive", () => {
+    const content = `# Feature: Bad coverage
 
-## Phase 1: With language
+## Phase 1: Phase
 
-Commit message: feat: one
-Language: python
-
-### Step 1: Do
-
-body
-
-## Phase 2: Without language
-
-Commit message: feat: two
+Commit message: feat: thing
+Coverage: maybe
 
 ### Step 1: Do
 
 body
 `;
     const result = parsePlanFile(content);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.phases[0]?.language).toBe("python");
-      expect(result.value.phases[1]?.language).toBeUndefined();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("invalid coverage directive");
+      expect(result.error.message).toContain("maybe");
     }
   });
 });

@@ -20,13 +20,8 @@ export const PIPELINE_REGISTRY: readonly PipelineEntry[] = [
   {
     name: "plan-cycle",
     description:
-      "unattended plan executor: parse plan → per-phase implement → verify/retry → commit; resumable",
+      "unattended plan executor: parse plan → per-phase implement → verify/retry → commit; resumable, toolchain auto-routed per file from the workspace's devShell",
     stack: "polyglot",
-  },
-  {
-    name: "rust-plan-cycle",
-    description: "alias for plan-cycle --language rust",
-    stack: "Rust",
   },
   {
     name: "doc-cycle",
