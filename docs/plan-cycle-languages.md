@@ -1,7 +1,7 @@
 # Plan Cycle — Per-Language Reference
 
 Companion reference to [`docs/plan-cycle.md`](plan-cycle.md), covering the toolchain, Nix flake
-dev-shell prerequisites, and known caveats for each of the 8 languages registered in
+dev-shell prerequisites, and known caveats for each of the 9 languages registered in
 `PLAN_CONFIG_FACTORIES` (`ai-system/core/pipeline/definitions/language-configs.ts`).
 
 ## Token Cap Note
@@ -85,6 +85,18 @@ Requires: `python3`, `ruff`, `mypy`, `pytest` on the flake dev-shell or `PATH`.
 | `test` | `ctest --test-dir build --output-on-failure` | 300s |
 
 No coverage gate. Requires: `cmake`, a C++ toolchain (`gcc`/`clang`), `ctest`.
+
+### Docs — `--language docs`
+
+| Step | Command | Timeout |
+|------|---------|---------|
+| *(none)* | — | — |
+
+`toolchainSteps` is an intentionally empty array — no compiler, linter, or coverage gate ever
+runs. A `docs`-language phase still applies its patch and commits normally; only verification is
+skipped, since Markdown has nothing to build or test. No prerequisites required. Use this for
+documentation-only phases (e.g. a README edit) inside a compiled-language repo so they don't
+inherit that language's full toolchain purely because there was no lighter alternative.
 
 ### Haskell — `--language haskell`
 

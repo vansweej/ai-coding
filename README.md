@@ -16,7 +16,7 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
   `AWS_PROFILE`).
 - **Pipelines** -- plan-file driven workflows that implement steps, write files, verify with the
   language toolchain, retry locally, escalate fixes when needed, and commit each successful phase.
-  `plan-cycle` supports 8 languages (rust, typescript, python, cpp, haskell, julia, nix, shell),
+  `plan-cycle` supports 9 languages (rust, typescript, python, cpp, docs, haskell, julia, nix, shell),
   selectable per-phase or via `--language`.
 - **Scaffold pipelines** -- generate new Rust and C++ projects including a `flake.nix` dev shell
   and a lightweight `AGENTS.md` with build commands and a language-skill reference
@@ -54,12 +54,12 @@ custom tool will return an explicit error message.
 ## Running pipelines
 
 ```bash
-bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--language <name>] [--max-retries <n>] [--profile <name>]
+bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--language <name>] [--max-retries <n>] [--profile <name>] [-v | --verbose]
 ```
 
 | Pipeline name     | Steps                                                                  | Language(s)   |
 |-------------------|-------------------------------------------------------------------------|---------------|
-| `plan-cycle`      | unattended plan execution with memory tracking and resumable failures  | rust, typescript, python, cpp, haskell, julia, nix, shell (per-phase `Language:` directive or `--language`) |
+| `plan-cycle`      | unattended plan execution with memory tracking and resumable failures  | rust, typescript, python, cpp, docs, haskell, julia, nix, shell (per-phase `Language:` directive or `--language`) |
 | `rust-plan-cycle` | alias for `plan-cycle --language rust`                                 | Rust          |
 | `scaffold-rust`   | cargo init → generate flake.nix → write files → write AGENTS.md         | Rust          |
 | `scaffold-cpp`    | generate files → write files → cmake configure → write AGENTS.md       | C++           |
@@ -69,6 +69,11 @@ bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--
 `rust-plan-cycle` alias to force `rust` regardless of `--language`. See
 [`docs/plan-cycle-languages.md`](docs/plan-cycle-languages.md) for the full per-language
 toolchain reference and Nix flake dev-shell prerequisites.
+
+`-v` / `--verbose` streams a live per-phase/step progress feed (start, finish, retry, failure) to
+**stderr** while a plan-cycle run executes, using nerd-font glyphs and color on a TTY (plain ASCII
+otherwise, and honoring `NO_COLOR`). Off by default — the normal end-of-run summary on stdout is
+unchanged either way.
 
 ## Codebase indexer
 
@@ -165,8 +170,9 @@ language regardless of `--language`.
 ### Key Features
 
 - **Unattended execution**: Runs all phases without human intervention
-- **Multi-language**: 8 languages (rust, typescript, python, cpp, haskell, julia, nix, shell),
-  selectable per-phase via a `Language:` directive or globally via `--language`
+- **Multi-language**: 9 languages (rust, typescript, python, cpp, docs, haskell, julia, nix, shell),
+  selectable per-phase via a `Language:` directive or globally via `--language`. `docs` is a
+  no-op toolchain for documentation-only phases (no compiler, linter, or coverage gate).
 - **Automatic repair**: Retries failed steps locally with diagnostics; escalates to the fixer
   role if needed
 - **Memory tracking**: Stores phase context and completion status for resumability
@@ -176,6 +182,8 @@ language regardless of `--language`.
 - **Baseline-green precondition**: Nix and Shell run their whole-repo validator (`nix flake check`,
   `shellcheck`) once on the untouched tree before any implementation attempt; a pre-existing
   failure is an environment error (exit 3), not a retryable phase failure
+- **Verbose progress feed**: `-v` / `--verbose` streams phase/step start, finish, retry, and
+  failure events to stderr as the run executes; silent by default
 
 ### Usage
 
@@ -191,6 +199,9 @@ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 
 # Execute a Rust plan via the legacy alias
 bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/feature.md
+
+# Execute with a live progress feed on stderr
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --verbose
 
 # Exit codes:
 #   0 = all phases passed
@@ -276,7 +287,7 @@ git-based resume only.
 - Create a feature branch: `git checkout -b feat/my-feature`
 
 **"Phase N uses unregistered language"**
-- Check spelling against the 8 known languages
+- Check spelling against the 9 known languages
 - See [`docs/plan-cycle-languages.md`](docs/plan-cycle-languages.md)
 
 **"Baseline check failed... before any implementation attempt"**
