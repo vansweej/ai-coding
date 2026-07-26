@@ -9,8 +9,8 @@ context so they can read each other's outputs.
 
 The generic pipeline infrastructure lives in `@ai-coding/pipeline` with no
 dependency on AI-specific types. Language-specific step implementations
-(`OrchestratorStep`) and pipeline definitions (8 languages via `plan-cycle`:
-Rust, TypeScript, Python, C++, Haskell, Julia, Nix, Shell) live in
+(`OrchestratorStep`) and pipeline definitions (9 languages via `plan-cycle`:
+Rust, TypeScript, Python, C++, Docs, Haskell, Julia, Nix, Shell) live in
 `ai-system/core/pipeline/`, which imports from both `@ai-coding/pipeline` and
 `@ai-coding/shared`.
 
@@ -396,7 +396,7 @@ for (const phase of outcome.value.phases) {
 
 ### Step 2 -- Add a new language to plan-cycle
 
-`plan-cycle` supports 8 languages today (Rust, TypeScript, Python, C++, Haskell, Julia, Nix,
+`plan-cycle` supports 9 languages today (Rust, TypeScript, Python, C++, Docs, Haskell, Julia, Nix,
 Shell) via `PLAN_CONFIG_FACTORIES` in `language-configs.ts`. To add another, add a
 `create<Lang>PlanConfig` factory and register it:
 

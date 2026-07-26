@@ -3,7 +3,8 @@
 `plan-cycle` is an unattended, multi-phase, **multi-language** implementation engine designed
 for CI/CD workflows and autonomous agent execution. It combines structured planning, automatic
 repair, memory tracking, and resumable failures into a single cohesive system that works across
-8 languages: Rust, TypeScript, Python, C++, Haskell, Julia, Nix, and Shell.
+9 languages: Rust, TypeScript, Python, C++, Docs (a no-op verification toolchain), Haskell,
+Julia, Nix, and Shell.
 
 `rust-plan-cycle` is a legacy-compatible **alias** for `plan-cycle --language rust` — the original
 pipeline name from before multi-language support was added. Both names invoke the same pipeline
@@ -16,11 +17,12 @@ implementation; the alias only changes the default language.
 3. [Architecture](#architecture)
 4. [Plan File Format](#plan-file-format)
 5. [Usage](#usage)
-6. [Resume Workflow](#resume-workflow)
-7. [Memory Client Integration](#memory-client-integration)
-8. [Exit Codes](#exit-codes)
-9. [Troubleshooting](#troubleshooting)
-10. [Examples](#examples)
+6. [Progress Reporting](#progress-reporting)
+7. [Resume Workflow](#resume-workflow)
+8. [Memory Client Integration](#memory-client-integration)
+9. [Exit Codes](#exit-codes)
+10. [Troubleshooting](#troubleshooting)
+11. [Examples](#examples)
 
 ---
 
@@ -58,7 +60,7 @@ implementation; the alias only changes the default language.
 
 ## Language Support
 
-`plan-cycle` supports 8 languages via a registry of `PlanConfigFactory` functions
+`plan-cycle` supports 9 languages via a registry of `PlanConfigFactory` functions
 (`PLAN_CONFIG_FACTORIES` in `ai-system/core/pipeline/definitions/language-configs.ts`). Each
 factory builds a `DevCycleLanguageConfig` from the phase's `Coverage:` directive and the current
 git diff, producing a language-specific implementation prompt and toolchain.
@@ -69,12 +71,19 @@ git diff, producing a language-specific implementation prompt and toolchain.
 | TypeScript | `typescript` | `bun run typecheck` → `bunx biome check --write .` → `bun test` (300s) | — | — |
 | Python | `python` | `ruff format --check` → `ruff check` → `mypy .` (warning-only) → `pytest -q` (300s) | — | — |
 | C++ | `cpp` | `cmake -S . -B build` (120s) → `cmake --build build` (300s) → `ctest --test-dir build` (300s) | — | — |
+| Docs | `docs` | *(none — empty toolchain)* | — | — |
 | Haskell | `haskell` | `cabal build` (600s, doubles as typecheck) → `hlint .` → `cabal test` (600s) | — | — |
 | Julia | `julia` | `julia --project -e 'using Pkg; Pkg.test()'` (900s, weak — no separate format/lint) | — | — |
 | Nix | `nix` | `nixpkgs-fmt --check .` → `nix flake check` (900s) | — | ✅ |
 | Shell | `shell` | `shfmt -d .` → guarded `shellcheck` (900s wrapper; empty-guarded via `git ls-files "*.sh"`) | — | ✅ |
 
-Only Rust currently gates on coverage; the other 7 languages accept the phase's `Coverage:`
+`docs` is a deliberate no-op toolchain for documentation-only phases (e.g. editing a README)
+inside a compiled-language repo: the phase still applies its patch and commits normally, but no
+compiler, linter, or coverage gate ever runs, since Markdown has nothing to build or test. Use
+`Language: docs` on a phase so it doesn't inherit the workspace's default language purely because
+there was no lighter alternative to inherit.
+
+Only Rust currently gates on coverage; the other languages accept the phase's `Coverage:`
 directive for `PlanConfigFactory` signature compatibility but do not act on it yet.
 
 **Rust `cargo tarpaulin` is only run when coverage is gated.** When a phase's `Coverage:`
@@ -233,7 +242,7 @@ Language: rust | typescript | python | cpp | haskell | julia | nix | shell | (om
 - **Commit message**: Conventional commit format (feat:, fix:, refactor:, etc.)
 - **Coverage** (optional): `skip`, an explicit `N%` threshold, or omitted for the default.
   Only consulted by the Rust factory today.
-- **Language** (optional): One of the 8 known language names. When omitted, the phase
+- **Language** (optional): One of the 9 known language names. When omitted, the phase
   inherits the run's default language (see [Default language resolution](#default-language-resolution)).
 - **Step number**: Must be sequential within each phase (1, 2, 3, …)
 - **Step title**: Short description of the step
@@ -288,6 +297,7 @@ bun run pipeline rust-plan-cycle <workspace> --plan <file> [options]  # alias, f
 | `--language <name>` | Default language for phases lacking a `Language:` directive | `typescript` (or `rust` when invoked as `rust-plan-cycle`) |
 | `--max-retries <n>` | Max local retries per phase | 3 |
 | `--profile <name>` | Model profile (`local`, `copilot-default`, `hybrid`, `anthropic-sonnet`, `bedrock-sonnet`) | `copilot-default` |
+| `-v`, `--verbose` | Stream per-phase/step progress (start/finish/retry/failure) to stderr | off |
 
 ### Examples
 
@@ -304,6 +314,9 @@ bun run pipeline rust-plan-cycle ./my-rust-project --plan ./plans/auth.md
 
 # Run with custom retry count
 bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --max-retries 5
+
+# Run with a live per-phase/step progress feed on stderr
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --verbose
 
 # Run with local profile (no cloud dependency)
 bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --profile local
@@ -355,6 +368,43 @@ Create a feature branch before running:
 git checkout -b feat/my-feature
 bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 ```
+
+---
+
+## Progress Reporting
+
+`plan-cycle` is silent by default: it prints only a per-phase summary once the entire feature
+completes. Passing `-v` / `--verbose` streams a live progress feed to **stderr** while phases and
+steps execute:
+
+```bash
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --verbose
+```
+
+```
+▶ Phase 1  Wire the parser
+  ○ Step 1  Add token types
+  ✓ Step 1
+  ○ Step 2  Parse expressions
+  ✗ Step 2  failed: patch anchor not found in src/parser.rs
+  ↻ Step 2  local retry 1/3
+  ✓ Step 2
+✓ Phase 1  committed: feat: wire the parser
+```
+
+- **Opt-in and honest**: when `--verbose` is omitted, no progress events are constructed at all
+  (zero overhead); when present, the feed reports retries and failures rather than hiding them.
+- **`✓ Step N` means "applied to disk," not "verified."** Verification runs once per phase, after
+  all its steps; only `✓ Phase N` implies the toolchain passed and the commit landed.
+- **Color and glyphs**: nerd-font glyphs (`▶ ○ ✓ ✗ ↻`) and ANSI color are used only when stderr is
+  a TTY and `NO_COLOR` is unset (`FORCE_COLOR=1` forces it on); otherwise a plain ASCII theme
+  (`> o + x ~`) with no escape codes is used, so piped/CI output stays clean.
+- **Retry counters are phase-level.** A `local retry 2/3` line reports the 2nd of the phase's
+  3 allowed local-retry attempts, not a per-step counter — the same phase attempt can involve
+  reworking a different step than the one that originally failed.
+
+See [`docs/architecture.md`](architecture.md#progress-reporting---verbose) for the full event
+model and sequence diagram.
 
 ---
 
@@ -535,8 +585,8 @@ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 **Cause**: The resolved language (per-phase `Language:` directive, `--language` flag, or the
 default) has no factory in `PLAN_CONFIG_FACTORIES`.
 
-**Fix**: Check spelling against the 8 known languages (`rust`, `typescript`, `python`, `cpp`,
-`haskell`, `julia`, `nix`, `shell`). All 8 are registered as of this pipeline version.
+**Fix**: Check spelling against the 9 known languages (`rust`, `typescript`, `python`, `cpp`,
+`docs`, `haskell`, `julia`, `nix`, `shell`). All 9 are registered as of this pipeline version.
 
 ### "Baseline check failed... before any implementation attempt"
 

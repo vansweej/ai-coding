@@ -50,6 +50,9 @@ const SHELL_PLAN_IDIOMS =
   "Follow POSIX-compatible shell idioms where possible, quote all variable expansions, start scripts with `set -euo pipefail`, and ensure the script passes shellcheck. " +
   "Generate syntactically valid shell code.";
 
+const DOCS_PLAN_IDIOMS =
+  "Write clear, well-structured Markdown; match the surrounding document's tone and heading levels; do not touch unrelated sections.";
+
 /**
  * Factory that creates a language-specific plan-cycle config from the phase's
  * coverage directive and current git diff.  Registered factories are keyed by
@@ -483,6 +486,36 @@ export function createShellPlanConfig(
 }
 
 /**
+ * Docs (no-op toolchain) plan-cycle configuration.
+ *
+ * A documentation-only phase (e.g. a README or architecture-doc edit) has
+ * nothing to compile, lint, or test — Markdown isn't verified by any
+ * toolchain. `toolchainSteps` is intentionally an empty array: the phase
+ * still applies its patch and commits normally, but no compiler, linter, or
+ * coverage gate ever runs. This exists so a documentation phase inside a
+ * compiled-language repo (e.g. a Rust workspace) doesn't drag in that
+ * language's full toolchain purely because there is no lighter alternative
+ * to inherit.
+ *
+ * The `coverage` and `diff` parameters are accepted for `PlanConfigFactory`
+ * compatibility; docs plan-cycle never gates on coverage (there is nothing
+ * to instrument).
+ */
+export function createDocsPlanConfig(
+  _coverage: CoverageDirective,
+  _diff: string,
+): DevCycleLanguageConfig {
+  return {
+    name: "docs",
+    languageHint: "Markdown",
+    sourceExtensions: [".md"],
+    sourceRoots: ["docs", "."],
+    implementSystem: buildPatchSystem("Markdown", DOCS_PLAN_IDIOMS),
+    toolchainSteps: (): readonly PipelineStep<AIRequestEvent>[] => [],
+  };
+}
+
+/**
  * Registry of plan-config factories keyed by language name.
  *
  * A phase runner looks up the factory for the phase's language (or the run's
@@ -492,13 +525,14 @@ export function createShellPlanConfig(
  * Languages not yet registered here fail cleanly with an "unregistered language"
  * error rather than silently falling back to the wrong toolchain.
  *
- * All 8 known languages are registered.
+ * All 9 known languages are registered.
  */
 export const PLAN_CONFIG_FACTORIES: Readonly<Partial<Record<LanguageName, PlanConfigFactory>>> = {
   rust: createRustPlanConfig,
   typescript: createTsPlanConfig,
   python: createPythonPlanConfig,
   cpp: createCppPlanConfig,
+  docs: createDocsPlanConfig,
   haskell: createHaskellPlanConfig,
   julia: createJuliaPlanConfig,
   nix: createNixPlanConfig,

@@ -17,7 +17,7 @@ graph TD
     subgraph Definitions["Pipeline Definitions (ai-system/core/pipeline/definitions/)"]
         Dev["createDevCyclePipeline\nparameterized by language config"]
         Lang["TYPESCRIPT_CONFIG · RUST_CONFIG · CPP_CONFIG\n(dev-cycle, interactive)"]
-        PlanFactories["PLAN_CONFIG_FACTORIES\n8 languages: rust · typescript · python · cpp\nhaskell · julia · nix · shell\n(plan-cycle, unattended)"]
+        PlanFactories["PLAN_CONFIG_FACTORIES\n9 languages: rust · typescript · python · cpp · docs\nhaskell · julia · nix · shell\n(plan-cycle, unattended)"]
         Doc["doc-cycle sketch"]
     end
 
@@ -91,7 +91,7 @@ graph LR
     Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · VectorBackend\ncreateBestBackend · LanceStore\nchunkSkill"]
     Codebase["@ai-coding/codebase\nCodebaseBackend · indexCodebase\nCodebaseStore · ParserPool\nchunkFile · discoverFiles"]
     Pipeline["@ai-coding/pipeline\nrunPipeline · PipelineStep\nShellStep · NixShellStep\nCoverageGateStep"]
-    AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep · VerifiedImplementStep\nplan-cycle (8 languages) · rust-plan-cycle alias · scaffold-rust · scaffold-cpp"]
+    AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep · VerifiedImplementStep\nplan-cycle (9 languages) · rust-plan-cycle alias · scaffold-rust · scaffold-cpp"]
 
     AISystem --> Pipeline
     AISystem --> Shared
@@ -244,13 +244,14 @@ ai-coding/
           verified-implement-step.ts implement → write files → verify → retry/escalate
         definitions/
           dev-cycle.ts               Unified [skills →] implement → write-files factory (Tier B: optional deletion)
-          language-configs.ts        DevCycleLanguageConfig + PLAN_CONFIG_FACTORIES (8-language registry:
-                                       rust, typescript, python, cpp, haskell, julia, nix, shell)
+          language-configs.ts        DevCycleLanguageConfig + PLAN_CONFIG_FACTORIES (9-language registry:
+                                       rust, typescript, python, cpp, docs, haskell, julia, nix, shell)
           doc-cycle.ts               Deferred documentation pipeline sketch
         plan-parser.ts               Structured markdown plan parser (Feature/Phase/Step + per-phase
                                        Coverage:/Language: directives)
         phase-runner.ts              Per-phase language resolution, baseline check, execution, auto-commit
         feature-runner.ts            Parses plan and runs phases sequentially
+        progress.ts                  ProgressEvent model + pure formatProgressEvent (--verbose feed)
     config/
       model-profiles.ts              ModelRole, ModelProfile, copilot-default, hybrid, anthropic-sonnet, and bedrock-sonnet profiles
       pipeline-registry.ts           Single source of truth for pipeline metadata
@@ -264,7 +265,7 @@ ai-coding/
 ## Plan-Cycle: Plan File Format and Language Registry
 
 `plan-cycle` (with `rust-plan-cycle` as a legacy alias forcing Rust) executes structured plan
-files unattended, across 8 languages. Each phase may declare its own language and coverage
+files unattended, across 9 languages. Each phase may declare its own language and coverage
 directive:
 
 ```markdown
@@ -274,7 +275,7 @@ directive:
 
 Commit message: <conventional commit>
 Coverage: skip | N% | (omitted for default 90%, Rust only)
-Language: rust | typescript | python | cpp | haskell | julia | nix | shell | (omitted to inherit default)
+Language: rust | typescript | python | cpp | docs | haskell | julia | nix | shell | (omitted to inherit default)
 
 ### Step N: <title>
 
@@ -289,7 +290,7 @@ rather than silently using the wrong toolchain.
 ### `PLAN_CONFIG_FACTORIES` registry
 
 `ai-system/core/pipeline/definitions/language-configs.ts` exports a `PlanConfigFactory` type —
-`(coverage, diff) => DevCycleLanguageConfig` — and a registry mapping all 8 `LanguageName` values
+`(coverage, diff) => DevCycleLanguageConfig` — and a registry mapping all 9 `LanguageName` values
 to their factory:
 
 | Language | Toolchain | Coverage gate | `baselineCheck` |
@@ -298,10 +299,18 @@ to their factory:
 | `typescript` | typecheck → lint → test | — | — |
 | `python` | format → lint → typecheck (warn-only) → test | — | — |
 | `cpp` | configure → build → test | — | — |
+| `docs` | *(none — empty toolchain)* | — | — |
 | `haskell` | build (= typecheck) → lint → test | — | — |
 | `julia` | test (weak — no separate format/lint) | — | — |
 | `nix` | format → flake check | — | ✅ |
 | `shell` | format → guarded shellcheck | — | ✅ |
+
+`docs` is an intentional no-op toolchain for documentation-only phases (e.g. a README edit)
+inside a compiled-language repo: the phase still applies its patch and commits normally, but no
+compiler, linter, or coverage gate runs, since Markdown has nothing to build or test. Without it,
+a docs phase would inherit the workspace's default language (e.g. Rust) purely because there was
+no lighter alternative, dragging in a full compiler toolchain to verify a change no toolchain can
+actually validate.
 
 `baselineCheck` languages (Nix, Shell) run their toolchain once on the untouched tree before any
 implementation attempt, since their whole-repo validators (`nix flake check`, repo-wide
@@ -311,6 +320,79 @@ implementation attempt, since their whole-repo validators (`nix flake check`, re
 See [`docs/plan-cycle.md`](plan-cycle.md) and
 [`docs/plan-cycle-languages.md`](plan-cycle-languages.md) for the full user-facing guide and
 per-language prerequisites.
+
+---
+
+## Progress Reporting (`--verbose`)
+
+`plan-cycle` is silent by default: it prints only a per-phase summary once the whole feature
+completes. Passing `-v` / `--verbose` streams a live progress feed to **stderr** while phases and
+steps execute — phase/step start, finish, retry, and failure — without touching the normal
+stdout result summary.
+
+### Design principles
+
+- **Opt-in and honest.** The `--verbose` flag decides whether an `onProgress` callback is
+  threaded into the runners at all. When absent, no `ProgressEvent`s are constructed — zero
+  overhead, zero output. When present, the feed reflects reality, including retries and
+  failures, rather than hiding them.
+- **Separation of concerns.** Runners (`feature-runner.ts`, `phase-runner.ts`,
+  `verified-implement-step.ts`) only emit structured `ProgressEvent`s; `ai-system/core/pipeline/progress.ts`
+  owns formatting (glyphs, color); the CLI owns where the formatted lines are written.
+- **Convention-correct I/O.** Progress goes to stderr (matching `git`, `cargo`, `curl`,
+  `docker build`); the existing stdout result summary is unchanged. Nerd-font glyphs and ANSI
+  color are used only when stderr is a TTY and `NO_COLOR` is unset (`FORCE_COLOR=1` overrides);
+  otherwise a plain ASCII theme with no escape codes is used.
+
+### Event flow
+
+```mermaid
+sequenceDiagram
+    participant CLI as main() (verbose gate)
+    participant FR as runFeature
+    participant PR as runPhase
+    participant VIS as verified-implement-step
+    participant OP as onProgress
+
+    CLI->>FR: runFeature(plan, { onProgress })
+    loop each phase
+        FR->>OP: phase-start
+        FR->>PR: runPhase(phase)
+        PR->>VIS: execute()
+        loop attempts (local, then escalation)
+            alt steps remaining
+                loop step i
+                    alt first attempt at step i
+                        VIS->>OP: step-start
+                    else retrying step i
+                        VIS->>OP: step-retry
+                    end
+                    alt applied
+                        VIS->>OP: step-finish
+                    else failed
+                        VIS->>OP: step-fail
+                    end
+                end
+            else all steps applied, retrying verification
+                VIS->>OP: phase-attempt
+            end
+        end
+        PR->>PR: commit
+        FR->>OP: phase-finish
+    end
+```
+
+### Certainty ladder
+
+```mermaid
+flowchart LR
+    S["step-finish\npatch applied to disk"] --> V["(phase toolchain runs once)"] --> P["phase-finish\nverified + committed"]
+```
+
+`step-finish` means a step's patch was written to disk — not that it was verified. Verification
+runs once per phase (after all steps), so only `phase-finish` implies the toolchain passed and
+the commit landed. A phase that never succeeds ends in `phase-fail` instead, reporting the local
+and escalation attempt counts exhausted.
 
 ---
 

@@ -13,6 +13,7 @@ import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig, PlanConfigFactory } from "./definitions/language-configs";
 import { BaselineCheckError, runPhase } from "./phase-runner";
 import type { Phase } from "./plan-parser";
+import type { ProgressEvent } from "./progress";
 
 function dispatcher(response: string): ModelDispatcher {
   return {
@@ -197,6 +198,27 @@ describe("runPhase", () => {
 
     expect(result.ok).toBe(false);
     expect(commits).toEqual([]);
+  });
+
+  it("threads phaseNumber and onProgress through to the verified-implement step's events", async () => {
+    const events: ProgressEvent[] = [];
+    const result = await runPhase(PHASE, {
+      config: config("```typescript src/index.ts\nexport const value = 1;\n```"),
+      workspace,
+      defaultLanguage: "typescript",
+      factories: { typescript: makeFactory(false) },
+      onProgress: (e) => events.push(e),
+      commitPhase: async (_workspace, message, _phaseNumber) => ({ ok: true, value: message }),
+    });
+
+    expect(result.ok).toBe(true);
+    // runPhase itself does not emit phase-start/finish (that's the feature
+    // runner's job); it must forward phaseNumber/onProgress so the
+    // verified-implement step's step-level events carry the right phase.
+    expect(events).toEqual([
+      { kind: "step-start", phase: 1, step: 1, title: "Step" },
+      { kind: "step-finish", phase: 1, step: 1 },
+    ]);
   });
 
   it("implements every phase step before running verification once", async () => {

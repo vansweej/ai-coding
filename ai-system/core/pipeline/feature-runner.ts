@@ -35,9 +35,22 @@ export async function runFeature(
   const phaseResults: PhaseRunResult[] = [];
   for (let i = startPhaseIndex; i < parsed.value.phases.length; i++) {
     const phase = parsed.value.phases[i];
+    options.onProgress?.({ kind: "phase-start", phase: phase.number, title: phase.title });
     const result = await runPhase(phase, options);
-    if (!result.ok) return result;
+    if (!result.ok) {
+      options.onProgress?.({
+        kind: "phase-fail",
+        phase: phase.number,
+        reason: result.error.message,
+      });
+      return result;
+    }
     phaseResults.push(result.value);
+    options.onProgress?.({
+      kind: "phase-finish",
+      phase: phase.number,
+      commitMessage: phase.commitMessage,
+    });
   }
 
   return { ok: true, value: { feature: parsed.value.feature, phases: phaseResults } };

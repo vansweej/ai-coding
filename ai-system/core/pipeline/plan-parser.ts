@@ -6,6 +6,7 @@ export type LanguageName =
   | "typescript"
   | "python"
   | "cpp"
+  | "docs"
   | "haskell"
   | "julia"
   | "nix"
@@ -14,6 +15,7 @@ export type LanguageName =
 /** Exhaustive list of recognised language names, ordered alphabetically. */
 export const KNOWN_LANGUAGES: readonly LanguageName[] = [
   "cpp",
+  "docs",
   "haskell",
   "julia",
   "nix",
@@ -81,7 +83,7 @@ const STEP_RE = /^###\s+Step\s+(\d+):\s*(.+)$/;
  *
  * Commit message: <conventional commit>
  * Coverage: skip | N% | (omitted for default 90%)
- * Language: rust | typescript | python | cpp | haskell | julia | nix | shell | (omitted to inherit default)
+ * Language: rust | typescript | python | cpp | docs | haskell | julia | nix | shell | (omitted to inherit default)
  *
  * ### Step 1: <title>
  *

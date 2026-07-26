@@ -11,6 +11,7 @@ import { LOCAL_PROFILE } from "../../config/model-profiles";
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig, PlanConfigFactory } from "./definitions/language-configs";
 import { runFeature } from "./feature-runner";
+import type { ProgressEvent } from "./progress";
 
 const PLAN = `# Feature: Demo
 
@@ -130,5 +131,32 @@ describe("runFeature", () => {
 
     expect(result.ok).toBe(false);
     expect(commits).toEqual(["feat: one", "feat: two"]);
+  });
+
+  it("emits phase-start/phase-finish for a passing phase and phase-fail for a failing one", async () => {
+    const events: ProgressEvent[] = [];
+    const result = await runFeature(PLAN, {
+      config: config(),
+      workspace,
+      defaultLanguage: "typescript",
+      factories: { typescript: testFactory },
+      onProgress: (e) => events.push(e),
+      commitPhase: async (_workspace, message, _phaseNumber) => {
+        if (message === "feat: two") return { ok: false, error: new Error("commit failed") };
+        return { ok: true, value: message };
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(events).toEqual([
+      { kind: "phase-start", phase: 1, title: "One" },
+      { kind: "step-start", phase: 1, step: 1, title: "Implement one" },
+      { kind: "step-finish", phase: 1, step: 1 },
+      { kind: "phase-finish", phase: 1, commitMessage: "feat: one" },
+      { kind: "phase-start", phase: 2, title: "Two" },
+      { kind: "step-start", phase: 2, step: 1, title: "Implement two" },
+      { kind: "step-finish", phase: 2, step: 1 },
+      { kind: "phase-fail", phase: 2, reason: "commit failed" },
+    ]);
   });
 });

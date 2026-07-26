@@ -12,9 +12,11 @@ export interface CliArgs {
   readonly profileName: string;
   /** Default language for plan-cycle phases lacking a Language: directive. */
   readonly language?: string;
+  /** Stream per-phase/step progress to stderr while a plan-cycle run executes. */
+  readonly verbose: boolean;
 }
 
-const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--max-retries <n>] [--profile <name>] [--language <name>]
+const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--max-retries <n>] [--profile <name>] [--language <name>] [-v | --verbose]
 
 Pipeline names:
   plan-cycle       Unattended plan executor: parse plan → per-phase implement → verify/retry → commit; resumable
@@ -33,6 +35,9 @@ Profile names:
 
 Language names (--language):
   rust, typescript, python, cpp, haskell, julia, nix, shell
+
+Flags:
+  -v, --verbose    Stream per-phase/step progress (start/finish/retry) to stderr as a plan-cycle run executes
 
 Examples:
   bun run pipeline scaffold-rust /tmp/my-rust-project
@@ -83,27 +88,34 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
     return { ok: false, error: new Error(`Missing workspace path.\n\n${USAGE}`) };
   }
 
-  const inputResult = readFlag(args, "--input");
+  // Extract the boolean verbose flag up front, before any value-flag lookup
+  // runs against the remaining args. This prevents "-v"/"--verbose" from
+  // ever being swallowed as another flag's value (e.g. `--input -v`) --
+  // readFlag and the --profile lookup below only ever see `rest`.
+  const verbose = args.includes("-v") || args.includes("--verbose");
+  const rest = args.filter((arg) => arg !== "-v" && arg !== "--verbose");
+
+  const inputResult = readFlag(rest, "--input");
   if (!inputResult.ok) return inputResult;
   const input = inputResult.value ?? "";
 
-  const planResult = readFlag(args, "--plan");
+  const planResult = readFlag(rest, "--plan");
   if (!planResult.ok) return planResult;
   const planPath = planResult.value;
 
-  const rawMaxRetries = readFlag(args, "--max-retries");
+  const rawMaxRetries = readFlag(rest, "--max-retries");
   if (!rawMaxRetries.ok) return rawMaxRetries;
   const maxRetries = parseMaxRetries(rawMaxRetries.value);
   if (!maxRetries.ok) return maxRetries;
 
-  const languageResult = readFlag(args, "--language");
+  const languageResult = readFlag(rest, "--language");
   if (!languageResult.ok) return languageResult;
   const language = languageResult.value;
 
   let profileName = process.env.AI_CODING_MODEL_PROFILE ?? DEFAULT_PROFILE_NAME;
-  const profileFlagIndex = args.indexOf("--profile");
+  const profileFlagIndex = rest.indexOf("--profile");
   if (profileFlagIndex !== -1) {
-    const value = args[profileFlagIndex + 1];
+    const value = rest[profileFlagIndex + 1];
     if (value === undefined || value.startsWith("--")) {
       return {
         ok: false,
@@ -123,6 +135,7 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
       maxRetries: maxRetries.value,
       profileName,
       language,
+      verbose,
     },
   };
 }

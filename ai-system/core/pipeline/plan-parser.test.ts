@@ -223,7 +223,28 @@ body
     if (result.ok) expect(result.value.phases[0]?.language).toBe("typescript");
   });
 
-  it("parses all eight known language values without error", () => {
+  it("parses Language: docs directive", () => {
+    const content = `# Feature: Lang
+
+## Phase 1: Docs phase
+
+Commit message: docs: update readme
+Language: docs
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.phases[0]?.language).toBe("docs");
+  });
+
+  it("KNOWN_LANGUAGES includes docs", () => {
+    expect(KNOWN_LANGUAGES).toContain("docs");
+  });
+
+  it("parses all nine known language values without error", () => {
     for (const lang of KNOWN_LANGUAGES) {
       const content = `# Feature: Lang
 
