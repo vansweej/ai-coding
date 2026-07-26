@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { $ } from "bun";
 
 import type { PipelineStep, StepResult } from "@ai-coding/pipeline";
 import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
@@ -14,6 +15,7 @@ import type { Step } from "../plan-parser";
 import type { ProgressEvent } from "../progress";
 import {
   buildBaselineContext,
+  buildPaletteLanguageConfig,
   buildVerificationFailurePrompt,
   createVerifiedImplementStep,
 } from "./verified-implement-step";
@@ -476,6 +478,62 @@ describe("createVerifiedImplementStep", () => {
     expect(result.ok).toBe(true);
     expect(dispatcher.prompts[0]).toContain("existing.rs");
     expect(dispatcher.prompts[0]).toContain("pub fn existing()");
+  });
+});
+
+describe("buildPaletteLanguageConfig", () => {
+  it("threads coverage and diff through to the routed rust toolchain's tarpaulin/coverage steps (P7)", async () => {
+    await $`git init -q`.cwd(workspace).quiet();
+    await $`git config user.email "test@example.com"`.cwd(workspace).quiet();
+    await $`git config user.name "Test"`.cwd(workspace).quiet();
+    writeFileSync(join(workspace, "a.rs"), "// initial\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m initial`.cwd(workspace).quiet();
+    writeFileSync(join(workspace, "a.rs"), "// modified\n");
+
+    const gated = buildPaletteLanguageConfig(
+      workspace,
+      new Set(["cargo", "cargo-tarpaulin"]),
+      { mode: "threshold", percent: 95 },
+      "",
+    );
+    expect(gated.toolchainSteps(workspace).map((s) => s.name)).toEqual(
+      expect.arrayContaining(["tarpaulin", "coverage"]),
+    );
+
+    const skipped = buildPaletteLanguageConfig(
+      workspace,
+      new Set(["cargo", "cargo-tarpaulin"]),
+      { mode: "skip" },
+      "",
+    );
+    expect(skipped.toolchainSteps(workspace).map((s) => s.name)).not.toContain("tarpaulin");
+  });
+
+  it("omits tarpaulin/coverage when gated but cargo-tarpaulin is absent from the palette", async () => {
+    await $`git init -q`.cwd(workspace).quiet();
+    await $`git config user.email "test@example.com"`.cwd(workspace).quiet();
+    await $`git config user.name "Test"`.cwd(workspace).quiet();
+    writeFileSync(join(workspace, "a.rs"), "// initial\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m initial`.cwd(workspace).quiet();
+    writeFileSync(join(workspace, "a.rs"), "// modified\n");
+
+    const config = buildPaletteLanguageConfig(
+      workspace,
+      new Set(["cargo"]),
+      { mode: "threshold", percent: 95 },
+      "",
+    );
+    expect(config.toolchainSteps(workspace).map((s) => s.name)).not.toContain("tarpaulin");
+    expect(config.toolchainSteps(workspace).map((s) => s.name)).not.toContain("coverage");
+  });
+
+  it("defaults to no coverage/diff (undefined) when omitted, matching the legacy default-gated behavior", () => {
+    const config = buildPaletteLanguageConfig(workspace, new Set(["cargo", "cargo-tarpaulin"]));
+    // No touched files in a non-git workspace -- toolchainSteps returns [],
+    // but the call itself must not throw when coverage/diff are omitted.
+    expect(config.toolchainSteps(workspace)).toEqual([]);
   });
 });
 

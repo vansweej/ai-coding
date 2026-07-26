@@ -217,7 +217,7 @@ describe("runUnionVerification", () => {
     }
   });
 
-  it("routes an unstaged modification to its toolchain's steps", () => {
+  it("routes an unstaged modification to its toolchain's steps, excluding tarpaulin when cargo-tarpaulin is absent from the palette", () => {
     const dir = makeTempGitRepo();
     try {
       writeFileSync(join(dir, "committed.rs"), "// initial\n");
@@ -229,8 +229,13 @@ describe("runUnionVerification", () => {
 
       const steps = runUnionVerification(dir, new Set(["cargo"]));
       expect(steps.map((s) => s.name)).toEqual(
-        expect.arrayContaining(["fmt", "check", "clippy", "test", "tarpaulin", "coverage"]),
+        expect.arrayContaining(["fmt", "check", "clippy", "test"]),
       );
+      // cargo-tarpaulin is not in this palette -- gating on a missing tool
+      // must not include tarpaulin/coverage steps (see P7: tarpaulin is
+      // conditional on BOTH being gated AND being present in the palette).
+      expect(steps.map((s) => s.name)).not.toContain("tarpaulin");
+      expect(steps.map((s) => s.name)).not.toContain("coverage");
     } finally {
       rmSync(dir, { recursive: true });
     }
@@ -311,5 +316,94 @@ describe("runUnionVerification", () => {
     } finally {
       rmSync(dir, { recursive: true });
     }
+  });
+
+  describe("coverage gate under per-file routing (P7)", () => {
+    it("fires the coverage gate for a routed rust file when Coverage:N% is set and cargo-tarpaulin is in the palette", () => {
+      const dir = makeTempGitRepo();
+      try {
+        writeFileSync(join(dir, "a.rs"), "// initial\n");
+        execSync("git add -A", { cwd: dir });
+        execSync('git commit -q -m "initial"', { cwd: dir });
+        writeFileSync(join(dir, "a.rs"), "// modified\n");
+
+        const steps = runUnionVerification(
+          dir,
+          new Set(["cargo", "cargo-tarpaulin"]),
+          { mode: "threshold", percent: 95 },
+          "",
+        );
+        expect(steps.map((s) => s.name)).toEqual(expect.arrayContaining(["tarpaulin", "coverage"]));
+      } finally {
+        rmSync(dir, { recursive: true });
+      }
+    });
+
+    it("omits the coverage gate for a routed rust file when Coverage: skip is set, even with cargo-tarpaulin in the palette", () => {
+      const dir = makeTempGitRepo();
+      try {
+        writeFileSync(join(dir, "a.rs"), "// initial\n");
+        execSync("git add -A", { cwd: dir });
+        execSync('git commit -q -m "initial"', { cwd: dir });
+        writeFileSync(join(dir, "a.rs"), "// modified\n");
+
+        const steps = runUnionVerification(
+          dir,
+          new Set(["cargo", "cargo-tarpaulin"]),
+          { mode: "skip" },
+          "",
+        );
+        expect(steps.map((s) => s.name)).not.toContain("tarpaulin");
+        expect(steps.map((s) => s.name)).not.toContain("coverage");
+      } finally {
+        rmSync(dir, { recursive: true });
+      }
+    });
+
+    it("omits the coverage gate for a routed rust file when gated but cargo-tarpaulin is absent from the palette", () => {
+      const dir = makeTempGitRepo();
+      try {
+        writeFileSync(join(dir, "a.rs"), "// initial\n");
+        execSync("git add -A", { cwd: dir });
+        execSync('git commit -q -m "initial"', { cwd: dir });
+        writeFileSync(join(dir, "a.rs"), "// modified\n");
+
+        // cargo present (so rust routes), but cargo-tarpaulin is NOT --
+        // tarpaulin must be conditional on BOTH gated AND tarpaulin-in-palette.
+        const steps = runUnionVerification(
+          dir,
+          new Set(["cargo"]),
+          { mode: "threshold", percent: 95 },
+          "",
+        );
+        expect(steps.map((s) => s.name)).not.toContain("tarpaulin");
+        expect(steps.map((s) => s.name)).not.toContain("coverage");
+      } finally {
+        rmSync(dir, { recursive: true });
+      }
+    });
+
+    it("never gates on coverage for a docs-only phase (touched file routes to the floor)", () => {
+      const dir = makeTempGitRepo();
+      try {
+        writeFileSync(join(dir, "README.md"), "# initial\n");
+        execSync("git add -A", { cwd: dir });
+        execSync('git commit -q -m "initial"', { cwd: dir });
+        writeFileSync(join(dir, "README.md"), "# modified\n");
+
+        // Even with cargo/cargo-tarpaulin available and a gated threshold,
+        // a docs-only touched file contributes NO steps at all -- there is
+        // no rust file in this phase's diff to route to the rust toolchain.
+        const steps = runUnionVerification(
+          dir,
+          new Set(["cargo", "cargo-tarpaulin"]),
+          { mode: "threshold", percent: 95 },
+          "",
+        );
+        expect(steps).toEqual([]);
+      } finally {
+        rmSync(dir, { recursive: true });
+      }
+    });
   });
 });

@@ -7,7 +7,7 @@ import type { AIAction, AIRequestEvent } from "@ai-coding/shared";
 import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { orchestrate } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
-import type { Step } from "../plan-parser";
+import type { CoverageDirective, Step } from "../plan-parser";
 import type { OnProgress } from "../progress";
 import {
   composeImplementSystem,
@@ -111,6 +111,21 @@ export interface VerifiedImplementStepOptions {
    * routed from the files actually touched (see `runUnionVerification`).
    */
   readonly palette?: ReadonlySet<string>;
+  /**
+   * The phase's `Coverage:` directive, used only alongside `palette` --
+   * threaded through to `runUnionVerification` so a routed Rust file gates
+   * its tarpaulin/coverage steps on the SAME directive the legacy
+   * `factory(coverage, diff)` path used to consult. Ignored when
+   * `languageConfig` is supplied directly (the legacy path already baked
+   * its own coverage directive in at construction time).
+   */
+  readonly coverage?: CoverageDirective;
+  /**
+   * Current git diff, used only alongside `palette` for the same
+   * coverage-auto-exemption purpose `resolveCoverageThreshold` has always
+   * served. Ignored when `languageConfig` is supplied directly.
+   */
+  readonly diff?: string;
   readonly steps?: readonly Step[];
   readonly retryConfig?: RetryConfig;
   /** Phase number this step belongs to, used to tag emitted progress events. */
@@ -150,6 +165,8 @@ type ResolvedVerifiedImplementStepOptions = VerifiedImplementStepOptions & {
 export function buildPaletteLanguageConfig(
   workspace: string,
   palette: ReadonlySet<string>,
+  coverage?: CoverageDirective,
+  diff?: string,
 ): DevCycleLanguageConfig {
   return {
     name: "typescript",
@@ -157,7 +174,7 @@ export function buildPaletteLanguageConfig(
     implementSystem: composeImplementSystem(palette),
     sourceExtensions: paletteExtensions(palette),
     sourceRoots: ["."],
-    toolchainSteps: (ws: string) => runUnionVerification(ws, palette),
+    toolchainSteps: (ws: string) => runUnionVerification(ws, palette, coverage, diff),
   };
 }
 
@@ -472,7 +489,12 @@ export function createVerifiedImplementStep(
       // are entirely unaffected by this branch).
       let languageConfig: DevCycleLanguageConfig;
       if (baseOptions.palette) {
-        languageConfig = buildPaletteLanguageConfig(baseOptions.workspace, baseOptions.palette);
+        languageConfig = buildPaletteLanguageConfig(
+          baseOptions.workspace,
+          baseOptions.palette,
+          baseOptions.coverage,
+          baseOptions.diff,
+        );
       } else if (baseOptions.languageConfig) {
         languageConfig = baseOptions.languageConfig;
       } else {

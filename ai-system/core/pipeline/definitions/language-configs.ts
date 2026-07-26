@@ -185,8 +185,16 @@ export const RUST_CONFIG: DevCycleLanguageConfig = {
 export function createRustPlanConfig(
   phaseCoverage: CoverageDirective,
   diff: string,
+  palette?: ReadonlySet<string>,
 ): DevCycleLanguageConfig {
   const { gated, percent } = resolveCoverageThreshold(phaseCoverage, diff);
+  // When a palette is supplied (the devShell-routed path), only include the
+  // tarpaulin/coverage steps if cargo-tarpaulin is actually available --
+  // gating on a tool that isn't installed would fail every phase touching
+  // Rust for an environment reason having nothing to do with coverage.
+  // No palette (legacy DEV_CYCLE_LANGUAGE_CONFIGS/PLAN_CONFIG_FACTORIES
+  // callers) preserves the original always-include-when-gated behavior.
+  const tarpaulinAvailable = palette === undefined || palette.has("cargo-tarpaulin");
 
   return {
     name: "rust",
@@ -212,8 +220,9 @@ export function createRustPlanConfig(
       // on heavy workspaces can exceed the shell step's 60s default timeout
       // -- a timeout rejects the step regardless of failOnNonZero, failing
       // verification even when the code is correct. If there's no coverage
-      // number to enforce, there's no reason to pay for that build.
-      if (!gated) {
+      // number to enforce, there's no reason to pay for that build. Same
+      // reasoning applies when tarpaulin itself isn't in the devShell palette.
+      if (!gated || !tarpaulinAvailable) {
         return baseSteps;
       }
 
@@ -601,11 +610,19 @@ export interface ToolchainDescriptor {
    * plays today.
    */
   readonly isWholeRepoValidator?: boolean;
-  /** Verification steps for this toolchain, optionally coverage/diff-aware (Rust only, currently). */
+  /**
+   * Verification steps for this toolchain, optionally coverage/diff-aware
+   * (Rust only, currently). `palette` is passed through by `route.ts`'s
+   * `runUnionVerification` so a descriptor can gate an optional step (e.g.
+   * Rust's tarpaulin/coverage pair) on a SPECIFIC tool's presence, not just
+   * its own driver tools -- see `createRustPlanConfig`'s `tarpaulinAvailable`
+   * check.
+   */
   toolchainSteps(
     workspace: string,
     coverage?: CoverageDirective,
     diff?: string,
+    palette?: ReadonlySet<string>,
   ): readonly PipelineStep<AIRequestEvent>[];
 }
 
@@ -625,8 +642,10 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<Record<ToolchainId, ToolchainDescri
     markerTools: ["cargo", "rustc", "cargo-clippy", "rustfmt", "cargo-tarpaulin"],
     driverTools: ["cargo"],
     idioms: RUST_PLAN_IDIOMS,
-    toolchainSteps: (workspace, coverage, diff) =>
-      createRustPlanConfig(coverage ?? DEFAULT_PLAN_COVERAGE, diff ?? "").toolchainSteps(workspace),
+    toolchainSteps: (workspace, coverage, diff, palette) =>
+      createRustPlanConfig(coverage ?? DEFAULT_PLAN_COVERAGE, diff ?? "", palette).toolchainSteps(
+        workspace,
+      ),
   },
   typescript: {
     id: "typescript",

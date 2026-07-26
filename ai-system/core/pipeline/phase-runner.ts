@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { $ } from "bun";
 
 import type { PipelineContext, Result, StepResult } from "@ai-coding/pipeline";
@@ -96,6 +97,21 @@ function buildPhaseInstruction(phase: Phase): string {
   return phase.steps
     .map((step) => [`Step ${step.number}: ${step.title}`, "", step.body].join("\n"))
     .join("\n\n---\n\n");
+}
+
+/**
+ * Capture the current working-tree diff; returns empty string if git is
+ * unavailable. Passed through to the routed toolchains' coverage-exemption
+ * logic (see `resolveCoverageThreshold`/`createRustPlanConfig`) -- mirrors
+ * the same best-effort, once-per-phase snapshot the legacy
+ * `factory(coverage, diff)` path always used.
+ */
+function safeGitDiff(workspace: string): string {
+  try {
+    return execSync("git diff", { cwd: workspace, encoding: "utf8" });
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -237,6 +253,8 @@ export async function runPhase(
     config: options.config,
     workspace: options.workspace,
     palette: options.palette,
+    coverage: phase.coverage,
+    diff: safeGitDiff(options.workspace),
     retryConfig: options.retryConfig,
     steps: phase.steps,
     phaseNumber: phase.number,

@@ -9,6 +9,7 @@ import {
   type ToolchainId,
   buildPatchSystem,
 } from "../definitions/language-configs";
+import type { CoverageDirective } from "../plan-parser";
 
 /** Extensions that are always eligible for context/prompt inclusion regardless of palette. */
 const ALWAYS_INCLUDED_EXTENSIONS: readonly string[] = [".md"];
@@ -185,12 +186,23 @@ export function getTouchedFiles(workspace: string): readonly string[] {
  * step names (fmt/check/clippy/test for Rust vs typecheck/lint/test for
  * TypeScript, etc.), so collisions are not expected in the current registry.
  *
+ * `coverage`/`diff` are threaded through to each routed descriptor's
+ * `toolchainSteps` (Rust is currently the only descriptor that uses them --
+ * see `createRustPlanConfig`'s coverage-gating/tarpaulin-availability logic).
+ * `palette` is passed through too, so a descriptor can additionally gate an
+ * optional step on a specific tool's presence (not just its own driver
+ * tools).
+ *
  * @param workspace - Absolute path to the workspace being verified.
  * @param palette   - Set of tool names detected as available in the devShell.
+ * @param coverage  - The phase's Coverage: directive, if any.
+ * @param diff      - Current git diff, used for coverage auto-exemption.
  */
 export function runUnionVerification(
   workspace: string,
   palette: ReadonlySet<string>,
+  coverage?: CoverageDirective,
+  diff?: string,
 ): readonly PipelineStep<AIRequestEvent>[] {
   const touchedFiles = getTouchedFiles(workspace);
   const stepsByName = new Map<string, PipelineStep<AIRequestEvent>>();
@@ -199,7 +211,7 @@ export function runUnionVerification(
     const descriptor = route(file, palette);
     if (descriptor === null) continue;
 
-    for (const step of descriptor.toolchainSteps(workspace)) {
+    for (const step of descriptor.toolchainSteps(workspace, coverage, diff, palette)) {
       stepsByName.set(step.name, step);
     }
   }
