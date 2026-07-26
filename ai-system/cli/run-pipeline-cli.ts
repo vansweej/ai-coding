@@ -8,6 +8,8 @@ import { PLAN_CONFIG_FACTORIES } from "../core/pipeline/definitions/language-con
 import { runFeature } from "../core/pipeline/feature-runner";
 import { BaselineCheckError } from "../core/pipeline/phase-runner";
 import { KNOWN_LANGUAGES, type LanguageName } from "../core/pipeline/plan-parser";
+import type { OnProgress } from "../core/pipeline/progress";
+import { buildTheme, formatProgressEvent } from "../core/pipeline/progress";
 import { loadConfig } from "./load-config";
 import { parseArgs } from "./parse-args";
 import { selectPipeline } from "./select-pipeline";
@@ -101,7 +103,7 @@ async function main(): Promise<void> {
     console.error(`Error: ${argsResult.error.message}`);
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
-  const { pipelineName, workspace, input, planPath, maxRetries, profileName, language } =
+  const { pipelineName, workspace, input, planPath, maxRetries, profileName, language, verbose } =
     argsResult.value;
 
   const configResult = await loadConfig(profileName);
@@ -150,16 +152,30 @@ async function main(): Promise<void> {
   if (isPlanCycle(pipelineName) && (planPath !== undefined || input !== "")) {
     const planContent =
       planPath !== undefined ? readFileSync(planPath, "utf8") : buildSingleStepPlan(input);
+
+    let onProgress: OnProgress | undefined;
+    if (verbose) {
+      const useColor =
+        !process.env.NO_COLOR && (process.env.FORCE_COLOR === "1" || process.stderr.isTTY === true);
+      const theme = buildTheme(useColor);
+      onProgress = (event) => console.error(formatProgressEvent(event, theme));
+    }
+
     const outcome = await runFeature(planContent, {
       config: configResult.value,
       workspace,
       defaultLanguage,
       factories: PLAN_CONFIG_FACTORIES,
       retryConfig: { maxLocalRetries: maxRetries },
+      onProgress,
     });
 
     if (!outcome.ok) {
-      console.error(`Feature failed: ${outcome.error.message}`);
+      // When verbose, the styled phase-fail event already reported the
+      // failure reason; avoid printing it twice.
+      if (!verbose) {
+        console.error(`Feature failed: ${outcome.error.message}`);
+      }
       // A BaselineCheckError means the untouched tree was already broken before
       // any implementation attempt — treat as an environment error, not a
       // resumable phase failure.

@@ -125,4 +125,31 @@ describe("parseArgs", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("--language flag requires a value");
   });
+
+  it("defaults verbose to false when neither -v nor --verbose is provided", () => {
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.verbose).toBe(false);
+  });
+
+  it("sets verbose to true when --verbose is provided", () => {
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws", "--verbose"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.verbose).toBe(true);
+  });
+
+  it("sets verbose to true when -v is provided", () => {
+    const result = parseArgs(["rust-plan-cycle", "/tmp/ws", "-v"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.verbose).toBe(true);
+  });
+
+  it("parses -v placed before a value flag without it being swallowed as the value", () => {
+    const result = parseArgs(["plan-cycle", "/tmp/ws", "-v", "--plan", "p.md"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.verbose).toBe(true);
+      expect(result.value.planPath).toBe("p.md");
+    }
+  });
 });
