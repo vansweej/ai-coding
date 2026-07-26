@@ -11,6 +11,7 @@ import { LOCAL_PROFILE } from "../../../config/model-profiles";
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
 import type { Step } from "../plan-parser";
+import type { ProgressEvent } from "../progress";
 import {
   buildBaselineContext,
   buildVerificationFailurePrompt,
@@ -295,6 +296,83 @@ describe("createVerifiedImplementStep", () => {
     expect(dispatcher.prompts).toHaveLength(3);
     expect(dispatcher.prompts[2]).toContain("Create src/b.ts exporting b=2");
     expect(dispatcher.prompts[2]).not.toContain("Create src/a.ts exporting a=1");
+  });
+
+  it("emits step-start then step-finish in order for a passing multi-step phase", async () => {
+    const steps: Step[] = [
+      { number: 1, title: "Create a.ts", body: "Create src/a.ts exporting a=1" },
+      { number: 2, title: "Create b.ts", body: "Create src/b.ts exporting b=2" },
+    ];
+    const dispatcher = sequenceDispatcher([
+      "src/a.ts\n<<<<<<< SEARCH\n=======\nexport const a = 1;\n>>>>>>> REPLACE",
+      "src/b.ts\n<<<<<<< SEARCH\n=======\nexport const b = 2;\n>>>>>>> REPLACE",
+    ]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const events: ProgressEvent[] = [];
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(0)),
+      steps,
+      phaseNumber: 3,
+      onProgress: (e) => events.push(e),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add both files"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(events).toEqual([
+      { kind: "step-start", phase: 3, step: 1, title: "Create a.ts" },
+      { kind: "step-finish", phase: 3, step: 1 },
+      { kind: "step-start", phase: 3, step: 2, title: "Create b.ts" },
+      { kind: "step-finish", phase: 3, step: 2 },
+    ]);
+  });
+
+  it("emits step-fail then step-retry then step-finish when a step's implement fails then succeeds", async () => {
+    const steps: Step[] = [
+      { number: 1, title: "Create a.ts", body: "Create src/a.ts exporting a=1" },
+      { number: 2, title: "Create b.ts", body: "Create src/b.ts exporting b=2" },
+    ];
+    const dispatcher = sequenceDispatcher([
+      "src/a.ts\n<<<<<<< SEARCH\n=======\nexport const a = 1;\n>>>>>>> REPLACE",
+      "prose response, no patch here",
+      "src/b.ts\n<<<<<<< SEARCH\n=======\nexport const b = 2;\n>>>>>>> REPLACE",
+    ]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const events: ProgressEvent[] = [];
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(0)),
+      steps,
+      phaseNumber: 5,
+      retryConfig: { maxLocalRetries: 1, maxEscalationRetries: 0 },
+      onProgress: (e) => events.push(e),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add both files"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(events[0]).toEqual({ kind: "step-start", phase: 5, step: 1, title: "Create a.ts" });
+    expect(events[1]).toEqual({ kind: "step-finish", phase: 5, step: 1 });
+    expect(events[2]).toEqual({ kind: "step-start", phase: 5, step: 2, title: "Create b.ts" });
+    expect(events[3].kind).toBe("step-fail");
+    expect(events[4]).toEqual({
+      kind: "step-retry",
+      phase: 5,
+      step: 2,
+      index: 1,
+      max: 1,
+      retry: "local",
+    });
+    expect(events[5]).toEqual({ kind: "step-finish", phase: 5, step: 2 });
   });
 });
 

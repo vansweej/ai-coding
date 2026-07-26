@@ -131,11 +131,6 @@ function buildLabel(event: ProgressEvent): string {
       return `Step ${event.step}  failed: ${event.reason}`;
     case "step-retry":
       return `Step ${event.step}  ${event.retry} retry ${event.index}/${event.max}`;
-    /* v8 ignore next 2 */
-    default: {
-      const exhaustive: never = event;
-      throw new Error(`Unhandled progress event kind: ${JSON.stringify(exhaustive)}`);
-    }
   }
 }
 

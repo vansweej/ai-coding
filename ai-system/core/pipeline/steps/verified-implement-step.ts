@@ -8,6 +8,7 @@ import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestr
 import { orchestrate } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
 import type { Step } from "../plan-parser";
+import type { OnProgress } from "../progress";
 import { applyPatch } from "./apply-patch-step";
 import { parsePatch } from "./parse-patch";
 
@@ -91,6 +92,24 @@ export interface VerifiedImplementStepOptions {
   readonly languageConfig: DevCycleLanguageConfig;
   readonly steps?: readonly Step[];
   readonly retryConfig?: RetryConfig;
+  /** Phase number this step belongs to, used to tag emitted progress events. */
+  readonly phaseNumber?: number;
+  /** Optional progress reporter; silent when omitted. */
+  readonly onProgress?: OnProgress;
+}
+
+/**
+ * Describes which attempt of the phase's overall retry budget is currently
+ * running, so per-step progress events can report an honest `index/max`
+ * against the phase-level budget rather than inventing a per-step counter.
+ */
+interface AttemptInfo {
+  /** Whether this attempt belongs to the local-retry loop or the escalation loop. */
+  readonly kind: "local" | "escalation";
+  /** Attempt index within its loop. 0 means "first pass" (not a retry). */
+  readonly index: number;
+  /** The loop's total attempt budget (maxLocalRetries or maxEscalationRetries). */
+  readonly max: number;
 }
 
 /**
@@ -309,15 +328,38 @@ async function implementPhaseSteps(
   steps: readonly Step[],
   startIndex: number,
   buildStepPrompt: (step: Step) => string,
+  attempt: AttemptInfo,
   action: AIAction = "edit",
 ): Promise<PhaseStepsOutcome> {
+  const phase = options.phaseNumber ?? 0;
   const implementations: string[] = [];
   for (let i = startIndex; i < steps.length; i++) {
     const step = steps[i] as Step;
+
+    if (attempt.index > 0 && i === startIndex) {
+      options.onProgress?.({
+        kind: "step-retry",
+        phase,
+        step: step.number,
+        index: attempt.index,
+        max: attempt.max,
+        retry: attempt.kind,
+      });
+    } else {
+      options.onProgress?.({ kind: "step-start", phase, step: step.number, title: step.title });
+    }
+
     const result = await implementAndWrite(ctx, options, buildStepPrompt(step), action);
     if (!result.ok) {
+      options.onProgress?.({
+        kind: "step-fail",
+        phase,
+        step: step.number,
+        reason: result.error.message,
+      });
       return { ok: false, error: result.error, failedAtIndex: i };
     }
+    options.onProgress?.({ kind: "step-finish", phase, step: step.number });
     implementations.push(result.value);
   }
   return { ok: true, value: implementations.join("\n\n") };
@@ -387,8 +429,13 @@ export function createVerifiedImplementStep(
                   "edit",
                 );
         } else if (attemptNumber === 0) {
-          const phaseResult = await implementPhaseSteps(ctx, options, phaseSteps, 0, (step) =>
-            buildImplementationPrompt(options.languageConfig, step.body, baselineContext),
+          const phaseResult = await implementPhaseSteps(
+            ctx,
+            options,
+            phaseSteps,
+            0,
+            (step) => buildImplementationPrompt(options.languageConfig, step.body, baselineContext),
+            { kind: "local", index: 0, max: maxLocalRetries },
           );
           if (phaseResult.ok) {
             stepCursor = phaseSteps.length;
@@ -425,6 +472,7 @@ export function createVerifiedImplementStep(
                   currentFileContents,
                 ),
               ),
+            { kind: "local", index: attemptNumber, max: maxLocalRetries },
           );
           if (phaseResult.ok) {
             stepCursor = phaseSteps.length;
@@ -439,6 +487,13 @@ export function createVerifiedImplementStep(
           // implement-level failure), so fall back to the full combined
           // instruction plus error -- a cross-step issue may require
           // revisiting any of the already-applied steps.
+          options.onProgress?.({
+            kind: "phase-attempt",
+            phase: options.phaseNumber ?? 0,
+            retry: "local",
+            index: attemptNumber,
+            max: maxLocalRetries,
+          });
           implementResult = await implementAndWrite(
             ctx,
             options,
@@ -545,6 +600,7 @@ export function createVerifiedImplementStep(
                   currentFileContents,
                 ),
               ),
+            { kind: "escalation", index: escalationAttempt + 1, max: maxEscalationRetries },
             "fix",
           );
           if (phaseResult.ok) {
@@ -561,6 +617,13 @@ export function createVerifiedImplementStep(
             errorMessage,
             currentFileContents,
           );
+          options.onProgress?.({
+            kind: "phase-attempt",
+            phase: options.phaseNumber ?? 0,
+            retry: "escalation",
+            index: escalationAttempt + 1,
+            max: maxEscalationRetries,
+          });
           fixResult = await implementAndWrite(
             ctx,
             options,

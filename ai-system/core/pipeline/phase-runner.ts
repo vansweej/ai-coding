@@ -11,6 +11,7 @@ import {
   type PlanConfigFactory,
 } from "./definitions/language-configs";
 import type { LanguageName, Phase } from "./plan-parser";
+import type { OnProgress } from "./progress";
 import type { RetryConfig } from "./steps/verified-implement-step";
 import { createVerifiedImplementStep } from "./steps/verified-implement-step";
 
@@ -59,6 +60,13 @@ export interface RunPhaseOptions {
   readonly factories?: Readonly<Partial<Record<LanguageName, PlanConfigFactory>>>;
   readonly retryConfig?: RetryConfig;
   readonly commitPhase?: CommitPhase;
+  /**
+   * Optional progress reporter invoked with structured events as phases and
+   * steps execute (phase-start/finish/fail from the feature runner; the
+   * step-level and phase-attempt events from the verified-implement step).
+   * When omitted, no events are constructed and there is no overhead.
+   */
+  readonly onProgress?: OnProgress;
 }
 
 /** Capture the current working-tree diff; returns empty string if git is unavailable. */
@@ -179,6 +187,8 @@ export async function runPhase(
     languageConfig: languageConfig,
     retryConfig: options.retryConfig,
     steps: phase.steps,
+    phaseNumber: phase.number,
+    onProgress: options.onProgress,
   });
   const result = await verifiedStep.execute({
     event: buildStepEvent(buildPhaseInstruction(phase)),
