@@ -25,23 +25,23 @@ describe("language configs", () => {
   });
 
   it("TYPESCRIPT_CONFIG declares correct source extensions and roots", () => {
-    expect(TYPESCRIPT_CONFIG.sourceExtensions).toEqual([".ts"]);
+    expect(TYPESCRIPT_CONFIG.sourceExtensions).toEqual([".ts", ".md"]);
     expect(TYPESCRIPT_CONFIG.sourceRoots).toEqual(["src", "."]);
   });
 
   it("RUST_CONFIG declares correct source extensions and roots", () => {
-    expect(RUST_CONFIG.sourceExtensions).toEqual([".rs"]);
+    expect(RUST_CONFIG.sourceExtensions).toEqual([".rs", ".md"]);
     expect(RUST_CONFIG.sourceRoots).toEqual(["src", "crates", "."]);
   });
 
   it("CPP_CONFIG declares correct source extensions and roots", () => {
-    expect(CPP_CONFIG.sourceExtensions).toEqual([".cpp", ".h", ".hpp"]);
+    expect(CPP_CONFIG.sourceExtensions).toEqual([".cpp", ".h", ".hpp", ".md"]);
     expect(CPP_CONFIG.sourceRoots).toEqual(["src", "include", "."]);
   });
 
   it("createRustPlanConfig declares correct source extensions and roots", () => {
     const config = createRustPlanConfig({ mode: "default" }, "");
-    expect(config.sourceExtensions).toEqual([".rs"]);
+    expect(config.sourceExtensions).toEqual([".rs", ".md"]);
     expect(config.sourceRoots).toEqual(["src", "crates", "."]);
   });
 
@@ -192,7 +192,7 @@ describe("language configs", () => {
 
   it("createTsPlanConfig declares correct source extensions and roots", () => {
     const config = createTsPlanConfig({ mode: "default" }, "");
-    expect(config.sourceExtensions).toEqual([".ts"]);
+    expect(config.sourceExtensions).toEqual([".ts", ".md"]);
     expect(config.sourceRoots).toEqual(["src", "."]);
   });
 
@@ -215,7 +215,7 @@ describe("language configs", () => {
   describe("createPythonPlanConfig", () => {
     it("declares correct source extensions and roots", () => {
       const config = createPythonPlanConfig({ mode: "default" }, "");
-      expect(config.sourceExtensions).toEqual([".py"]);
+      expect(config.sourceExtensions).toEqual([".py", ".md"]);
       expect(config.sourceRoots).toEqual(["src", "."]);
     });
 
@@ -252,7 +252,7 @@ describe("language configs", () => {
   describe("createCppPlanConfig", () => {
     it("declares correct source extensions and roots", () => {
       const config = createCppPlanConfig({ mode: "default" }, "");
-      expect(config.sourceExtensions).toEqual([".cpp", ".h", ".hpp"]);
+      expect(config.sourceExtensions).toEqual([".cpp", ".h", ".hpp", ".md"]);
       expect(config.sourceRoots).toEqual(["src", "include", "."]);
     });
 
@@ -282,7 +282,7 @@ describe("language configs", () => {
   describe("createHaskellPlanConfig", () => {
     it("declares correct source extensions and roots", () => {
       const config = createHaskellPlanConfig({ mode: "default" }, "");
-      expect(config.sourceExtensions).toEqual([".hs"]);
+      expect(config.sourceExtensions).toEqual([".hs", ".md"]);
       expect(config.sourceRoots).toEqual(["src", "app", "."]);
     });
 
@@ -312,7 +312,7 @@ describe("language configs", () => {
   describe("createJuliaPlanConfig", () => {
     it("declares correct source extensions and roots", () => {
       const config = createJuliaPlanConfig({ mode: "default" }, "");
-      expect(config.sourceExtensions).toEqual([".jl"]);
+      expect(config.sourceExtensions).toEqual([".jl", ".md"]);
       expect(config.sourceRoots).toEqual(["src", "."]);
     });
 
@@ -338,7 +338,7 @@ describe("language configs", () => {
   describe("createNixPlanConfig", () => {
     it("declares correct source extensions and roots", () => {
       const config = createNixPlanConfig({ mode: "default" }, "");
-      expect(config.sourceExtensions).toEqual([".nix"]);
+      expect(config.sourceExtensions).toEqual([".nix", ".md"]);
       expect(config.sourceRoots).toEqual(["."]);
     });
 
@@ -364,7 +364,7 @@ describe("language configs", () => {
   describe("createShellPlanConfig", () => {
     it("declares correct source extensions and roots", () => {
       const config = createShellPlanConfig({ mode: "default" }, "");
-      expect(config.sourceExtensions).toEqual([".sh"]);
+      expect(config.sourceExtensions).toEqual([".sh", ".md"]);
       expect(config.sourceRoots).toEqual(["."]);
     });
 

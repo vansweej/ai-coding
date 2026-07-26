@@ -87,6 +87,11 @@ and fail verification even though the code is correct (a timeout rejects the ste
 avoids that failure mode entirely. When coverage *is* gated, the `tarpaulin` step is given a
 15-minute timeout (`timeoutMs: 900_000`) to accommodate instrumented rebuilds of large workspaces.
 
+**Every language's `sourceExtensions` includes `.md`.** Plan-cycle features conventionally end
+with a documentation phase that edits `README.md`. Source discovery (`buildBaselineContext` /
+`readCurrentFileContents`) filters strictly by `sourceExtensions`, so without `.md` a docs phase's
+target file is invisible to the model — it can't produce a valid SEARCH/REPLACE anchor and falls
+back to a full-file "create" patch that fails because the file already exists.
 
 **`baselineCheck`** — Nix and Shell run their toolchain once on the *untouched* tree before any
 implementation attempt for a phase, because `nix flake check` and repo-wide `shellcheck` cannot

@@ -181,6 +181,11 @@ inherently whole-repo-only.
    system prompt (keeps the aider-style SEARCH/REPLACE format consistent across languages).
 3. Declare `sourceExtensions` and `sourceRoots` so `buildBaselineContext`/
    `readCurrentFileContents` can discover the language's source files for prompt context.
+   **Always include `".md"`** alongside the language's source extensions — every plan-cycle
+   feature ends with a documentation phase that edits `README.md` (or similar), and if `.md`
+   isn't discoverable the model never sees the current file content, can't produce a valid
+   SEARCH/REPLACE anchor, and falls back to a full-file "create" patch that fails because the
+   file already exists.
 4. Set `baselineCheck: true` only if the toolchain includes a validator that cannot be scoped to
    a diff.
 5. Give every `createNixShellStep` an explicit `timeoutMs` — the shell-step default (60s) is too

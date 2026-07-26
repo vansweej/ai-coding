@@ -96,7 +96,7 @@ export interface DevCycleLanguageConfig {
 export const TYPESCRIPT_CONFIG: DevCycleLanguageConfig = {
   name: "typescript",
   languageHint: "TypeScript",
-  sourceExtensions: [".ts"],
+  sourceExtensions: [".ts", ".md"],
   sourceRoots: ["src", "."],
   implementSystem:
     "You are a TypeScript coding assistant. Output ONLY implementation code in fenced code blocks. " +
@@ -118,7 +118,7 @@ export const TYPESCRIPT_CONFIG: DevCycleLanguageConfig = {
 export const RUST_CONFIG: DevCycleLanguageConfig = {
   name: "rust",
   languageHint: "Rust",
-  sourceExtensions: [".rs"],
+  sourceExtensions: [".rs", ".md"],
   // "src" for single-crate projects, "crates" for cargo workspaces
   // (crates/<name>/src/*.rs), and "." as a catch-all for non-standard layouts.
   sourceRoots: ["src", "crates", "."],
@@ -173,7 +173,7 @@ export function createRustPlanConfig(
   return {
     name: "rust",
     languageHint: "Rust",
-    sourceExtensions: [".rs"],
+    sourceExtensions: [".rs", ".md"],
     sourceRoots: ["src", "crates", "."],
     implementSystem: buildPatchSystem("Rust", RUST_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => {
@@ -240,7 +240,7 @@ export function createTsPlanConfig(
   return {
     name: "typescript",
     languageHint: "TypeScript",
-    sourceExtensions: [".ts"],
+    sourceExtensions: [".ts", ".md"],
     sourceRoots: ["src", "."],
     implementSystem: buildPatchSystem("TypeScript", TS_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
@@ -274,7 +274,7 @@ export function createPythonPlanConfig(
   return {
     name: "python",
     languageHint: "Python",
-    sourceExtensions: [".py"],
+    sourceExtensions: [".py", ".md"],
     sourceRoots: ["src", "."],
     implementSystem: buildPatchSystem("Python", PYTHON_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
@@ -316,7 +316,7 @@ export function createCppPlanConfig(
   return {
     name: "cpp",
     languageHint: "C++",
-    sourceExtensions: [".cpp", ".h", ".hpp"],
+    sourceExtensions: [".cpp", ".h", ".hpp", ".md"],
     sourceRoots: ["src", "include", "."],
     implementSystem: buildPatchSystem("C++", CPP_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
@@ -354,7 +354,7 @@ export function createHaskellPlanConfig(
   return {
     name: "haskell",
     languageHint: "Haskell",
-    sourceExtensions: [".hs"],
+    sourceExtensions: [".hs", ".md"],
     sourceRoots: ["src", "app", "."],
     implementSystem: buildPatchSystem("Haskell", HASKELL_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
@@ -393,7 +393,7 @@ export function createJuliaPlanConfig(
   return {
     name: "julia",
     languageHint: "Julia",
-    sourceExtensions: [".jl"],
+    sourceExtensions: [".jl", ".md"],
     sourceRoots: ["src", "."],
     implementSystem: buildPatchSystem("Julia", JULIA_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
@@ -426,7 +426,7 @@ export function createNixPlanConfig(
   return {
     name: "nix",
     languageHint: "Nix",
-    sourceExtensions: [".nix"],
+    sourceExtensions: [".nix", ".md"],
     sourceRoots: ["."],
     baselineCheck: true,
     implementSystem: buildPatchSystem("Nix", NIX_PLAN_IDIOMS),
@@ -464,7 +464,7 @@ export function createShellPlanConfig(
   return {
     name: "shell",
     languageHint: "Shell",
-    sourceExtensions: [".sh"],
+    sourceExtensions: [".sh", ".md"],
     sourceRoots: ["."],
     baselineCheck: true,
     implementSystem: buildPatchSystem("Shell", SHELL_PLAN_IDIOMS),
@@ -509,7 +509,7 @@ export const PLAN_CONFIG_FACTORIES: Readonly<Partial<Record<LanguageName, PlanCo
 export const CPP_CONFIG: DevCycleLanguageConfig = {
   name: "cpp",
   languageHint: "C++",
-  sourceExtensions: [".cpp", ".h", ".hpp"],
+  sourceExtensions: [".cpp", ".h", ".hpp", ".md"],
   sourceRoots: ["src", "include", "."],
   implementSystem:
     "You are a C++ coding assistant. Output ONLY implementation code in fenced code blocks. " +
