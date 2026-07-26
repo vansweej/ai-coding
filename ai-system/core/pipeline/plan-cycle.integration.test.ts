@@ -12,10 +12,8 @@ import { CerebrumMemory } from "../orchestrator/cerebrum-memory";
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import { runFeature } from "./feature-runner";
 
-const LOCAL_PROFILE_NAME = "local";
-
 /**
- * Integration test suite for rust-plan-cycle pipeline.
+ * Integration test suite for the plan-cycle pipeline.
  * Tests the full flow: plan parsing → phase execution → memory tracking → git commits.
  *
  * Touched files use the ".rs" extension, but the test environment's devShell
@@ -109,7 +107,7 @@ mod tests {
 let workspace: string;
 
 beforeEach(async () => {
-  workspace = mkdtempSync(join(tmpdir(), "rust-plan-cycle-integration-"));
+  workspace = mkdtempSync(join(tmpdir(), "plan-cycle-integration-"));
   // Initialize git repo
   await $`git init`.cwd(workspace).quiet();
   await $`git config user.email "test@example.com"`.cwd(workspace).quiet();
@@ -124,7 +122,7 @@ afterEach(() => {
   rmSync(workspace, { recursive: true, force: true });
 });
 
-describe("rust-plan-cycle integration tests", () => {
+describe("plan-cycle integration tests", () => {
   it("executes a simple two-phase plan successfully", async () => {
     const dispatcher = createMockDispatcher([PHASE_1_RESPONSE, PHASE_2_RESPONSE]);
     const config = createMockConfig(dispatcher);

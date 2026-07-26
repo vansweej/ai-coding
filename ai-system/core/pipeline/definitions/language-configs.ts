@@ -174,7 +174,8 @@ export const RUST_CONFIG: DevCycleLanguageConfig = {
  *   1. Coverage gate is fatal (warnOnly: false) instead of warning-only
  *   2. `cargo fmt --check` becomes `cargo fmt` (autofix) instead of check-only
  *
- * This configuration is used by the `rust-plan-cycle` pipeline for unattended
+ * This configuration is used by the `plan-cycle` pipeline (via the
+ * `TOOLCHAIN_DESCRIPTORS.rust` devShell-routed entry) for unattended
  * plan execution where coverage failures should halt the phase and fmt should
  * automatically fix formatting issues.
  *
