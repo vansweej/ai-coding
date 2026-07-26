@@ -9,22 +9,6 @@ export interface ResumeState {
 }
 
 /**
- * Check if the workspace has uncommitted changes (dirty git state).
- *
- * @param workspace - The workspace directory
- * @returns true if there are uncommitted changes, false otherwise (or if not a git repo)
- */
-async function hasUncommittedChanges(workspace: string): Promise<boolean> {
-  try {
-    const status = await $`git status --porcelain`.cwd(workspace).text();
-    return status.trim().length > 0;
-  } catch {
-    // Not a git repository or git command failed - treat as clean
-    return false;
-  }
-}
-
-/**
  * Find the last commit with a "Phase: N" trailer.
  *
  * @param workspace - The workspace directory
@@ -55,17 +39,25 @@ async function findLastPhaseNumber(workspace: string): Promise<number | undefine
 }
 
 /**
- * Determine if a resume is needed by checking for dirty git state and Phase: N commits.
+ * Determine if a resume is needed by checking for a "Phase: N" commit trailer
+ * in recent history.
+ *
+ * A resume is needed whenever a `Phase: N` trailer is found, regardless of
+ * whether the working tree is currently dirty or clean. A clean tree does NOT
+ * mean "nothing to resume" -- a phase can fail mid-implementation and roll
+ * back cleanly (patch application failures are never partially written), which
+ * is indistinguishable from "no run has started yet" if resume only looks at
+ * dirtiness. Gating resume on dirty state caused a completed-but-not-finished
+ * feature (e.g. phases 1-6 committed, phase 7 failed and rolled back to a
+ * clean tree) to be silently restarted from phase 1 on the next run --
+ * re-applying already-committed phases and colliding with their now-stale
+ * SEARCH anchors. `resetToPhaseCommit` is safe to call even when the tree
+ * already matches the target commit (reset + clean are no-ops in that case).
  *
  * @param workspace - The workspace directory
  * @returns ResumeState with needsResume flag and last phase number
  */
 export async function detectResumeState(workspace: string): Promise<ResumeState> {
-  const isDirty = await hasUncommittedChanges(workspace);
-  if (!isDirty) {
-    return { needsResume: false, lastPhaseNumber: undefined };
-  }
-
   const lastPhaseNumber = await findLastPhaseNumber(workspace);
   if (lastPhaseNumber === undefined) {
     return { needsResume: false, lastPhaseNumber: undefined };

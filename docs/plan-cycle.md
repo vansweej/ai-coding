@@ -136,7 +136,8 @@ including required Nix flake dev-shell tooling.
 ┌─────────────────────────────────────────────────────────────┐
 │ 2. Detect Resume State (if needed)                           │
 │    - Check git log for Phase: N trailers                    │
-│    - Reset to last completed phase if dirty                 │
+│    - Reset to last completed phase if any trailer is found   │
+│      (regardless of dirty/clean tree — reset is a safe no-op)│
 │    - Skip completed phases                                  │
 └──────────────────┬──────────────────────────────────────────┘
                    │
@@ -379,7 +380,8 @@ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 ### How Resume Works
 
 1. **Detect last completed phase**: Scan git log for `Phase: N` trailers
-2. **Check for dirty state**: If working directory is dirty, reset to last phase commit
+2. **Reset to the last phase commit**: Happens whenever a trailer is found, regardless of
+   whether the tree is dirty or already clean — the reset is a safe no-op if nothing changed
 3. **Skip completed phases**: Start execution from the next phase
 4. **Continue normally**: Implement, verify, and commit remaining phases
 
