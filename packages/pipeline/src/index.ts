@@ -9,6 +9,8 @@ export { runPipeline } from "./run-pipeline";
 export { createShellStep } from "./steps/shell-step";
 export type { ShellStepOptions } from "./steps/shell-step";
 export { createNixShellStep } from "./steps/nix-shell-step";
+export { devShellPalette } from "./steps/devshell-palette";
+export type { DevShellPaletteOptions } from "./steps/devshell-palette";
 export { createCoverageGateStep } from "./steps/coverage-gate-step";
 export { parseCodeBlocks } from "./steps/parse-code-blocks";
 export type { ParsedCodeBlock } from "./steps/parse-code-blocks";
