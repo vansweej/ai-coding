@@ -1,6 +1,16 @@
 import { describe, expect, it } from "bun:test";
+import { execSync } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { composeImplementSystem, paletteExtensions, route } from "./route";
+import {
+  composeImplementSystem,
+  paletteExtensions,
+  paletteLanguageHint,
+  route,
+  runUnionVerification,
+} from "./route";
 
 describe("route", () => {
   it("routes .rs to the rust toolchain when cargo is present", () => {
@@ -151,5 +161,155 @@ describe("composeImplementSystem", () => {
     expect(prompt).toContain("aider-style");
     expect(prompt).toContain("<<<<<<< SEARCH");
     expect(prompt).toContain(">>>>>>> REPLACE");
+  });
+});
+
+describe("paletteLanguageHint", () => {
+  it("returns general-purpose for an empty palette", () => {
+    expect(paletteLanguageHint(new Set())).toBe("general-purpose");
+  });
+
+  it("returns a single language hint when only one toolchain is available", () => {
+    expect(paletteLanguageHint(new Set(["cargo"]))).toBe("Rust");
+  });
+
+  it("joins multiple available language hints with a slash", () => {
+    expect(paletteLanguageHint(new Set(["cargo", "bun"]))).toBe("Rust/TypeScript");
+  });
+});
+
+/** Creates a temporary git repository and returns its path. Caller must clean up. */
+function makeTempGitRepo(): string {
+  const dir = join(tmpdir(), `route-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(dir, { recursive: true });
+  execSync("git init -q", { cwd: dir });
+  execSync('git config user.email "test@example.com"', { cwd: dir });
+  execSync('git config user.name "Test"', { cwd: dir });
+  return dir;
+}
+
+describe("runUnionVerification", () => {
+  it("returns no steps when the workspace is not a git repository", () => {
+    const dir = join(
+      tmpdir(),
+      `route-test-nogit-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    mkdirSync(dir, { recursive: true });
+    try {
+      const steps = runUnionVerification(dir, new Set(["cargo", "bun"]));
+      expect(steps).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("returns no steps when nothing has been touched", () => {
+    const dir = makeTempGitRepo();
+    try {
+      writeFileSync(join(dir, "committed.rs"), "// initial\n");
+      execSync("git add -A", { cwd: dir });
+      execSync('git commit -q -m "initial"', { cwd: dir });
+
+      const steps = runUnionVerification(dir, new Set(["cargo"]));
+      expect(steps).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("routes an unstaged modification to its toolchain's steps", () => {
+    const dir = makeTempGitRepo();
+    try {
+      writeFileSync(join(dir, "committed.rs"), "// initial\n");
+      execSync("git add -A", { cwd: dir });
+      execSync('git commit -q -m "initial"', { cwd: dir });
+
+      // Unstaged modification -- shows in `git diff --name-only`.
+      writeFileSync(join(dir, "committed.rs"), "// modified\n");
+
+      const steps = runUnionVerification(dir, new Set(["cargo"]));
+      expect(steps.map((s) => s.name)).toEqual(
+        expect.arrayContaining(["fmt", "check", "clippy", "test", "tarpaulin", "coverage"]),
+      );
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("routes a staged new file to its toolchain's steps", () => {
+    const dir = makeTempGitRepo();
+    try {
+      writeFileSync(join(dir, "README.md"), "# fixture\n");
+      execSync("git add -A", { cwd: dir });
+      execSync('git commit -q -m "initial"', { cwd: dir });
+
+      // Staged (new, added but not committed) file -- shows via `--staged`.
+      writeFileSync(join(dir, "index.ts"), "export const x = 1;\n");
+      execSync("git add index.ts", { cwd: dir });
+
+      const steps = runUnionVerification(dir, new Set(["bun"]));
+      expect(steps.map((s) => s.name)).toEqual(
+        expect.arrayContaining(["typecheck", "lint", "test"]),
+      );
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("produces the union of steps across touched files of different toolchains, deduped by step name", () => {
+    const dir = makeTempGitRepo();
+    try {
+      writeFileSync(join(dir, "a.rs"), "// initial\n");
+      writeFileSync(join(dir, "b.ts"), "export const x = 1;\n");
+      execSync("git add -A", { cwd: dir });
+      execSync('git commit -q -m "initial"', { cwd: dir });
+
+      writeFileSync(join(dir, "a.rs"), "// modified\n");
+      writeFileSync(join(dir, "b.ts"), "export const x = 2;\n");
+
+      const steps = runUnionVerification(dir, new Set(["cargo", "bun"]));
+      const names = steps.map((s) => s.name);
+      expect(names).toEqual(
+        expect.arrayContaining(["fmt", "check", "clippy", "typecheck", "lint"]),
+      );
+      // "test" is a step name shared by both rust and typescript toolchains --
+      // deduped-by-step-name means it appears exactly once in the union.
+      expect(names.filter((n) => n === "test").length).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("contributes nothing when a touched file routes to the floor (no matching toolchain)", () => {
+    const dir = makeTempGitRepo();
+    try {
+      writeFileSync(join(dir, "README.md"), "# initial\n");
+      execSync("git add -A", { cwd: dir });
+      execSync('git commit -q -m "initial"', { cwd: dir });
+
+      writeFileSync(join(dir, "README.md"), "# modified\n");
+
+      const steps = runUnionVerification(dir, new Set(["cargo", "bun"]));
+      expect(steps).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("contributes nothing when the touched file's toolchain driver is absent from the palette", () => {
+    const dir = makeTempGitRepo();
+    try {
+      writeFileSync(join(dir, "a.rs"), "// initial\n");
+      execSync("git add -A", { cwd: dir });
+      execSync('git commit -q -m "initial"', { cwd: dir });
+
+      writeFileSync(join(dir, "a.rs"), "// modified\n");
+
+      // bun present, but no rust driver -- a.rs's toolchain is unavailable.
+      const steps = runUnionVerification(dir, new Set(["bun"]));
+      expect(steps).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
   });
 });

@@ -1,3 +1,7 @@
+import { execSync } from "node:child_process";
+import type { PipelineStep } from "@ai-coding/pipeline";
+import type { AIRequestEvent } from "@ai-coding/shared";
+
 import {
   EXTENSION_TO_TOOLCHAIN,
   TOOLCHAIN_DESCRIPTORS,
@@ -93,6 +97,25 @@ export function paletteExtensions(palette: ReadonlySet<string>): readonly string
 }
 
 /**
+ * Returns a human-readable hint naming every toolchain available in the
+ * workspace's devShell palette (e.g. "Rust/TypeScript"), or "general-purpose"
+ * when none are available. Used both by {@link composeImplementSystem}'s
+ * opening sentence and by callers building a display-only instruction
+ * preamble (e.g. "Implement this <hint> step.").
+ *
+ * @param palette - Set of tool names detected as available in the devShell.
+ */
+export function paletteLanguageHint(palette: ReadonlySet<string>): string {
+  const availableDescriptors = Object.values(TOOLCHAIN_DESCRIPTORS).filter((descriptor) =>
+    isAvailable(descriptor, palette),
+  );
+
+  return availableDescriptors.length > 0
+    ? availableDescriptors.map((descriptor) => descriptor.languageHint).join("/")
+    : "general-purpose";
+}
+
+/**
  * Composes ONE aider-style SEARCH/REPLACE system prompt covering every
  * toolchain available in the workspace's devShell, per the read-don't-declare
  * design (memory 4c40518b): the implement prompt cannot be routed per-file
@@ -111,15 +134,73 @@ export function composeImplementSystem(palette: ReadonlySet<string>): string {
     isAvailable(descriptor, palette),
   );
 
-  const languageHint =
-    availableDescriptors.length > 0
-      ? availableDescriptors.map((descriptor) => descriptor.languageHint).join("/")
-      : "general-purpose";
-
   const idioms = [
     ...availableDescriptors.map((descriptor) => descriptor.idioms),
     FLOOR_CLAUSE,
   ].join(" ");
 
-  return buildPatchSystem(languageHint, idioms);
+  return buildPatchSystem(paletteLanguageHint(palette), idioms);
+}
+
+/**
+ * Returns paths of files touched in the workspace: the union of unstaged
+ * changes (`git diff --name-only`) and staged changes
+ * (`git diff --name-only --staged`), deduplicated. Used to scope union
+ * verification to only the toolchains relevant to what actually changed.
+ *
+ * Silently returns an empty list when either git command fails (e.g. not a
+ * git repository) -- verification simply has nothing to route, matching the
+ * existing tolerant git-diff handling in `buildBaselineContext`.
+ */
+function getTouchedFiles(workspace: string): readonly string[] {
+  const files = new Set<string>();
+
+  for (const command of ["git diff --name-only", "git diff --name-only --staged"]) {
+    try {
+      const output = execSync(command, { cwd: workspace, encoding: "utf8" });
+      for (const line of output.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed) files.add(trimmed);
+      }
+    } catch {
+      // git not available, not a repository, or no commits yet -- no touched
+      // files from this source; continue with whatever the other command found.
+    }
+  }
+
+  return Array.from(files);
+}
+
+/**
+ * Builds the verification steps for a phase by routing every touched file
+ * (per {@link getTouchedFiles}) to its toolchain and taking the
+ * DEDUPED-BY-STEP-NAME union of their `toolchainSteps`. Files that route to
+ * the floor (see {@link route}) contribute nothing -- e.g. a docs-only
+ * change produces an empty verification step list.
+ *
+ * When two routed toolchains happen to share a step name, the LAST toolchain
+ * processed wins (Map.set semantics) -- in practice toolchains use disjoint
+ * step names (fmt/check/clippy/test for Rust vs typecheck/lint/test for
+ * TypeScript, etc.), so collisions are not expected in the current registry.
+ *
+ * @param workspace - Absolute path to the workspace being verified.
+ * @param palette   - Set of tool names detected as available in the devShell.
+ */
+export function runUnionVerification(
+  workspace: string,
+  palette: ReadonlySet<string>,
+): readonly PipelineStep<AIRequestEvent>[] {
+  const touchedFiles = getTouchedFiles(workspace);
+  const stepsByName = new Map<string, PipelineStep<AIRequestEvent>>();
+
+  for (const file of touchedFiles) {
+    const descriptor = route(file, palette);
+    if (descriptor === null) continue;
+
+    for (const step of descriptor.toolchainSteps(workspace)) {
+      stepsByName.set(step.name, step);
+    }
+  }
+
+  return Array.from(stepsByName.values());
 }

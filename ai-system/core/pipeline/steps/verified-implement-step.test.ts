@@ -374,6 +374,109 @@ describe("createVerifiedImplementStep", () => {
     });
     expect(events[5]).toEqual({ kind: "step-finish", phase: 5, step: 2 });
   });
+
+  it("fails with a descriptive error when neither languageConfig nor palette is provided", async () => {
+    const dispatcher = sequenceDispatcher(["unused"]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", { config, workspace });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain('requires either "languageConfig" or "palette"');
+    }
+  });
+
+  it("composes the implement system from the devShell palette when palette is provided", async () => {
+    const systems: (string | undefined)[] = [];
+    const dispatcher: ModelDispatcher = {
+      dispatch: async (request: DispatchRequest): Promise<Result<string>> => {
+        systems.push(request.system);
+        return {
+          ok: true,
+          value:
+            "src/lib.rs\n<<<<<<< SEARCH\n=======\npub fn value() -> i32 { 1 }\n>>>>>>> REPLACE",
+        };
+      },
+    };
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    // workspace is not a git repo, so union verification has no touched
+    // files to route and trivially succeeds with zero steps -- this test
+    // is only exercising the implement-prompt composition wiring.
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      palette: new Set(["cargo"]),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(systems[0]).toContain("Rust idioms");
+    expect(systems[0]).toContain("aider-style");
+    expect(systems[0]).toContain("EDIT-ONLY");
+  });
+
+  it("prefers palette over languageConfig when both are supplied", async () => {
+    const systems: (string | undefined)[] = [];
+    const dispatcher: ModelDispatcher = {
+      dispatch: async (request: DispatchRequest): Promise<Result<string>> => {
+        systems.push(request.system);
+        return {
+          ok: true,
+          value: "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+        };
+      },
+    };
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(0)),
+      palette: new Set(["bun"]),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    // The legacy languageConfig's fixed system prompt is "system prompt"
+    // (see makeLanguageConfig) -- confirms the palette-composed prompt won,
+    // not the legacy fixed one.
+    expect(systems[0]).not.toBe("system prompt");
+    expect(systems[0]).toContain("named exports");
+  });
+
+  it("discovers existing source files via paletteExtensions when palette is provided", async () => {
+    writeFileSync(join(workspace, "existing.rs"), "pub fn existing() -> i32 { 0 }");
+    const dispatcher = sequenceDispatcher([
+      "src/lib.rs\n<<<<<<< SEARCH\n=======\npub fn value() -> i32 { 1 }\n>>>>>>> REPLACE",
+    ]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      palette: new Set(["cargo"]),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(dispatcher.prompts[0]).toContain("existing.rs");
+    expect(dispatcher.prompts[0]).toContain("pub fn existing()");
+  });
 });
 
 describe("buildVerificationFailurePrompt", () => {
