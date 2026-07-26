@@ -65,7 +65,7 @@ git diff, producing a language-specific implementation prompt and toolchain.
 
 | Language | `--language` value | Toolchain steps | Coverage gate | `baselineCheck` |
 |----------|--------------------|-----------------|:---:|:---:|
-| Rust | `rust` | `cargo fmt` → `cargo check` → `cargo clippy -D warnings` → `cargo test` → `cargo tarpaulin` → coverage gate | ✅ fatal | — |
+| Rust | `rust` | `cargo fmt` → `cargo check` → `cargo clippy -D warnings` → `cargo test` → (if gated) `cargo tarpaulin` → coverage gate | ✅ fatal when gated | — |
 | TypeScript | `typescript` | `bun run typecheck` → `bunx biome check --write .` → `bun test` (300s) | — | — |
 | Python | `python` | `ruff format --check` → `ruff check` → `mypy .` (warning-only) → `pytest -q` (300s) | — | — |
 | C++ | `cpp` | `cmake -S . -B build` (120s) → `cmake --build build` (300s) → `ctest --test-dir build` (300s) | — | — |
@@ -76,6 +76,17 @@ git diff, producing a language-specific implementation prompt and toolchain.
 
 Only Rust currently gates on coverage; the other 7 languages accept the phase's `Coverage:`
 directive for `PlanConfigFactory` signature compatibility but do not act on it yet.
+
+**Rust `cargo tarpaulin` is only run when coverage is gated.** When a phase's `Coverage:`
+directive resolves to *not gated* (`skip`, or auto-exempt because the diff adds zero real lines),
+`createRustPlanConfig` omits the `tarpaulin` step and the `coverage` gate step entirely — the
+toolchain ends at `cargo test`. This isn't just a formality: `cargo tarpaulin` performs its own
+instrumented rebuild, which on a heavy workspace can exceed the shell step's 60s default timeout
+and fail verification even though the code is correct (a timeout rejects the step regardless of
+`failOnNonZero`). If there's no coverage number to enforce, skipping the instrumented build
+avoids that failure mode entirely. When coverage *is* gated, the `tarpaulin` step is given a
+15-minute timeout (`timeoutMs: 900_000`) to accommodate instrumented rebuilds of large workspaces.
+
 
 **`baselineCheck`** — Nix and Shell run their toolchain once on the *untouched* tree before any
 implementation attempt for a phase, because `nix flake check` and repo-wide `shellcheck` cannot

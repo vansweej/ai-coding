@@ -36,10 +36,18 @@ dev-shell or by having them already on `PATH`.
 | `check` | `cargo check --quiet` | |
 | `clippy` | `cargo clippy -- -D warnings` | Fatal on any warning |
 | `test` | `cargo test` | |
-| `tarpaulin` | `cargo tarpaulin` | `failOnNonZero: false` — feeds the coverage gate, doesn't fail on its own |
-| `coverage` | Coverage gate | **Fatal.** Threshold from the phase's `Coverage:` directive (default 90%), with auto-exempt for zero-line-addition diffs |
+| `tarpaulin` | `cargo tarpaulin` | Only run when coverage is gated (see below). `failOnNonZero: false`, `timeoutMs: 900_000` (15 min) — feeds the coverage gate, doesn't fail the phase on its own exit code |
+| `coverage` | Coverage gate | **Fatal.** Only present when gated. Threshold from the phase's `Coverage:` directive (default 90%), with auto-exempt for zero-line-addition diffs |
 
-Requires: `cargo`, `rustc`, `cargo-tarpaulin`, `clippy` component.
+When a phase's `Coverage:` directive resolves to *not gated* (`skip`, or auto-exempt), the
+`tarpaulin` and `coverage` steps are omitted entirely rather than made warning-only — the
+toolchain ends at `test`. `cargo tarpaulin` performs its own instrumented rebuild, which on a
+large workspace can take well over a minute; running it when there's no coverage number to
+enforce would only add risk (a timeout fails the step, and hence verification, regardless of
+`failOnNonZero`) for no benefit. When coverage *is* gated the instrumented rebuild does run, with
+a 15-minute timeout to accommodate it.
+
+Requires: `cargo`, `rustc`, `cargo-tarpaulin` (only invoked for gated phases), `clippy` component.
 
 ### TypeScript — `--language typescript` (also the overall fallback default)
 

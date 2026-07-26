@@ -294,7 +294,7 @@ to their factory:
 
 | Language | Toolchain | Coverage gate | `baselineCheck` |
 |----------|-----------|:---:|:---:|
-| `rust` | fmt → check → clippy → test → tarpaulin → coverage | ✅ fatal | — |
+| `rust` | fmt → check → clippy → test → (if gated) tarpaulin → coverage | ✅ fatal when gated | — |
 | `typescript` | typecheck → lint → test | — | — |
 | `python` | format → lint → typecheck (warn-only) → test | — | — |
 | `cpp` | configure → build → test | — | — |

@@ -91,8 +91,9 @@ describe("language configs", () => {
     const steps = RUST_PLAN_CONFIG.toolchainSteps("/tmp/ws");
     const coverageStep = steps.find((step) => step.name === "coverage");
     expect(coverageStep).toBeDefined();
-    // The coverage step should be fatal (warnOnly: false) for default coverage
+    // The coverage step should be fatal (warnOnly: false) for the default 90% gate
     expect(steps.map((step) => step.name)).toContain("coverage");
+    expect(steps.map((step) => step.name)).toContain("tarpaulin");
   });
 
   it("RUST_PLAN_CONFIG includes aider-style patch format in implementSystem", () => {
@@ -119,9 +120,19 @@ describe("language configs", () => {
   it("createRustPlanConfig respects skip directive", () => {
     const config = createRustPlanConfig({ mode: "skip" }, "");
     const steps = config.toolchainSteps("/tmp/ws");
-    const coverageStep = steps.find((step) => step.name === "coverage");
-    expect(coverageStep).toBeDefined();
-    // With skip directive, coverage should be warning-only (warnOnly: true)
+    // With skip directive, coverage is not gated -- the tarpaulin instrumented
+    // rebuild and the coverage gate are both omitted rather than made warn-only.
+    expect(steps.map((step) => step.name)).toEqual(["fmt", "check", "clippy", "test"]);
+    expect(steps.find((step) => step.name === "tarpaulin")).toBeUndefined();
+    expect(steps.find((step) => step.name === "coverage")).toBeUndefined();
+  });
+
+  it("createRustPlanConfig omits tarpaulin and coverage when not gated", () => {
+    const config = createRustPlanConfig({ mode: "skip" }, "");
+    const steps = config.toolchainSteps("/tmp/ws");
+    const names = steps.map((step) => step.name);
+    expect(names).not.toContain("tarpaulin");
+    expect(names).not.toContain("coverage");
   });
 
   it("createRustPlanConfig respects explicit threshold", () => {
@@ -129,7 +140,8 @@ describe("language configs", () => {
     const steps = config.toolchainSteps("/tmp/ws");
     const coverageStep = steps.find((step) => step.name === "coverage");
     expect(coverageStep).toBeDefined();
-    // With explicit threshold, coverage should be fatal (warnOnly: false)
+    // With explicit threshold, coverage is gated: tarpaulin runs and the gate is fatal
+    expect(steps.find((step) => step.name === "tarpaulin")).toBeDefined();
   });
 
   it("createRustPlanConfig respects auto-exempt", () => {
@@ -137,9 +149,10 @@ describe("language configs", () => {
 +    // comment`;
     const config = createRustPlanConfig({ mode: "default" }, diff);
     const steps = config.toolchainSteps("/tmp/ws");
-    const coverageStep = steps.find((step) => step.name === "coverage");
-    expect(coverageStep).toBeDefined();
-    // With auto-exempt, coverage should be warning-only (warnOnly: true)
+    // With auto-exempt, coverage is not gated -- tarpaulin and the gate are omitted
+    expect(steps.map((step) => step.name)).toEqual(["fmt", "check", "clippy", "test"]);
+    expect(steps.find((step) => step.name === "tarpaulin")).toBeUndefined();
+    expect(steps.find((step) => step.name === "coverage")).toBeUndefined();
   });
 
   it("createRustPlanConfig implementSystem is byte-identical before and after buildPatchSystem refactor", () => {

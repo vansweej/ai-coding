@@ -176,34 +176,49 @@ export function createRustPlanConfig(
     sourceExtensions: [".rs"],
     sourceRoots: ["src", "crates", "."],
     implementSystem: buildPatchSystem("Rust", RUST_PLAN_IDIOMS),
-    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
-      createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt"], { cwd: workspace }),
-      createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], {
-        cwd: workspace,
-      }),
-      createNixShellStep<AIRequestEvent>("clippy", ["cargo", "clippy", "--", "-D", "warnings"], {
-        cwd: workspace,
-      }),
-      createNixShellStep<AIRequestEvent>("test", ["cargo", "test"], { cwd: workspace }),
-      createNixShellStep<AIRequestEvent>("tarpaulin", ["cargo", "tarpaulin"], {
-        cwd: workspace,
-        failOnNonZero: false,
-      }),
-      // Coverage gate is fatal (warnOnly: false) and respects per-phase directives
-      createCoverageGateStep<AIRequestEvent>(
-        "coverage",
-        "tarpaulin",
-        percent,
-        undefined,
-        !gated, // If gated is false, treat as warning-only; if true, make it fatal
-      ),
-    ],
+    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => {
+      const baseSteps: PipelineStep<AIRequestEvent>[] = [
+        createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt"], { cwd: workspace }),
+        createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], {
+          cwd: workspace,
+        }),
+        createNixShellStep<AIRequestEvent>("clippy", ["cargo", "clippy", "--", "-D", "warnings"], {
+          cwd: workspace,
+        }),
+        createNixShellStep<AIRequestEvent>("test", ["cargo", "test"], { cwd: workspace }),
+      ];
+
+      // When coverage isn't gated (Coverage: skip or auto-exempt), skip the
+      // tarpaulin instrumented rebuild entirely rather than just softening
+      // the gate. cargo tarpaulin performs its own instrumented build, which
+      // on heavy workspaces can exceed the shell step's 60s default timeout
+      // -- a timeout rejects the step regardless of failOnNonZero, failing
+      // verification even when the code is correct. If there's no coverage
+      // number to enforce, there's no reason to pay for that build.
+      if (!gated) {
+        return baseSteps;
+      }
+
+      return [
+        ...baseSteps,
+        createNixShellStep<AIRequestEvent>("tarpaulin", ["cargo", "tarpaulin"], {
+          cwd: workspace,
+          failOnNonZero: false,
+          // Instrumented rebuilds of heavy workspaces can take well over the
+          // 60s shell-step default; give gated phases a realistic budget.
+          timeoutMs: 900_000,
+        }),
+        // Coverage gate is fatal when gated (per-phase directives/auto-exempt
+        // already resolved above).
+        createCoverageGateStep<AIRequestEvent>("coverage", "tarpaulin", percent, undefined, false),
+      ];
+    },
   };
 }
 
-/** Exported constant for RUST_PLAN_CONFIG with default coverage (90%, gated). */
+/** Exported constant for RUST_PLAN_CONFIG with the default 90% fatal gate. */
 export const RUST_PLAN_CONFIG: DevCycleLanguageConfig = createRustPlanConfig(
-  { mode: "default" },
+  { mode: "threshold", percent: 90 },
   "",
 );
 
