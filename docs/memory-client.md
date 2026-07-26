@@ -1,7 +1,7 @@
 # Cerebrum Memory Client Integration
 
 The Cerebrum MCP server provides a two-tier memory system (Synapse + Cortex) that enables
-the `rust-plan-cycle` pipeline to track phase progress, store implementation context, and
+the `plan-cycle` pipeline to track phase progress, store implementation context, and
 support resumable failures.
 
 ## Table of Contents
@@ -10,7 +10,7 @@ support resumable failures.
 2. [Two-Tier Memory System](#two-tier-memory-system)
 3. [Memory Operations](#memory-operations)
 4. [Memory Scopes](#memory-scopes)
-5. [Integration with rust-plan-cycle](#integration-with-rust-plan-cycle)
+5. [Integration with plan-cycle](#integration-with-plan-cycle)
 6. [Salience and Prioritization](#salience-and-prioritization)
 7. [Optional Integration](#optional-integration)
 8. [Troubleshooting](#troubleshooting)
@@ -30,9 +30,9 @@ for AI agents. It enables:
 - **Scope isolation**: Memories can be scoped to global, user, agent, or session
 - **Salience-based prioritization**: Important memories are marked with higher salience
 
-### Why Use Memory in rust-plan-cycle?
+### Why Use Memory in plan-cycle?
 
-The `rust-plan-cycle` pipeline uses memory to:
+The `plan-cycle` pipeline uses memory to:
 
 1. **Track phase progress**: Store which phases have been completed
 2. **Store implementation context**: Save LLM responses and diagnostics for later reference
@@ -244,7 +244,7 @@ await memory.remember("Session-specific context", 0.5, "session:abc123");
 
 ---
 
-## Integration with rust-plan-cycle
+## Integration with plan-cycle
 
 ### Phase Context Storage
 
@@ -323,7 +323,7 @@ const completedPhases = await memory.recall(
 - **0.6-0.8**: High priority (important context)
 - **0.8-1.0**: Critical priority (essential context)
 
-### rust-plan-cycle Salience Levels
+### plan-cycle Salience Levels
 
 | Memory Type | Salience | Reason |
 |-------------|----------|--------|

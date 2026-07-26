@@ -1,30 +1,5 @@
 import type { Result } from "@ai-coding/pipeline";
 
-/** Valid language names that may appear in a plan-file `Language:` directive. */
-export type LanguageName =
-  | "rust"
-  | "typescript"
-  | "python"
-  | "cpp"
-  | "docs"
-  | "haskell"
-  | "julia"
-  | "nix"
-  | "shell";
-
-/** Exhaustive list of recognised language names, ordered alphabetically. */
-export const KNOWN_LANGUAGES: readonly LanguageName[] = [
-  "cpp",
-  "docs",
-  "haskell",
-  "julia",
-  "nix",
-  "python",
-  "rust",
-  "shell",
-  "typescript",
-];
-
 /** A single implementation step within a phase. */
 export interface Step {
   /** Step number (1-indexed). */
@@ -53,8 +28,6 @@ export interface Phase {
   readonly steps: readonly Step[];
   /** Coverage directive: skip, N%, or default (90%). */
   readonly coverage: CoverageDirective;
-  /** Language directive: which toolchain to use for this phase. Undefined means inherit the default. */
-  readonly language?: LanguageName;
 }
 
 /** A fully parsed plan file. */
@@ -69,7 +42,6 @@ const FEATURE_RE = /^#\s+Feature:\s*(.+)$/;
 const PHASE_RE = /^##\s+Phase\s+(\d+):\s*(.+)$/;
 const COMMIT_RE = /^Commit message:\s*(.+)$/;
 const COVERAGE_RE = /^Coverage:\s*(.+)$/;
-const LANGUAGE_RE = /^Language:\s*(.+)$/;
 const STEP_RE = /^###\s+Step\s+(\d+):\s*(.+)$/;
 
 /**
@@ -83,7 +55,6 @@ const STEP_RE = /^###\s+Step\s+(\d+):\s*(.+)$/;
  *
  * Commit message: <conventional commit>
  * Coverage: skip | N% | (omitted for default 90%)
- * Language: rust | typescript | python | cpp | docs | haskell | julia | nix | shell | (omitted to inherit default)
  *
  * ### Step 1: <title>
  *
@@ -102,7 +73,6 @@ const STEP_RE = /^###\s+Step\s+(\d+):\s*(.+)$/;
  *   - Must have at least one `## Phase N:` section.
  *   - Each phase must have a `Commit message:` line.
  *   - Each phase may have an optional `Coverage:` line (skip, N%, or omitted for default).
- *   - Each phase may have an optional `Language:` line (one of the known language names).
  *   - Each phase must have at least one `### Step N:` section.
  *
  * @param content - Raw plan file content (UTF-8 string).
@@ -118,7 +88,6 @@ export function parsePlanFile(content: string): Result<PlanFile> {
   let currentPhaseTitle: string | undefined;
   let currentCommitMessage: string | undefined;
   let currentCoverage: CoverageDirective = { mode: "default" };
-  let currentLanguage: LanguageName | undefined;
   const currentSteps: Step[] = [];
 
   let currentStepNumber: number | undefined;
@@ -160,13 +129,11 @@ export function parsePlanFile(content: string): Result<PlanFile> {
       commitMessage: currentCommitMessage,
       steps: [...currentSteps],
       coverage: currentCoverage,
-      language: currentLanguage,
     });
     currentPhaseNumber = undefined;
     currentPhaseTitle = undefined;
     currentCommitMessage = undefined;
     currentCoverage = { mode: "default" };
-    currentLanguage = undefined;
     currentSteps.length = 0;
     return { ok: true, value: undefined };
   }
@@ -218,21 +185,6 @@ export function parsePlanFile(content: string): Result<PlanFile> {
           ),
         };
       }
-      continue;
-    }
-
-    const languageMatch = LANGUAGE_RE.exec(line);
-    if (languageMatch && currentPhaseNumber !== undefined) {
-      const langValue = languageMatch[1].trim();
-      if (!(KNOWN_LANGUAGES as readonly string[]).includes(langValue)) {
-        return {
-          ok: false,
-          error: new Error(
-            `Phase ${currentPhaseNumber} has unknown language: "${langValue}" (must be one of: ${KNOWN_LANGUAGES.join(", ")})`,
-          ),
-        };
-      }
-      currentLanguage = langValue as LanguageName;
       continue;
     }
 

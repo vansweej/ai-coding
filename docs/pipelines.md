@@ -344,23 +344,20 @@ const config: OrchestratorConfig = {
 `PLAN_CONFIG_FACTORIES` registry for plan-based execution instead.
 
 ```typescript
-import { PLAN_CONFIG_FACTORIES } from
-  "ai-system/core/pipeline/definitions/language-configs";
 import { runFeature } from
   "ai-system/core/pipeline/feature-runner";
 
 const planContent = `# Feature: Add retry logic
 ## Phase 1: Implement
 Commit message: feat: add retry logic
-Language: rust
 ### Step 1: Implement
 Add exponential backoff to HTTP client`;
 
 const outcome = await runFeature(planContent, {
   config,
   workspace: "/path/to/my-project",
-  defaultLanguage: "rust",       // used when a phase has no Language: directive
-  factories: PLAN_CONFIG_FACTORIES,
+  // Toolchain per touched file is auto-routed from the workspace's devShell
+  // palette (devShellPalette) -- no defaultLanguage/factories pair needed.
   retryConfig: { maxLocalRetries: 2 },
 });
 ```
@@ -396,9 +393,9 @@ for (const phase of outcome.value.phases) {
 
 ### Step 2 -- Add a new language to plan-cycle
 
-`plan-cycle` supports 9 languages today (Rust, TypeScript, Python, C++, Docs, Haskell, Julia, Nix,
-Shell) via `PLAN_CONFIG_FACTORIES` in `language-configs.ts`. To add another, add a
-`create<Lang>PlanConfig` factory and register it:
+`plan-cycle` supports 8 toolchains today (Rust, TypeScript, Python, C++, Haskell, Julia, Nix,
+Shell) via `PLAN_CONFIG_FACTORIES` in `language-configs.ts`, auto-routed per touched file from
+the workspace's devShell. To add another, add a `create<Lang>PlanConfig` factory and register it:
 
 ```typescript
 // ai-system/core/pipeline/definitions/language-configs.ts
@@ -414,7 +411,7 @@ export function createGoPlanConfig(
   _diff: string,
 ): DevCycleLanguageConfig {
   return {
-    name: "go", // add "go" to LanguageName + KNOWN_LANGUAGES in plan-parser.ts first
+    name: "go", // register "go" in the toolchain routing table (routing/route.ts) first
     languageHint: "Go",
     sourceExtensions: [".go"],
     sourceRoots: ["."],

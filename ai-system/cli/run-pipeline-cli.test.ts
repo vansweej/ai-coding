@@ -17,7 +17,7 @@ describe("parseArgs", () => {
   });
 
   it("parses --input flag value", () => {
-    const result = parseArgs(["rust-plan-cycle", "./proj", "--input", "Add error handling"]);
+    const result = parseArgs(["plan-cycle", "./proj", "--input", "Add error handling"]);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.input).toBe("Add error handling");
@@ -41,7 +41,7 @@ describe("parseArgs", () => {
   });
 
   it("fails when --input flag has no value", () => {
-    const result = parseArgs(["rust-plan-cycle", "./proj", "--input"]);
+    const result = parseArgs(["plan-cycle", "./proj", "--input"]);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.message).toContain("--input flag requires a value");
@@ -49,7 +49,7 @@ describe("parseArgs", () => {
   });
 
   it("fails when --input value looks like another flag", () => {
-    const result = parseArgs(["rust-plan-cycle", "./proj", "--input", "--other"]);
+    const result = parseArgs(["plan-cycle", "./proj", "--input", "--other"]);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.message).toContain("--input flag requires a value");

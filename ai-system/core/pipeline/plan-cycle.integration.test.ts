@@ -5,35 +5,23 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { $ } from "bun";
 
-import type { PipelineStep, StepResult } from "@ai-coding/pipeline";
-import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
+import type { DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
 
 import { LOCAL_PROFILE } from "../../config/model-profiles";
 import { CerebrumMemory } from "../orchestrator/cerebrum-memory";
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
-import type { DevCycleLanguageConfig, PlanConfigFactory } from "./definitions/language-configs";
 import { runFeature } from "./feature-runner";
 
-const LOCAL_PROFILE_NAME = "local";
-
 /**
- * Integration test suite for rust-plan-cycle pipeline.
+ * Integration test suite for the plan-cycle pipeline.
  * Tests the full flow: plan parsing → phase execution → memory tracking → git commits.
+ *
+ * Touched files use the ".rs" extension, but the test environment's devShell
+ * palette (bare PATH probe, no flake.nix in these ephemeral workspaces) does
+ * not include "cargo" -- so these files route to the no-toolchain floor and
+ * verification is always an empty step list, exactly like the old mocked
+ * `toolchainSteps: () => []` config these tests previously supplied by hand.
  */
-
-// Mock language config for testing
-function testLanguageConfig(): DevCycleLanguageConfig {
-  return {
-    name: "rust",
-    languageHint: "Rust",
-    implementSystem: "You are a Rust coding assistant.",
-    sourceExtensions: [".rs"],
-    sourceRoots: ["src"],
-    toolchainSteps: (_workspace: string) => [],
-  };
-}
-
-const testFactory: PlanConfigFactory = () => testLanguageConfig();
 
 // Mock dispatcher that returns aider-style patches
 function createMockDispatcher(responses: string[]): ModelDispatcher {
@@ -119,7 +107,7 @@ mod tests {
 let workspace: string;
 
 beforeEach(async () => {
-  workspace = mkdtempSync(join(tmpdir(), "rust-plan-cycle-integration-"));
+  workspace = mkdtempSync(join(tmpdir(), "plan-cycle-integration-"));
   // Initialize git repo
   await $`git init`.cwd(workspace).quiet();
   await $`git config user.email "test@example.com"`.cwd(workspace).quiet();
@@ -134,7 +122,7 @@ afterEach(() => {
   rmSync(workspace, { recursive: true, force: true });
 });
 
-describe("rust-plan-cycle integration tests", () => {
+describe("plan-cycle integration tests", () => {
   it("executes a simple two-phase plan successfully", async () => {
     const dispatcher = createMockDispatcher([PHASE_1_RESPONSE, PHASE_2_RESPONSE]);
     const config = createMockConfig(dispatcher);
@@ -142,8 +130,6 @@ describe("rust-plan-cycle integration tests", () => {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      defaultLanguage: "rust",
-      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -163,8 +149,6 @@ describe("rust-plan-cycle integration tests", () => {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      defaultLanguage: "rust",
-      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -182,8 +166,6 @@ describe("rust-plan-cycle integration tests", () => {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      defaultLanguage: "rust",
-      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -207,8 +189,6 @@ describe("rust-plan-cycle integration tests", () => {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      defaultLanguage: "rust",
-      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(false);
@@ -224,8 +204,6 @@ describe("rust-plan-cycle integration tests", () => {
     const firstRun = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      defaultLanguage: "rust",
-      factories: { rust: testFactory },
     });
 
     expect(firstRun.ok).toBe(true);
@@ -246,8 +224,6 @@ describe("rust-plan-cycle integration tests", () => {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      defaultLanguage: "rust",
-      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -347,8 +323,6 @@ pub mod utils {
     const result = await runFeature(multiStepPlan, {
       config,
       workspace,
-      defaultLanguage: "rust",
-      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -365,8 +339,6 @@ pub mod utils {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      defaultLanguage: "rust",
-      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -389,8 +361,6 @@ pub mod utils {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      defaultLanguage: "rust",
-      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -410,8 +380,6 @@ pub mod utils {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      defaultLanguage: "rust",
-      factories: { rust: testFactory },
     });
 
     expect(result.ok).toBe(true);
@@ -441,8 +409,6 @@ pub mod utils {
     const result = await runFeature(SIMPLE_TWO_PHASE_PLAN, {
       config,
       workspace,
-      defaultLanguage: "rust",
-      factories: { rust: testFactory },
     });
 
     // Should fail on phase 2

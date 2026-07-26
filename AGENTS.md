@@ -36,11 +36,13 @@ ai-coding/
       pipeline/
         steps/             - OrchestratorStep, SkillResolverStep, VerifiedImplementStep
         definitions/       - dev-cycle language configs (interactive), PLAN_CONFIG_FACTORIES
-                             9-language registry for plan-cycle (rust, typescript, python, cpp,
-                             docs, haskell, julia, nix, shell), scaffold-*
+                             toolchain registry for plan-cycle (rust, typescript, python, cpp,
+                             haskell, julia, nix, shell), scaffold-*
+        routing/           - route.ts: auto-routes each touched file to a toolchain based on the
+                             workspace's devShell palette; unmatched/unavailable files are edit-only
         progress.ts        - ProgressEvent model + pure formatProgressEvent (--verbose feed)
     cli/
-      parse-args.ts        - CLI args (--profile, --input, --plan, --language, --verbose/-v flags)
+      parse-args.ts        - CLI args (--profile, --input, --plan, --verbose/-v flags)
       load-config.ts       - Builds OrchestratorConfig with selected profile
       select-pipeline.ts   - Instantiates pipeline by name
     shared/

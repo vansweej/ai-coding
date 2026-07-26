@@ -5,13 +5,10 @@ import type { PipelineContext, Result, StepResult } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
-import {
-  type DevCycleLanguageConfig,
-  PLAN_CONFIG_FACTORIES,
-  type PlanConfigFactory,
-} from "./definitions/language-configs";
-import type { LanguageName, Phase } from "./plan-parser";
+import type { ToolchainDescriptor } from "./definitions/language-configs";
+import type { Phase } from "./plan-parser";
 import type { OnProgress } from "./progress";
+import { getTouchedFiles, route } from "./routing/route";
 import type { RetryConfig } from "./steps/verified-implement-step";
 import { createVerifiedImplementStep } from "./steps/verified-implement-step";
 
@@ -47,17 +44,14 @@ export interface RunPhaseOptions {
   readonly config: OrchestratorConfig;
   readonly workspace: string;
   /**
-   * Default language used when a phase has no `Language:` directive.
-   * Always set explicitly — no silent fallback.
+   * Set of tool names detected as available in the workspace's devShell
+   * (see `devShellPalette` in `@ai-coding/pipeline`, computed once per run
+   * by `runFeature`). Drives per-file routing (`route`), context discovery
+   * (`paletteExtensions`), the implement prompt (`composeImplementSystem`),
+   * and verification (`runUnionVerification`) -- replaces the former
+   * `defaultLanguage`/`factories` pair entirely.
    */
-  readonly defaultLanguage: LanguageName;
-  /**
-   * Factory registry used to resolve the per-phase `DevCycleLanguageConfig`.
-   * Defaults to `PLAN_CONFIG_FACTORIES` when omitted.
-   * Languages absent from the registry cause an immediate error so unimplemented
-   * language support fails loudly rather than silently using the wrong toolchain.
-   */
-  readonly factories?: Readonly<Partial<Record<LanguageName, PlanConfigFactory>>>;
+  readonly palette: ReadonlySet<string>;
   readonly retryConfig?: RetryConfig;
   readonly commitPhase?: CommitPhase;
   /**
@@ -67,15 +61,6 @@ export interface RunPhaseOptions {
    * When omitted, no events are constructed and there is no overhead.
    */
   readonly onProgress?: OnProgress;
-}
-
-/** Capture the current working-tree diff; returns empty string if git is unavailable. */
-function safeGitDiff(workspace: string): string {
-  try {
-    return execSync("git diff", { cwd: workspace, encoding: "utf8" });
-  } catch {
-    return "";
-  }
 }
 
 /** Commit all phase changes with the plan-authored commit message and Phase trailer. */
@@ -115,32 +100,135 @@ function buildPhaseInstruction(phase: Phase): string {
 }
 
 /**
- * Run a language config's toolchainSteps once against the untouched tree,
- * before any implementation attempt. Any step failure is wrapped in a
- * BaselineCheckError so callers can distinguish it from a normal phase failure.
+ * Capture the current working-tree diff; returns empty string if git is
+ * unavailable. Passed through to the routed toolchains' coverage-exemption
+ * logic (see `resolveCoverageThreshold`/`createRustPlanConfig`) -- mirrors
+ * the same best-effort, once-per-phase snapshot the legacy
+ * `factory(coverage, diff)` path always used.
  */
-async function runBaselineCheck(
+function safeGitDiff(workspace: string): string {
+  try {
+    return execSync("git diff", { cwd: workspace, encoding: "utf8" });
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Returns the deduplicated (by descriptor id) set of whole-repo-validator
+ * toolchain descriptors implicated by the files currently touched in the
+ * workspace (per `getTouchedFiles`), given the workspace's devShell palette.
+ *
+ * Pure detection only -- never executes a toolchain command. This can run
+ * safely even when the underlying tool (e.g. `nixpkgs-fmt`) is not actually
+ * installed, since `route()` only checks driver-tool membership in the
+ * palette, not whether the command succeeds.
+ */
+export function findImplicatedWholeRepoValidators(
   workspace: string,
-  languageConfig: DevCycleLanguageConfig,
+  palette: ReadonlySet<string>,
+): readonly ToolchainDescriptor[] {
+  const implicated = new Map<string, ToolchainDescriptor>();
+  for (const file of getTouchedFiles(workspace)) {
+    const descriptor = route(file, palette);
+    if (descriptor?.isWholeRepoValidator) {
+      implicated.set(descriptor.id, descriptor);
+    }
+  }
+  return Array.from(implicated.values());
+}
+
+/**
+ * Runs every toolchain step of every given (whole-repo-validator) descriptor
+ * against the workspace's CURRENT on-disk state. Used exclusively against a
+ * `git stash`-cleaned tree by `attributePhaseFailure` -- this function itself
+ * has no git side effects, so it can be unit-tested directly with fake
+ * descriptors.
+ */
+export async function runValidatorSteps(
+  workspace: string,
+  descriptors: readonly ToolchainDescriptor[],
 ): Promise<Result<void>> {
-  const steps = languageConfig.toolchainSteps(workspace);
   const ctx: PipelineContext<AIRequestEvent> = {
     event: buildStepEvent(""),
     results: new Map<string, StepResult>(),
   };
-  for (const step of steps) {
-    const result = await step.execute(ctx);
-    if (!result.ok) {
+  for (const descriptor of descriptors) {
+    for (const step of descriptor.toolchainSteps(workspace)) {
+      const result = await step.execute(ctx);
+      if (!result.ok) return result;
+      ctx.results.set(step.name, result.value);
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
+/**
+ * Given a phase's verification failure, decides whether it is an ORDINARY
+ * phase failure (this phase's own implementation is wrong -- resumable,
+ * retryable) or an ENVIRONMENT failure (a whole-repo validator -- e.g.
+ * `nix flake check`, whole-repo `shellcheck` -- was already broken before
+ * this phase touched anything).
+ *
+ * LAZY ATTRIBUTION (replaces the former eager `runBaselineCheck`, which paid
+ * the cost of every whole-repo validator on every phase regardless of
+ * whether that phase touched anything relevant -- see the fix#6 lesson in
+ * memory 969218af): only runs when a phase has ALREADY failed, and only
+ * re-checks the specific whole-repo validator(s) implicated by files this
+ * phase actually touched.
+ *
+ * Mechanism: `git stash` (removing this phase's changes) -> re-run just the
+ * implicated validator(s) on the clean pre-phase tree -> `git stash pop`
+ * (always, even on failure, so the dirty tree is never left stashed) ->
+ * clean tree ALSO fails => the environment was already broken
+ * (`BaselineCheckError`, caller treats as exit 3); clean tree passes => this
+ * phase's own implementation broke it (return the original failure
+ * unchanged, exit 2 / ordinary retry).
+ *
+ * If `git stash` itself fails (e.g. nothing to stash, or git unavailable),
+ * attribution is skipped entirely and the original failure is returned
+ * unchanged -- never silently mask a real phase failure with a stash error.
+ */
+export async function attributePhaseFailure(
+  workspace: string,
+  palette: ReadonlySet<string>,
+  originalFailure: Result<PhaseRunResult>,
+): Promise<Result<PhaseRunResult>> {
+  if (originalFailure.ok) return originalFailure;
+
+  const implicated = findImplicatedWholeRepoValidators(workspace, palette);
+  if (implicated.length === 0) return originalFailure;
+
+  try {
+    await $`git stash`.cwd(workspace).quiet();
+  } catch {
+    // Defensive: `git stash` failing while there IS a tracked, dirty,
+    // whole-repo-validator-implicating file is not reliably reproducible in
+    // a test environment (a clean tree makes `git stash` a no-op that exits
+    // 0, not an error). Kept as a safety net so a stash failure can never
+    // masquerade as a false BaselineCheckError.
+    return originalFailure;
+  }
+
+  try {
+    const cleanTreeResult = await runValidatorSteps(workspace, implicated);
+    if (!cleanTreeResult.ok) {
       return {
         ok: false,
         error: new BaselineCheckError(
-          `Baseline check failed at step "${step.name}" before any implementation attempt: ${result.error.message}`,
+          `Whole-repo validator failed on the clean pre-phase tree (broken environment, not this phase's implementation): ${cleanTreeResult.error.message}`,
         ),
       };
     }
-    ctx.results.set(step.name, result.value);
+    return originalFailure;
+  } finally {
+    try {
+      await $`git stash pop`.cwd(workspace).quiet();
+    } catch {
+      // If pop fails there is nothing safer to do than surface the original
+      // failure -- masking it with a stash error would hide the real signal.
+    }
   }
-  return { ok: true, value: undefined };
 }
 
 /** Run every implementation step in a phase, verify once, then auto-commit. */
@@ -148,26 +236,6 @@ export async function runPhase(
   phase: Phase,
   options: RunPhaseOptions,
 ): Promise<Result<PhaseRunResult>> {
-  // Resolve the language for this phase (per-phase directive wins over default)
-  const language = phase.language ?? options.defaultLanguage;
-  const factories = options.factories ?? PLAN_CONFIG_FACTORIES;
-  const factory = factories[language];
-  if (factory === undefined) {
-    return {
-      ok: false,
-      error: new Error(
-        `Phase ${phase.number} uses unregistered language "${language}". Add a factory to PLAN_CONFIG_FACTORIES or pass a custom factories map.`,
-      ),
-    };
-  }
-  const diff = safeGitDiff(options.workspace);
-  const languageConfig: DevCycleLanguageConfig = factory(phase.coverage, diff);
-
-  if (languageConfig.baselineCheck) {
-    const baselineResult = await runBaselineCheck(options.workspace, languageConfig);
-    if (!baselineResult.ok) return baselineResult;
-  }
-
   // Store phase context in memory if memory client is available
   if (options.config.memory) {
     const phaseContext = JSON.stringify({
@@ -184,7 +252,9 @@ export async function runPhase(
   const verifiedStep = createVerifiedImplementStep(`phase-${phase.number}`, {
     config: options.config,
     workspace: options.workspace,
-    languageConfig: languageConfig,
+    palette: options.palette,
+    coverage: phase.coverage,
+    diff: safeGitDiff(options.workspace),
     retryConfig: options.retryConfig,
     steps: phase.steps,
     phaseNumber: phase.number,
@@ -194,7 +264,9 @@ export async function runPhase(
     event: buildStepEvent(buildPhaseInstruction(phase)),
     results: new Map(),
   });
-  if (!result.ok) return result;
+  if (!result.ok) {
+    return attributePhaseFailure(options.workspace, options.palette, result);
+  }
 
   const commit = options.commitPhase ?? commitPhaseChanges;
   const commitResult = await commit(options.workspace, phase.commitMessage, phase.number);

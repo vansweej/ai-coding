@@ -91,7 +91,7 @@ graph LR
     Skills["@ai-coding/skills\nresolveSkill · mergeSkills\nFileBackend · VectorBackend\ncreateBestBackend · LanceStore\nchunkSkill"]
     Codebase["@ai-coding/codebase\nCodebaseBackend · indexCodebase\nCodebaseStore · ParserPool\nchunkFile · discoverFiles"]
     Pipeline["@ai-coding/pipeline\nrunPipeline · PipelineStep\nShellStep · NixShellStep\nCoverageGateStep"]
-    AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep · VerifiedImplementStep\nplan-cycle (9 languages) · rust-plan-cycle alias · scaffold-rust · scaffold-cpp"]
+    AISystem["ai-system/core/pipeline\nOrchestratorStep · SkillResolverStep · VerifiedImplementStep\nplan-cycle (auto-routed toolchains) · scaffold-rust · scaffold-cpp"]
 
     AISystem --> Pipeline
     AISystem --> Shared
@@ -244,12 +244,12 @@ ai-coding/
           verified-implement-step.ts implement → write files → verify → retry/escalate
         definitions/
           dev-cycle.ts               Unified [skills →] implement → write-files factory (Tier B: optional deletion)
-          language-configs.ts        DevCycleLanguageConfig + PLAN_CONFIG_FACTORIES (9-language registry:
-                                       rust, typescript, python, cpp, docs, haskell, julia, nix, shell)
+          language-configs.ts        DevCycleLanguageConfig + PLAN_CONFIG_FACTORIES (toolchain registry:
+                                       rust, typescript, python, cpp, haskell, julia, nix, shell)
           doc-cycle.ts               Deferred documentation pipeline sketch
         plan-parser.ts               Structured markdown plan parser (Feature/Phase/Step + per-phase
-                                       Coverage:/Language: directives)
-        phase-runner.ts              Per-phase language resolution, baseline check, execution, auto-commit
+                                       Coverage: directive)
+        phase-runner.ts              Per-phase toolchain auto-routing (from devShell), baseline check, execution, auto-commit
         feature-runner.ts            Parses plan and runs phases sequentially
         progress.ts                  ProgressEvent model + pure formatProgressEvent (--verbose feed)
     config/
@@ -262,11 +262,11 @@ ai-coding/
 
 ---
 
-## Plan-Cycle: Plan File Format and Language Registry
+## Plan-Cycle: Plan File Format and Toolchain Auto-Routing
 
-`plan-cycle` (with `rust-plan-cycle` as a legacy alias forcing Rust) executes structured plan
-files unattended, across 9 languages. Each phase may declare its own language and coverage
-directive:
+`plan-cycle` executes structured plan files unattended. Each touched file is auto-routed to a
+toolchain based on what's available in the workspace's devShell (`flake.nix`) — there is no
+per-phase language directive or CLI flag. A phase may still declare its own coverage directive:
 
 ```markdown
 # Feature: <name>
@@ -275,23 +275,23 @@ directive:
 
 Commit message: <conventional commit>
 Coverage: skip | N% | (omitted for default 90%, Rust only)
-Language: rust | typescript | python | cpp | docs | haskell | julia | nix | shell | (omitted to inherit default)
 
 ### Step N: <title>
 
 <instruction>
 ```
 
-Language resolution per phase: `phase.language ?? defaultLanguage` (from `--language`, or
-`"rust"` when invoked as the `rust-plan-cycle` alias, or `"typescript"` as the final fallback).
-A phase whose resolved language has no registered factory fails immediately with a clear error
-rather than silently using the wrong toolchain.
+Toolchain resolution per touched file: `route()` maps each file's extension to a toolchain that
+is both registered and present in the workspace's devShell palette (via `devShellPalette`). A
+file whose toolchain isn't available in the devShell, or which has no matching toolchain at all
+(e.g. `.md`/`.json`/`.toml`), falls back to an edit-only "floor" — the patch is still applied and
+committed, but no compiler, linter, or coverage gate runs against it.
 
 ### `PLAN_CONFIG_FACTORIES` registry
 
 `ai-system/core/pipeline/definitions/language-configs.ts` exports a `PlanConfigFactory` type —
-`(coverage, diff) => DevCycleLanguageConfig` — and a registry mapping all 9 `LanguageName` values
-to their factory:
+`(coverage, diff) => DevCycleLanguageConfig` — and a registry mapping each toolchain name to its
+factory:
 
 | Language | Toolchain | Coverage gate | `baselineCheck` |
 |----------|-----------|:---:|:---:|
@@ -299,18 +299,15 @@ to their factory:
 | `typescript` | typecheck → lint → test | — | — |
 | `python` | format → lint → typecheck (warn-only) → test | — | — |
 | `cpp` | configure → build → test | — | — |
-| `docs` | *(none — empty toolchain)* | — | — |
 | `haskell` | build (= typecheck) → lint → test | — | — |
 | `julia` | test (weak — no separate format/lint) | — | — |
 | `nix` | format → flake check | — | ✅ |
 | `shell` | format → guarded shellcheck | — | ✅ |
 
-`docs` is an intentional no-op toolchain for documentation-only phases (e.g. a README edit)
-inside a compiled-language repo: the phase still applies its patch and commits normally, but no
-compiler, linter, or coverage gate runs, since Markdown has nothing to build or test. Without it,
-a docs phase would inherit the workspace's default language (e.g. Rust) purely because there was
-no lighter alternative, dragging in a full compiler toolchain to verify a change no toolchain can
-actually validate.
+Any touched file with an extension that doesn't match one of the toolchains above (e.g. a
+README edit) — or whose toolchain's tools aren't present in the workspace's devShell — is treated
+as edit-only: the phase still applies its patch and commits normally, but no compiler, linter, or
+coverage gate runs, since there's nothing available to build or test it with.
 
 `baselineCheck` languages (Nix, Shell) run their toolchain once on the untouched tree before any
 implementation attempt, since their whole-repo validators (`nix flake check`, repo-wide
@@ -485,7 +482,7 @@ scheme). Requires the `ANTHROPIC_API_KEY` environment variable.
 | `explorer`    | `claude-sonnet-5` | Anthropic (native Messages API)  |
 | `default`     | `claude-sonnet-5` | Anthropic (native Messages API)  |
 
-The `plan-cycle` pipeline (and its `rust-plan-cycle` alias) parses its plan from a file rather
+The `plan-cycle` pipeline parses its plan from a file rather
 than generating it via an LLM, so the `planner` role never fires on that path —
 only `implementer` (action `edit`) and `fixer` (action `fix`) roles actually
 dispatch to Sonnet during a plan-cycle run.

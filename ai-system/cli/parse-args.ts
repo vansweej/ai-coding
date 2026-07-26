@@ -10,17 +10,15 @@ export interface CliArgs {
   readonly maxRetries?: number;
   /** Profile name override. Falls back to AI_CODING_MODEL_PROFILE env var, then the default. */
   readonly profileName: string;
-  /** Default language for plan-cycle phases lacking a Language: directive. */
-  readonly language?: string;
   /** Stream per-phase/step progress to stderr while a plan-cycle run executes. */
   readonly verbose: boolean;
 }
 
-const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--max-retries <n>] [--profile <name>] [--language <name>] [-v | --verbose]
+const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--max-retries <n>] [--profile <name>] [-v | --verbose]
 
 Pipeline names:
   plan-cycle       Unattended plan executor: parse plan → per-phase implement → verify/retry → commit; resumable
-  rust-plan-cycle  Alias for plan-cycle --language rust
+                    Toolchain per phase is auto-routed from the workspace's devShell (no --language knob)
   scaffold-rust    Rust: cargo init + generate flake.nix
   scaffold-cpp     C++: generate CMakeLists.txt + src/main.cpp + flake.nix
 
@@ -33,18 +31,14 @@ Profile names:
                    AWS_BEDROCK_INFERENCE_PROFILE_ARN and AWS credentials (e.g. \`aws sso login\`
                    + AWS_PROFILE) resolved via the AWS SDK default provider chain
 
-Language names (--language):
-  rust, typescript, python, cpp, haskell, julia, nix, shell
-
 Flags:
   -v, --verbose    Stream per-phase/step progress (start/finish/retry) to stderr as a plan-cycle run executes
 
 Examples:
   bun run pipeline scaffold-rust /tmp/my-rust-project
   bun run pipeline scaffold-cpp /tmp/my-cpp-project
-  bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --language typescript --profile anthropic-sonnet
-  bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md --profile hybrid
-  bun run pipeline plan-cycle ./my-project --input "Add tests" --language typescript --max-retries 3`;
+  bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --profile anthropic-sonnet
+  bun run pipeline plan-cycle ./my-project --input "Add tests" --max-retries 3`;
 
 function readFlag(args: readonly string[], flag: string): Result<string | undefined> {
   const index = args.indexOf(flag);
@@ -108,10 +102,6 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
   const maxRetries = parseMaxRetries(rawMaxRetries.value);
   if (!maxRetries.ok) return maxRetries;
 
-  const languageResult = readFlag(rest, "--language");
-  if (!languageResult.ok) return languageResult;
-  const language = languageResult.value;
-
   let profileName = process.env.AI_CODING_MODEL_PROFILE ?? DEFAULT_PROFILE_NAME;
   const profileFlagIndex = rest.indexOf("--profile");
   if (profileFlagIndex !== -1) {
@@ -134,7 +124,6 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
       planPath,
       maxRetries: maxRetries.value,
       profileName,
-      language,
       verbose,
     },
   };

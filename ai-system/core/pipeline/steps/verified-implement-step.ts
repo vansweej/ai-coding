@@ -7,8 +7,14 @@ import type { AIAction, AIRequestEvent } from "@ai-coding/shared";
 import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { orchestrate } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
-import type { Step } from "../plan-parser";
+import type { CoverageDirective, Step } from "../plan-parser";
 import type { OnProgress } from "../progress";
+import {
+  composeImplementSystem,
+  paletteExtensions,
+  paletteLanguageHint,
+  runUnionVerification,
+} from "../routing/route";
 import { applyPatch } from "./apply-patch-step";
 import { parsePatch } from "./parse-patch";
 
@@ -89,13 +95,87 @@ export interface RetryConfig {
 export interface VerifiedImplementStepOptions {
   readonly config: OrchestratorConfig;
   readonly workspace: string;
-  readonly languageConfig: DevCycleLanguageConfig;
+  /**
+   * Legacy single-language configuration. Required unless `palette` is
+   * provided. When both are supplied, `palette` takes precedence -- see
+   * {@link buildPaletteLanguageConfig}.
+   */
+  readonly languageConfig?: DevCycleLanguageConfig;
+  /**
+   * Set of tool names detected as available in the workspace's devShell
+   * (see `devShellPalette` in `@ai-coding/pipeline`). When provided, the
+   * step routes per-file rather than using a single fixed `languageConfig`:
+   * context discovery and the implement prompt are composed from every
+   * available toolchain (see `paletteExtensions`/`composeImplementSystem`),
+   * and verification is the deduped-by-step-name union of toolchains
+   * routed from the files actually touched (see `runUnionVerification`).
+   */
+  readonly palette?: ReadonlySet<string>;
+  /**
+   * The phase's `Coverage:` directive, used only alongside `palette` --
+   * threaded through to `runUnionVerification` so a routed Rust file gates
+   * its tarpaulin/coverage steps on the SAME directive the legacy
+   * `factory(coverage, diff)` path used to consult. Ignored when
+   * `languageConfig` is supplied directly (the legacy path already baked
+   * its own coverage directive in at construction time).
+   */
+  readonly coverage?: CoverageDirective;
+  /**
+   * Current git diff, used only alongside `palette` for the same
+   * coverage-auto-exemption purpose `resolveCoverageThreshold` has always
+   * served. Ignored when `languageConfig` is supplied directly.
+   */
+  readonly diff?: string;
   readonly steps?: readonly Step[];
   readonly retryConfig?: RetryConfig;
   /** Phase number this step belongs to, used to tag emitted progress events. */
   readonly phaseNumber?: number;
   /** Optional progress reporter; silent when omitted. */
   readonly onProgress?: OnProgress;
+}
+
+/**
+ * `VerifiedImplementStepOptions` with `languageConfig` narrowed to always be
+ * present. Internal helper functions operate on this resolved shape so they
+ * never need to re-check which of `languageConfig`/`palette` was supplied --
+ * that resolution happens exactly once, at the top of `execute`.
+ */
+type ResolvedVerifiedImplementStepOptions = VerifiedImplementStepOptions & {
+  readonly languageConfig: DevCycleLanguageConfig;
+};
+
+/**
+ * Builds a synthetic `DevCycleLanguageConfig` from a devShell palette,
+ * satisfying the exact same shape `createVerifiedImplementStep`'s internals
+ * already consume (`implementSystem`, `languageHint`, `sourceExtensions`,
+ * `sourceRoots`, `toolchainSteps`) -- so every existing code path (prompt
+ * building, context discovery, verification execution, retry/escalation
+ * logic) works completely UNCHANGED whether it's driven by a fixed
+ * `languageConfig` or this palette-derived composite.
+ *
+ * `toolchainSteps` here is per-file-routed union verification
+ * (`runUnionVerification`), not a single toolchain's fixed steps -- so it is
+ * intentionally recomputed on every call (each retry re-reads the current
+ * git diff, which is correct: verification should reflect whatever the
+ * latest attempt actually touched).
+ *
+ * `name` is a required field on `DevCycleLanguageConfig` but is never read
+ * anywhere in this file -- `"typescript"` is used as an inert sentinel.
+ */
+export function buildPaletteLanguageConfig(
+  workspace: string,
+  palette: ReadonlySet<string>,
+  coverage?: CoverageDirective,
+  diff?: string,
+): DevCycleLanguageConfig {
+  return {
+    name: "typescript",
+    languageHint: paletteLanguageHint(palette),
+    implementSystem: composeImplementSystem(palette),
+    sourceExtensions: paletteExtensions(palette),
+    sourceRoots: ["."],
+    toolchainSteps: (ws: string) => runUnionVerification(ws, palette, coverage, diff),
+  };
 }
 
 /**
@@ -218,7 +298,7 @@ export function buildBaselineContext(workspace: string, config: DevCycleLanguage
 
 async function runImplementAttempt(
   ctx: PipelineContext<AIRequestEvent>,
-  options: VerifiedImplementStepOptions,
+  options: ResolvedVerifiedImplementStepOptions,
   prompt: string,
   action: AIAction,
 ): Promise<Result<string>> {
@@ -275,7 +355,7 @@ async function runVerification(
 
 async function implementAndWrite(
   ctx: PipelineContext<AIRequestEvent>,
-  options: VerifiedImplementStepOptions,
+  options: ResolvedVerifiedImplementStepOptions,
   prompt: string,
   action: AIAction,
 ): Promise<Result<string>> {
@@ -290,7 +370,7 @@ async function implementAndWrite(
 
 async function implementAllPhaseSteps(
   ctx: PipelineContext<AIRequestEvent>,
-  options: VerifiedImplementStepOptions,
+  options: ResolvedVerifiedImplementStepOptions,
   steps: readonly Step[],
   baselineContext?: string,
 ): Promise<Result<string>> {
@@ -324,7 +404,7 @@ type PhaseStepsOutcome =
  */
 async function implementPhaseSteps(
   ctx: PipelineContext<AIRequestEvent>,
-  options: VerifiedImplementStepOptions,
+  options: ResolvedVerifiedImplementStepOptions,
   steps: readonly Step[],
   startIndex: number,
   buildStepPrompt: (step: Step) => string,
@@ -389,15 +469,44 @@ function readCurrentFileContents(workspace: string, config: DevCycleLanguageConf
 /** Create a composite step that implements, writes, verifies, and retries a phase step. */
 export function createVerifiedImplementStep(
   name: string,
-  options: VerifiedImplementStepOptions,
+  baseOptions: VerifiedImplementStepOptions,
 ): PipelineStep<AIRequestEvent> {
-  const maxLocalRetries = options.retryConfig?.maxLocalRetries ?? 3;
-  const maxEscalationRetries = options.retryConfig?.maxEscalationRetries ?? 1;
+  const maxLocalRetries = baseOptions.retryConfig?.maxLocalRetries ?? 3;
+  const maxEscalationRetries = baseOptions.retryConfig?.maxEscalationRetries ?? 1;
 
   return {
     name,
     execute: async (ctx: PipelineContext<AIRequestEvent>): Promise<Result<StepResult>> => {
       const startedAt = Date.now();
+
+      // Resolve the effective languageConfig ONCE, up front: when a devShell
+      // `palette` is supplied it takes precedence and is composed into a
+      // synthetic DevCycleLanguageConfig (see buildPaletteLanguageConfig) so
+      // every line below -- prompt building, context discovery, verification,
+      // retry/escalation -- runs completely UNCHANGED regardless of which
+      // path produced `options.languageConfig`. Falls back to the legacy
+      // fixed `languageConfig` when no palette is given (existing callers
+      // are entirely unaffected by this branch).
+      let languageConfig: DevCycleLanguageConfig;
+      if (baseOptions.palette) {
+        languageConfig = buildPaletteLanguageConfig(
+          baseOptions.workspace,
+          baseOptions.palette,
+          baseOptions.coverage,
+          baseOptions.diff,
+        );
+      } else if (baseOptions.languageConfig) {
+        languageConfig = baseOptions.languageConfig;
+      } else {
+        return {
+          ok: false,
+          error: new Error(
+            `Verified implement step "${name}" requires either "languageConfig" or "palette" in its options`,
+          ),
+        };
+      }
+      const options: ResolvedVerifiedImplementStepOptions = { ...baseOptions, languageConfig };
+
       const originalInstruction = ctx.event.payload.input ?? "";
       const phaseSteps = options.steps;
       const verificationSteps = options.languageConfig.toolchainSteps(options.workspace);

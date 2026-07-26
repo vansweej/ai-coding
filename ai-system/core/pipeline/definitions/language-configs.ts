@@ -1,8 +1,26 @@
 import { createCoverageGateStep, createNixShellStep } from "@ai-coding/pipeline";
 import type { PipelineStep } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
-import type { CoverageDirective, LanguageName } from "../plan-parser";
+import type { CoverageDirective } from "../plan-parser";
 import { resolveCoverageThreshold } from "../steps/coverage-exemption";
+
+/**
+ * Stable identifier for a toolchain. Purely an internal registry key -- NOT
+ * a plan-file directive (the `Language:` directive was removed along with
+ * `--language`; routing is now derived entirely from the workspace's
+ * devShell palette via `route()`). "docs" is deliberately absent: it is the
+ * no-toolchain floor every unmapped file extension already falls back to,
+ * not a real toolchain.
+ */
+export type ToolchainId =
+  | "rust"
+  | "typescript"
+  | "python"
+  | "cpp"
+  | "haskell"
+  | "julia"
+  | "nix"
+  | "shell";
 
 const DEFAULT_COVERAGE_THRESHOLD = 90;
 const DEFAULT_CPP_BUILD_DIR = "build";
@@ -14,7 +32,7 @@ const DEFAULT_CPP_BUILD_DIR = "build";
  * @param languageHint - Human-readable language name used in the opening sentence (e.g. "Rust").
  * @param idioms       - Language-specific coding rules appended after the patch format block.
  */
-function buildPatchSystem(languageHint: string, idioms: string): string {
+export function buildPatchSystem(languageHint: string, idioms: string): string {
   return `You are a ${languageHint} coding assistant. Output ONLY aider-style SEARCH/REPLACE patches for files that need changes. Each patch must have the format:\n<file-path>\n<<<<<<< SEARCH\n<exact anchor text>\n=======\n<replacement text>\n>>>>>>> REPLACE\n\n${idioms} Do not include any explanation or prose outside the patches.`;
 }
 
@@ -50,13 +68,10 @@ const SHELL_PLAN_IDIOMS =
   "Follow POSIX-compatible shell idioms where possible, quote all variable expansions, start scripts with `set -euo pipefail`, and ensure the script passes shellcheck. " +
   "Generate syntactically valid shell code.";
 
-const DOCS_PLAN_IDIOMS =
-  "Write clear, well-structured Markdown; match the surrounding document's tone and heading levels; do not touch unrelated sections.";
-
 /**
  * Factory that creates a language-specific plan-cycle config from the phase's
- * coverage directive and current git diff.  Registered factories are keyed by
- * LanguageName so the phase-runner can look one up without knowing the language
+ * coverage directive and current git diff. Registered factories are keyed by
+ * ToolchainId so a caller can look one up without knowing the toolchain
  * at compile time.
  */
 export type PlanConfigFactory = (
@@ -67,7 +82,7 @@ export type PlanConfigFactory = (
 /** Language-specific configuration for the unified dev-cycle pipeline. */
 export interface DevCycleLanguageConfig {
   /** Stable language identifier used by CLI arguments and tests. */
-  readonly name: LanguageName;
+  readonly name: ToolchainId;
   /** System prompt for implementation and fix LLM calls. */
   readonly implementSystem: string;
   /** Short language hint included in user prompts. */
@@ -159,7 +174,8 @@ export const RUST_CONFIG: DevCycleLanguageConfig = {
  *   1. Coverage gate is fatal (warnOnly: false) instead of warning-only
  *   2. `cargo fmt --check` becomes `cargo fmt` (autofix) instead of check-only
  *
- * This configuration is used by the `rust-plan-cycle` pipeline for unattended
+ * This configuration is used by the `plan-cycle` pipeline (via the
+ * `TOOLCHAIN_DESCRIPTORS.rust` devShell-routed entry) for unattended
  * plan execution where coverage failures should halt the phase and fmt should
  * automatically fix formatting issues.
  *
@@ -170,8 +186,16 @@ export const RUST_CONFIG: DevCycleLanguageConfig = {
 export function createRustPlanConfig(
   phaseCoverage: CoverageDirective,
   diff: string,
+  palette?: ReadonlySet<string>,
 ): DevCycleLanguageConfig {
   const { gated, percent } = resolveCoverageThreshold(phaseCoverage, diff);
+  // When a palette is supplied (the devShell-routed path), only include the
+  // tarpaulin/coverage steps if cargo-tarpaulin is actually available --
+  // gating on a tool that isn't installed would fail every phase touching
+  // Rust for an environment reason having nothing to do with coverage.
+  // No palette (legacy DEV_CYCLE_LANGUAGE_CONFIGS/PLAN_CONFIG_FACTORIES
+  // callers) preserves the original always-include-when-gated behavior.
+  const tarpaulinAvailable = palette === undefined || palette.has("cargo-tarpaulin");
 
   return {
     name: "rust",
@@ -197,8 +221,9 @@ export function createRustPlanConfig(
       // on heavy workspaces can exceed the shell step's 60s default timeout
       // -- a timeout rejects the step regardless of failOnNonZero, failing
       // verification even when the code is correct. If there's no coverage
-      // number to enforce, there's no reason to pay for that build.
-      if (!gated) {
+      // number to enforce, there's no reason to pay for that build. Same
+      // reasoning applies when tarpaulin itself isn't in the devShell palette.
+      if (!gated || !tarpaulinAvailable) {
         return baseSteps;
       }
 
@@ -218,12 +243,6 @@ export function createRustPlanConfig(
     },
   };
 }
-
-/** Exported constant for RUST_PLAN_CONFIG with the default 90% fatal gate. */
-export const RUST_PLAN_CONFIG: DevCycleLanguageConfig = createRustPlanConfig(
-  { mode: "threshold", percent: 90 },
-  "",
-);
 
 /**
  * TypeScript plan-cycle configuration.
@@ -486,36 +505,6 @@ export function createShellPlanConfig(
 }
 
 /**
- * Docs (no-op toolchain) plan-cycle configuration.
- *
- * A documentation-only phase (e.g. a README or architecture-doc edit) has
- * nothing to compile, lint, or test — Markdown isn't verified by any
- * toolchain. `toolchainSteps` is intentionally an empty array: the phase
- * still applies its patch and commits normally, but no compiler, linter, or
- * coverage gate ever runs. This exists so a documentation phase inside a
- * compiled-language repo (e.g. a Rust workspace) doesn't drag in that
- * language's full toolchain purely because there is no lighter alternative
- * to inherit.
- *
- * The `coverage` and `diff` parameters are accepted for `PlanConfigFactory`
- * compatibility; docs plan-cycle never gates on coverage (there is nothing
- * to instrument).
- */
-export function createDocsPlanConfig(
-  _coverage: CoverageDirective,
-  _diff: string,
-): DevCycleLanguageConfig {
-  return {
-    name: "docs",
-    languageHint: "Markdown",
-    sourceExtensions: [".md"],
-    sourceRoots: ["docs", "."],
-    implementSystem: buildPatchSystem("Markdown", DOCS_PLAN_IDIOMS),
-    toolchainSteps: (): readonly PipelineStep<AIRequestEvent>[] => [],
-  };
-}
-
-/**
  * Registry of plan-config factories keyed by language name.
  *
  * A phase runner looks up the factory for the phase's language (or the run's
@@ -525,14 +514,16 @@ export function createDocsPlanConfig(
  * Languages not yet registered here fail cleanly with an "unregistered language"
  * error rather than silently falling back to the wrong toolchain.
  *
- * All 9 known languages are registered.
+ * All 8 known toolchains are registered. This registry now only serves the
+ * legacy `ToolchainId`-keyed `DevCycleLanguageConfig` machinery (still used
+ * by the standalone dev-cycle pipeline); the plan-cycle/devShell-router path
+ * (`ToolchainDescriptor`/`route()`) is the one production code actually uses.
  */
-export const PLAN_CONFIG_FACTORIES: Readonly<Partial<Record<LanguageName, PlanConfigFactory>>> = {
+export const PLAN_CONFIG_FACTORIES: Readonly<Partial<Record<ToolchainId, PlanConfigFactory>>> = {
   rust: createRustPlanConfig,
   typescript: createTsPlanConfig,
   python: createPythonPlanConfig,
   cpp: createCppPlanConfig,
-  docs: createDocsPlanConfig,
   haskell: createHaskellPlanConfig,
   julia: createJuliaPlanConfig,
   nix: createNixPlanConfig,
@@ -569,9 +560,198 @@ export const CPP_CONFIG: DevCycleLanguageConfig = {
 
 /** Built-in language configurations keyed by CLI language name. */
 export const DEV_CYCLE_LANGUAGE_CONFIGS: Readonly<
-  Partial<Record<LanguageName, DevCycleLanguageConfig>>
+  Partial<Record<ToolchainId, DevCycleLanguageConfig>>
 > = {
   typescript: TYPESCRIPT_CONFIG,
   rust: RUST_CONFIG,
   cpp: CPP_CONFIG,
 };
+
+/**
+ * Descriptor for one toolchain in the devShell-routed model -- the
+ * replacement for the former `--language`/`Language:` knob (removed; see
+ * `devShellPalette` and `route()`). Reuses the same toolchain step bodies
+ * and idiom fragments as the legacy `ToolchainId`-keyed registry above.
+ */
+export interface ToolchainDescriptor {
+  /** Stable identifier. */
+  readonly id: ToolchainId;
+  /** Human-readable language name used in implement-prompt idiom text. */
+  readonly languageHint: string;
+  /**
+   * Every binary this toolchain's steps may invoke, e.g. ["cargo", "rustc",
+   * "cargo-clippy", "rustfmt", "cargo-tarpaulin"] for Rust. Used both to
+   * build the CANDIDATE_TOOLS union passed to `devShellPalette` and, later,
+   * by `route()` to decide whether this toolchain is available in a given
+   * workspace's devShell.
+   *
+   * NOTE: the Rust clippy binary is named `cargo-clippy`, not `clippy` --
+   * confirmed by manually probing a real Rust devShell (`clippy` alone does
+   * not resolve via `command -v`; `cargo-clippy`/`clippy-driver` do).
+   */
+  readonly markerTools: readonly string[];
+  /**
+   * Subset of `markerTools` whose presence (ANY one of them) means this
+   * toolchain is actually usable in a workspace's devShell -- e.g. Rust is
+   * available iff `cargo` is present, even though `markerTools` also lists
+   * `cargo-clippy`/`rustfmt`/`cargo-tarpaulin` for CANDIDATE_TOOLS purposes.
+   * Kept separate from `markerTools` (which is the FULL candidate set) so
+   * `route()` doesn't misreport a toolchain as available merely because one
+   * of its secondary tools (e.g. a linter) happens to be on PATH without the
+   * actual driver (e.g. `cargo`, `cabal`, `julia`).
+   */
+  readonly driverTools: readonly string[];
+  /** Language-specific coding idioms appended to the aider patch-format prompt. */
+  readonly idioms: string;
+  /**
+   * True for toolchains whose verification cannot be scoped to a diff (e.g.
+   * `nix flake check`, whole-repo `shellcheck`) and must instead run once on
+   * the untouched tree, with a pre-existing failure treated as an
+   * environment error. Mirrors the role `DevCycleLanguageConfig.baselineCheck`
+   * plays today.
+   */
+  readonly isWholeRepoValidator?: boolean;
+  /**
+   * Verification steps for this toolchain, optionally coverage/diff-aware
+   * (Rust only, currently). `palette` is passed through by `route.ts`'s
+   * `runUnionVerification` so a descriptor can gate an optional step (e.g.
+   * Rust's tarpaulin/coverage pair) on a SPECIFIC tool's presence, not just
+   * its own driver tools -- see `createRustPlanConfig`'s `tarpaulinAvailable`
+   * check.
+   */
+  toolchainSteps(
+    workspace: string,
+    coverage?: CoverageDirective,
+    diff?: string,
+    palette?: ReadonlySet<string>,
+  ): readonly PipelineStep<AIRequestEvent>[];
+}
+
+const DEFAULT_PLAN_COVERAGE: CoverageDirective = { mode: "threshold", percent: 90 };
+
+/**
+ * Registry of toolchain descriptors keyed by ToolchainId, reusing the
+ * existing `create*PlanConfig` factories and `*_PLAN_IDIOMS` fragments so
+ * there is exactly one source of truth for each toolchain's steps and idioms.
+ * `docs` is intentionally absent: it is not a real toolchain but the
+ * no-toolchain floor that any unmapped file extension already falls back to.
+ */
+export const TOOLCHAIN_DESCRIPTORS: Readonly<Record<ToolchainId, ToolchainDescriptor>> = {
+  rust: {
+    id: "rust",
+    languageHint: "Rust",
+    markerTools: ["cargo", "rustc", "cargo-clippy", "rustfmt", "cargo-tarpaulin"],
+    driverTools: ["cargo"],
+    idioms: RUST_PLAN_IDIOMS,
+    toolchainSteps: (workspace, coverage, diff, palette) =>
+      createRustPlanConfig(coverage ?? DEFAULT_PLAN_COVERAGE, diff ?? "", palette).toolchainSteps(
+        workspace,
+      ),
+  },
+  typescript: {
+    id: "typescript",
+    languageHint: "TypeScript",
+    markerTools: ["bun"],
+    driverTools: ["bun"],
+    idioms: TS_PLAN_IDIOMS,
+    toolchainSteps: (workspace) =>
+      createTsPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+  python: {
+    id: "python",
+    languageHint: "Python",
+    markerTools: ["ruff", "mypy", "pytest"],
+    driverTools: ["ruff", "pytest"],
+    idioms: PYTHON_PLAN_IDIOMS,
+    toolchainSteps: (workspace) =>
+      createPythonPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+  cpp: {
+    id: "cpp",
+    languageHint: "C++",
+    markerTools: ["cmake", "ctest"],
+    driverTools: ["cmake"],
+    idioms: CPP_PLAN_IDIOMS,
+    toolchainSteps: (workspace) =>
+      createCppPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+  haskell: {
+    id: "haskell",
+    languageHint: "Haskell",
+    markerTools: ["cabal", "hlint", "ghc"],
+    driverTools: ["cabal"],
+    idioms: HASKELL_PLAN_IDIOMS,
+    toolchainSteps: (workspace) =>
+      createHaskellPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+  julia: {
+    id: "julia",
+    languageHint: "Julia",
+    markerTools: ["julia"],
+    driverTools: ["julia"],
+    idioms: JULIA_PLAN_IDIOMS,
+    toolchainSteps: (workspace) =>
+      createJuliaPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+  nix: {
+    id: "nix",
+    languageHint: "Nix",
+    markerTools: ["nix", "nixpkgs-fmt"],
+    driverTools: ["nix"],
+    idioms: NIX_PLAN_IDIOMS,
+    isWholeRepoValidator: true,
+    toolchainSteps: (workspace) =>
+      createNixPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+  shell: {
+    id: "shell",
+    languageHint: "Shell",
+    markerTools: ["shfmt", "shellcheck"],
+    driverTools: ["shfmt", "shellcheck"],
+    idioms: SHELL_PLAN_IDIOMS,
+    isWholeRepoValidator: true,
+    toolchainSteps: (workspace) =>
+      createShellPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+};
+
+/**
+ * Maps a file extension (including the leading dot, e.g. ".rs") to the
+ * toolchain descriptor responsible for it. Extensions absent from this map
+ * (e.g. ".md", ".toml", ".json") have no toolchain and route to the
+ * no-toolchain floor -- edit-only, no compiler/linter/test/coverage step.
+ *
+ * Locked route table (memory e06640ae): one canonical toolchain per source
+ * extension; `.nix`/`.sh` map to whole-repo validators.
+ */
+export const EXTENSION_TO_TOOLCHAIN: Readonly<Record<string, ToolchainId>> = {
+  ".rs": "rust",
+  ".ts": "typescript",
+  ".tsx": "typescript",
+  ".mts": "typescript",
+  ".cts": "typescript",
+  ".py": "python",
+  ".pyi": "python",
+  ".cpp": "cpp",
+  ".cc": "cpp",
+  ".cxx": "cpp",
+  ".h": "cpp",
+  ".hpp": "cpp",
+  ".hh": "cpp",
+  ".hs": "haskell",
+  ".lhs": "haskell",
+  ".jl": "julia",
+  ".nix": "nix",
+  ".sh": "shell",
+  ".bash": "shell",
+};
+
+/**
+ * Union of every marker tool across all registered toolchain descriptors.
+ * This is the `candidateTools` argument passed to `devShellPalette` so a
+ * workspace's dev environment is probed exactly once per run for every tool
+ * any registered toolchain might need.
+ */
+export const CANDIDATE_TOOLS: readonly string[] = Array.from(
+  new Set(Object.values(TOOLCHAIN_DESCRIPTORS).flatMap((descriptor) => descriptor.markerTools)),
+);

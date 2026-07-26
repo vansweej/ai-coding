@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,8 +10,14 @@ import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@
 
 import { LOCAL_PROFILE } from "../../config/model-profiles";
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
-import type { DevCycleLanguageConfig, PlanConfigFactory } from "./definitions/language-configs";
-import { BaselineCheckError, runPhase } from "./phase-runner";
+import type { ToolchainDescriptor } from "./definitions/language-configs";
+import {
+  BaselineCheckError,
+  attributePhaseFailure,
+  findImplicatedWholeRepoValidators,
+  runPhase,
+  runValidatorSteps,
+} from "./phase-runner";
 import type { Phase } from "./plan-parser";
 import type { ProgressEvent } from "./progress";
 
@@ -24,107 +30,38 @@ function dispatcher(response: string): ModelDispatcher {
   };
 }
 
-function verifyStep(shouldFail: boolean, calls?: string[]): PipelineStep<AIRequestEvent> {
-  return {
-    name: "verify",
-    execute: async (): Promise<Result<StepResult>> => {
-      calls?.push("verify");
-      if (shouldFail) return { ok: false, error: new Error("verification failed") };
-      return { ok: true, value: { stepName: "verify", output: "ok", durationMs: 0 } };
-    },
-  };
-}
-
-function languageConfig(shouldFail: boolean, calls?: string[]): DevCycleLanguageConfig {
-  return {
-    name: "typescript",
-    implementSystem: "system",
-    languageHint: "TypeScript",
-    sourceExtensions: [".ts"],
-    sourceRoots: ["src"],
-    toolchainSteps: (_workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
-      verifyStep(shouldFail, calls),
-    ],
-  };
-}
-
-function makeFactory(shouldFail: boolean, calls?: string[]): PlanConfigFactory {
-  return () => languageConfig(shouldFail, calls);
-}
-
-/** Language config with a toolchain step that logs each invocation and can fail on the first call only. */
-function baselineLanguageConfig(
-  baselineCheck: boolean,
-  failFirstCall: boolean,
-  callLog: string[],
-): DevCycleLanguageConfig {
-  let callCount = 0;
-  return {
-    name: "typescript",
-    implementSystem: "system",
-    languageHint: "TypeScript",
-    sourceExtensions: [".ts"],
-    sourceRoots: ["src"],
-    baselineCheck,
-    toolchainSteps: (_workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
-      {
-        name: "verify",
-        execute: async (): Promise<Result<StepResult>> => {
-          callCount += 1;
-          callLog.push(`call-${callCount}`);
-          if (failFirstCall && callCount === 1) {
-            return { ok: false, error: new Error("baseline broken") };
-          }
-          return { ok: true, value: { stepName: "verify", output: "ok", durationMs: 0 } };
-        },
-      },
-    ],
-  };
-}
-
-function makeBaselineFactory(
-  baselineCheck: boolean,
-  failFirstCall: boolean,
-  callLog: string[],
-): PlanConfigFactory {
-  return () => baselineLanguageConfig(baselineCheck, failFirstCall, callLog);
-}
-
-/** Model dispatcher that records how many times it was invoked. */
-function countingDispatcher(response: string): {
-  readonly dispatcher: ModelDispatcher;
-  readonly callCount: () => number;
-} {
-  let count = 0;
-  const modelDispatcher: ModelDispatcher = {
-    dispatch: async (_request: DispatchRequest): Promise<Result<string>> => {
-      count += 1;
-      return { ok: true, value: response };
-    },
-  };
-  return { dispatcher: modelDispatcher, callCount: () => count };
-}
-
 function config(response: string): OrchestratorConfig {
-  // Convert code block response to aider-style patch format
-  // Input: "```typescript src/index.ts\nexport const value = 1;\n```"
-  // Output: "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE"
-  const patchResponse = response
-    .replace(/```typescript\s+/, "")
-    .replace(/```\s*$/, "")
-    .split("\n")
-    .map((line, idx, arr) => {
-      if (idx === 0) return line; // file path
-      if (idx === 1) return "<<<<<<< SEARCH\n=======";
-      if (idx === arr.length - 1) return ">>>>>>> REPLACE";
-      return line;
-    })
-    .join("\n");
-
-  const modelDispatcher = dispatcher(patchResponse);
   return {
     profile: LOCAL_PROFILE,
-    dispatchers: { "gemma4:26b": modelDispatcher },
+    dispatchers: { "gemma4:26b": dispatcher(response) },
+  };
+}
+
+/** A response that always fails to parse as an aider-style patch. */
+const MALFORMED_RESPONSE = "I need more context before I can make this change.";
+
+function fakeStep(name: string, ok: boolean): PipelineStep<AIRequestEvent> {
+  return {
+    name,
+    execute: async (): Promise<Result<StepResult>> =>
+      ok
+        ? { ok: true, value: { stepName: name, output: "ok", durationMs: 0 } }
+        : { ok: false, error: new Error(`${name} failed`) },
+  };
+}
+
+function fakeDescriptor(
+  id: ToolchainDescriptor["id"],
+  steps: readonly PipelineStep<AIRequestEvent>[],
+): ToolchainDescriptor {
+  return {
+    id,
+    languageHint: id,
+    markerTools: [],
+    driverTools: [],
+    idioms: "",
+    isWholeRepoValidator: true,
+    toolchainSteps: () => steps,
   };
 }
 
@@ -136,22 +73,10 @@ const PHASE: Phase = {
   coverage: { mode: "default" },
 };
 
-const MULTI_STEP_PHASE: Phase = {
-  number: 1,
-  title: "Core",
-  commitMessage: "feat: add core",
-  steps: [
-    { number: 1, title: "Step one", body: "Do one" },
-    { number: 2, title: "Step two", body: "Do two" },
-  ],
-  coverage: { mode: "default" },
-};
-
 let workspace: string;
 
 beforeEach(async () => {
   workspace = mkdtempSync(join(tmpdir(), "phase-runner-test-"));
-  // Initialize git repo for tests
   await $`git init`.cwd(workspace).quiet();
   await $`git config user.email "test@example.com"`.cwd(workspace).quiet();
   await $`git config user.name "Test User"`.cwd(workspace).quiet();
@@ -162,13 +87,12 @@ afterEach(() => {
 });
 
 describe("runPhase", () => {
-  it("commits after a successful phase", async () => {
+  it("commits after a successful phase (floor-routed, no verification steps)", async () => {
     const commits: string[] = [];
     const result = await runPhase(PHASE, {
-      config: config("```typescript src/index.ts\nexport const value = 1;\n```"),
+      config: config("src/index.md\n<<<<<<< SEARCH\n=======\n# Hello\n>>>>>>> REPLACE"),
       workspace,
-      defaultLanguage: "typescript",
-      factories: { typescript: makeFactory(false) },
+      palette: new Set(),
       commitPhase: async (_workspace, message, _phaseNumber) => {
         commits.push(message);
         return { ok: true, value: message };
@@ -182,13 +106,12 @@ describe("runPhase", () => {
     expect(commits).toEqual(["feat: add core"]);
   });
 
-  it("does not commit when phase verification fails", async () => {
+  it("does not commit and returns the original failure when the phase's implementation cannot be parsed", async () => {
     const commits: string[] = [];
     const result = await runPhase(PHASE, {
-      config: config("```typescript src/index.ts\nexport const value = 1;\n```"),
+      config: config(MALFORMED_RESPONSE),
       workspace,
-      defaultLanguage: "typescript",
-      factories: { typescript: makeFactory(true) },
+      palette: new Set(),
       retryConfig: { maxLocalRetries: 0, maxEscalationRetries: 0 },
       commitPhase: async (_workspace, message, _phaseNumber) => {
         commits.push(message);
@@ -197,149 +120,168 @@ describe("runPhase", () => {
     });
 
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).not.toBeInstanceOf(BaselineCheckError);
+    }
     expect(commits).toEqual([]);
   });
 
   it("threads phaseNumber and onProgress through to the verified-implement step's events", async () => {
     const events: ProgressEvent[] = [];
     const result = await runPhase(PHASE, {
-      config: config("```typescript src/index.ts\nexport const value = 1;\n```"),
+      config: config("src/index.md\n<<<<<<< SEARCH\n=======\n# Hello\n>>>>>>> REPLACE"),
       workspace,
-      defaultLanguage: "typescript",
-      factories: { typescript: makeFactory(false) },
+      palette: new Set(),
       onProgress: (e) => events.push(e),
       commitPhase: async (_workspace, message, _phaseNumber) => ({ ok: true, value: message }),
     });
 
     expect(result.ok).toBe(true);
-    // runPhase itself does not emit phase-start/finish (that's the feature
-    // runner's job); it must forward phaseNumber/onProgress so the
-    // verified-implement step's step-level events carry the right phase.
     expect(events).toEqual([
       { kind: "step-start", phase: 1, step: 1, title: "Step" },
       { kind: "step-finish", phase: 1, step: 1 },
     ]);
   });
 
-  it("implements every phase step before running verification once", async () => {
-    const commits: string[] = [];
-    const verifyCalls: string[] = [];
-    const prompts: string[] = [];
-    let stepCount = 0;
-    const modelDispatcher: ModelDispatcher = {
-      dispatch: async (request: DispatchRequest): Promise<Result<string>> => {
-        prompts.push(request.prompt);
-        stepCount++;
-        // First step creates the file, second step modifies it
-        if (stepCount === 1) {
-          return {
-            ok: true,
-            value:
-              "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
-          };
-        }
-        return {
-          ok: true,
-          value:
-            "src/index.ts\n<<<<<<< SEARCH\nexport const value = 1;\n=======\nexport const value = 2;\n>>>>>>> REPLACE",
-        };
-      },
-    };
-    const result = await runPhase(MULTI_STEP_PHASE, {
-      config: {
-        profile: LOCAL_PROFILE,
-        dispatchers: { "gemma4:26b": modelDispatcher },
-      },
-      workspace,
-      defaultLanguage: "typescript",
-      factories: { typescript: makeFactory(false, verifyCalls) },
-      commitPhase: async (_workspace, message, _phaseNumber) => {
-        commits.push(message);
-        return { ok: true, value: message };
-      },
-    });
+  it("returns the original failure unchanged when the touched file's toolchain is not a whole-repo validator", async () => {
+    writeFileSync(join(workspace, "a.rs"), "// baseline\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m baseline`.cwd(workspace).quiet();
+    writeFileSync(join(workspace, "a.rs"), "// dirty (this phase's own change)\n");
 
-    if (!result.ok) {
-      console.error("Phase failed:", result.error?.message);
-    }
-    expect(result.ok).toBe(true);
-    expect(prompts).toHaveLength(2);
-    expect(prompts[0]).toContain("Do one");
-    expect(prompts[1]).toContain("Do two");
-    expect(verifyCalls).toEqual(["verify"]);
-    expect(commits).toEqual(["feat: add core"]);
-  });
-
-  it("skips baseline check when languageConfig.baselineCheck is unset", async () => {
-    const callLog: string[] = [];
-    const { dispatcher: modelDispatcher, callCount } = countingDispatcher(
-      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
-    );
     const result = await runPhase(PHASE, {
-      config: { profile: LOCAL_PROFILE, dispatchers: { "gemma4:26b": modelDispatcher } },
+      config: config(MALFORMED_RESPONSE),
       workspace,
-      defaultLanguage: "typescript",
-      factories: { typescript: makeBaselineFactory(false, false, callLog) },
+      palette: new Set(["cargo"]),
+      retryConfig: { maxLocalRetries: 0, maxEscalationRetries: 0 },
       commitPhase: async () => ({ ok: true, value: "" }),
     });
 
-    expect(result.ok).toBe(true);
-    // Only the post-implementation verification call, no baseline call.
-    expect(callLog).toEqual(["call-1"]);
-    expect(callCount()).toBe(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).not.toBeInstanceOf(BaselineCheckError);
+    }
+    // The dirty file must be untouched by attribution (rust is not a
+    // whole-repo validator, so no stash/pop was ever attempted).
+    expect(readFileSync(join(workspace, "a.rs"), "utf8")).toBe(
+      "// dirty (this phase's own change)\n",
+    );
   });
 
-  it("runs a baseline check before implement when baselineCheck is true, and proceeds when it passes", async () => {
-    const callLog: string[] = [];
-    const commits: string[] = [];
-    const { dispatcher: modelDispatcher, callCount } = countingDispatcher(
-      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
-    );
+  it("returns the original failure unchanged when nothing has been touched", async () => {
     const result = await runPhase(PHASE, {
-      config: { profile: LOCAL_PROFILE, dispatchers: { "gemma4:26b": modelDispatcher } },
+      config: config(MALFORMED_RESPONSE),
       workspace,
-      defaultLanguage: "typescript",
-      factories: { typescript: makeBaselineFactory(true, false, callLog) },
-      commitPhase: async (_workspace, message) => {
-        commits.push(message);
-        return { ok: true, value: message };
-      },
+      palette: new Set(["cargo", "bun", "nix"]),
+      retryConfig: { maxLocalRetries: 0, maxEscalationRetries: 0 },
+      commitPhase: async () => ({ ok: true, value: "" }),
     });
 
-    expect(result.ok).toBe(true);
-    // Baseline call + post-implementation verification call.
-    expect(callLog).toEqual(["call-1", "call-2"]);
-    expect(callCount()).toBe(1);
-    expect(commits).toEqual(["feat: add core"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).not.toBeInstanceOf(BaselineCheckError);
+    }
   });
 
-  it("halts with BaselineCheckError and skips implementation when the baseline check fails", async () => {
-    const callLog: string[] = [];
-    const commits: string[] = [];
-    const { dispatcher: modelDispatcher, callCount } = countingDispatcher(
-      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
-    );
+  it("wraps the failure in BaselineCheckError when a whole-repo validator fails on the clean pre-phase tree, and restores the dirty tree afterward", async () => {
+    writeFileSync(join(workspace, "flake.nix"), "{ }\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m baseline`.cwd(workspace).quiet();
+    writeFileSync(join(workspace, "flake.nix"), "{ this-phase-broke-it = true; }\n");
+
     const result = await runPhase(PHASE, {
-      config: { profile: LOCAL_PROFILE, dispatchers: { "gemma4:26b": modelDispatcher } },
+      config: config(MALFORMED_RESPONSE),
       workspace,
-      defaultLanguage: "typescript",
-      factories: { typescript: makeBaselineFactory(true, true, callLog) },
-      commitPhase: async (_workspace, message) => {
-        commits.push(message);
-        return { ok: true, value: message };
-      },
+      // "nix" itself is on PATH in this devShell, but "nixpkgs-fmt" is not --
+      // the nix toolchain's format step will fail (ENOENT) on ANY tree state,
+      // deterministically exercising "clean tree also fails" without
+      // depending on genuine flake-check semantics.
+      palette: new Set(["nix"]),
+      retryConfig: { maxLocalRetries: 0, maxEscalationRetries: 0 },
+      commitPhase: async () => ({ ok: true, value: "" }),
     });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(BaselineCheckError);
-      expect(result.error.message).toContain("Baseline check failed");
-      expect(result.error.message).toContain("before any implementation attempt");
     }
-    // Baseline call only — verification (post-implement) never reached.
-    expect(callLog).toEqual(["call-1"]);
-    // The implementer was never invoked.
-    expect(callCount()).toBe(0);
-    expect(commits).toEqual([]);
+    // git stash / stash pop must have restored the dirty tree exactly.
+    expect(readFileSync(join(workspace, "flake.nix"), "utf8")).toBe(
+      "{ this-phase-broke-it = true; }\n",
+    );
+  });
+});
+
+describe("findImplicatedWholeRepoValidators", () => {
+  it("returns an empty array when nothing is touched", () => {
+    expect(findImplicatedWholeRepoValidators(workspace, new Set(["nix", "shellcheck"]))).toEqual(
+      [],
+    );
+  });
+
+  it("returns an empty array when the touched file's toolchain is not a whole-repo validator", async () => {
+    writeFileSync(join(workspace, "a.rs"), "// baseline\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m baseline`.cwd(workspace).quiet();
+    writeFileSync(join(workspace, "a.rs"), "// modified\n");
+
+    expect(findImplicatedWholeRepoValidators(workspace, new Set(["cargo"]))).toEqual([]);
+  });
+
+  it("returns the implicated whole-repo validator descriptor", async () => {
+    writeFileSync(join(workspace, "flake.nix"), "{ }\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m baseline`.cwd(workspace).quiet();
+    writeFileSync(join(workspace, "flake.nix"), "{ modified = true; }\n");
+
+    const implicated = findImplicatedWholeRepoValidators(workspace, new Set(["nix"]));
+    expect(implicated.map((d) => d.id)).toEqual(["nix"]);
+  });
+});
+
+describe("runValidatorSteps", () => {
+  it("succeeds when every step of every descriptor passes", async () => {
+    const result = await runValidatorSteps(workspace, [
+      fakeDescriptor("nix", [fakeStep("format", true), fakeStep("check", true)]),
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("fails on the first failing step and does not run subsequent descriptors", async () => {
+    const secondDescriptorCalls: string[] = [];
+    const result = await runValidatorSteps(workspace, [
+      fakeDescriptor("nix", [fakeStep("format", false)]),
+      fakeDescriptor("shell", [
+        {
+          name: "lint",
+          execute: async () => {
+            secondDescriptorCalls.push("lint");
+            return { ok: true, value: { stepName: "lint", output: "ok", durationMs: 0 } };
+          },
+        },
+      ]),
+    ]);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("format failed");
+    }
+    expect(secondDescriptorCalls).toEqual([]);
+  });
+});
+
+describe("attributePhaseFailure", () => {
+  const originalFailure: Result<never> = { ok: false, error: new Error("original failure") };
+
+  it("passes through a successful result unchanged", async () => {
+    const success: Result<{ phaseNumber: number; stepsCompleted: number; commitMessage: string }> =
+      { ok: true, value: { phaseNumber: 1, stepsCompleted: 1, commitMessage: "ok" } };
+    const result = await attributePhaseFailure(workspace, new Set(), success);
+    expect(result).toBe(success);
+  });
+
+  it("returns the original failure when no whole-repo validator is implicated", async () => {
+    const result = await attributePhaseFailure(workspace, new Set(), originalFailure);
+    expect(result).toBe(originalFailure);
   });
 });

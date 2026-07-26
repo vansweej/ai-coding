@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { $ } from "bun";
 
 import type { PipelineStep, StepResult } from "@ai-coding/pipeline";
 import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
@@ -14,6 +15,7 @@ import type { Step } from "../plan-parser";
 import type { ProgressEvent } from "../progress";
 import {
   buildBaselineContext,
+  buildPaletteLanguageConfig,
   buildVerificationFailurePrompt,
   createVerifiedImplementStep,
 } from "./verified-implement-step";
@@ -373,6 +375,165 @@ describe("createVerifiedImplementStep", () => {
       retry: "local",
     });
     expect(events[5]).toEqual({ kind: "step-finish", phase: 5, step: 2 });
+  });
+
+  it("fails with a descriptive error when neither languageConfig nor palette is provided", async () => {
+    const dispatcher = sequenceDispatcher(["unused"]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", { config, workspace });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain('requires either "languageConfig" or "palette"');
+    }
+  });
+
+  it("composes the implement system from the devShell palette when palette is provided", async () => {
+    const systems: (string | undefined)[] = [];
+    const dispatcher: ModelDispatcher = {
+      dispatch: async (request: DispatchRequest): Promise<Result<string>> => {
+        systems.push(request.system);
+        return {
+          ok: true,
+          value:
+            "src/lib.rs\n<<<<<<< SEARCH\n=======\npub fn value() -> i32 { 1 }\n>>>>>>> REPLACE",
+        };
+      },
+    };
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    // workspace is not a git repo, so union verification has no touched
+    // files to route and trivially succeeds with zero steps -- this test
+    // is only exercising the implement-prompt composition wiring.
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      palette: new Set(["cargo"]),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(systems[0]).toContain("Rust idioms");
+    expect(systems[0]).toContain("aider-style");
+    expect(systems[0]).toContain("EDIT-ONLY");
+  });
+
+  it("prefers palette over languageConfig when both are supplied", async () => {
+    const systems: (string | undefined)[] = [];
+    const dispatcher: ModelDispatcher = {
+      dispatch: async (request: DispatchRequest): Promise<Result<string>> => {
+        systems.push(request.system);
+        return {
+          ok: true,
+          value: "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+        };
+      },
+    };
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(0)),
+      palette: new Set(["bun"]),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    // The legacy languageConfig's fixed system prompt is "system prompt"
+    // (see makeLanguageConfig) -- confirms the palette-composed prompt won,
+    // not the legacy fixed one.
+    expect(systems[0]).not.toBe("system prompt");
+    expect(systems[0]).toContain("named exports");
+  });
+
+  it("discovers existing source files via paletteExtensions when palette is provided", async () => {
+    writeFileSync(join(workspace, "existing.rs"), "pub fn existing() -> i32 { 0 }");
+    const dispatcher = sequenceDispatcher([
+      "src/lib.rs\n<<<<<<< SEARCH\n=======\npub fn value() -> i32 { 1 }\n>>>>>>> REPLACE",
+    ]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      palette: new Set(["cargo"]),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(dispatcher.prompts[0]).toContain("existing.rs");
+    expect(dispatcher.prompts[0]).toContain("pub fn existing()");
+  });
+});
+
+describe("buildPaletteLanguageConfig", () => {
+  it("threads coverage and diff through to the routed rust toolchain's tarpaulin/coverage steps (P7)", async () => {
+    await $`git init -q`.cwd(workspace).quiet();
+    await $`git config user.email "test@example.com"`.cwd(workspace).quiet();
+    await $`git config user.name "Test"`.cwd(workspace).quiet();
+    writeFileSync(join(workspace, "a.rs"), "// initial\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m initial`.cwd(workspace).quiet();
+    writeFileSync(join(workspace, "a.rs"), "// modified\n");
+
+    const gated = buildPaletteLanguageConfig(
+      workspace,
+      new Set(["cargo", "cargo-tarpaulin"]),
+      { mode: "threshold", percent: 95 },
+      "",
+    );
+    expect(gated.toolchainSteps(workspace).map((s) => s.name)).toEqual(
+      expect.arrayContaining(["tarpaulin", "coverage"]),
+    );
+
+    const skipped = buildPaletteLanguageConfig(
+      workspace,
+      new Set(["cargo", "cargo-tarpaulin"]),
+      { mode: "skip" },
+      "",
+    );
+    expect(skipped.toolchainSteps(workspace).map((s) => s.name)).not.toContain("tarpaulin");
+  });
+
+  it("omits tarpaulin/coverage when gated but cargo-tarpaulin is absent from the palette", async () => {
+    await $`git init -q`.cwd(workspace).quiet();
+    await $`git config user.email "test@example.com"`.cwd(workspace).quiet();
+    await $`git config user.name "Test"`.cwd(workspace).quiet();
+    writeFileSync(join(workspace, "a.rs"), "// initial\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m initial`.cwd(workspace).quiet();
+    writeFileSync(join(workspace, "a.rs"), "// modified\n");
+
+    const config = buildPaletteLanguageConfig(
+      workspace,
+      new Set(["cargo"]),
+      { mode: "threshold", percent: 95 },
+      "",
+    );
+    expect(config.toolchainSteps(workspace).map((s) => s.name)).not.toContain("tarpaulin");
+    expect(config.toolchainSteps(workspace).map((s) => s.name)).not.toContain("coverage");
+  });
+
+  it("defaults to no coverage/diff (undefined) when omitted, matching the legacy default-gated behavior", () => {
+    const config = buildPaletteLanguageConfig(workspace, new Set(["cargo", "cargo-tarpaulin"]));
+    // No touched files in a non-git workspace -- toolchainSteps returns [],
+    // but the call itself must not throw when coverage/diff are omitted.
+    expect(config.toolchainSteps(workspace)).toEqual([]);
   });
 });
 

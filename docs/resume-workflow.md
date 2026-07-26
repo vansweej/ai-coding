@@ -1,6 +1,6 @@
 # Resume Workflow — Deep Dive
 
-The `rust-plan-cycle` pipeline supports automatic resumption from the last completed phase
+The `plan-cycle` pipeline supports automatic resumption from the last completed phase
 using git commit trailers and optional memory tracking. This document explains the resume
 mechanism in detail.
 
@@ -244,7 +244,7 @@ If you want to preserve uncommitted changes:
 git stash
 
 # 2. Run the pipeline (will reset to last phase)
-bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 
 # 3. If needed, restore changes
 git stash pop
@@ -323,7 +323,7 @@ After resetting, run the pipeline again:
 git reset --hard <phase-1-commit>
 
 # Run the pipeline (will detect Phase 1 and continue with Phase 2)
-bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 ```
 
 ### Skipping Phases
@@ -335,7 +335,7 @@ To skip a phase and continue with the next:
 git reset --hard <phase-n-commit>
 
 # Run the pipeline (will skip to phase n+1)
-bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 ```
 
 ---
@@ -348,7 +348,7 @@ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
 
 ```bash
 # Initial run
-$ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
+$ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 # ... Phase 1 passes ...
 # ... Phase 2 fails ...
 # Exit code: 2
@@ -362,7 +362,7 @@ Phase: 1
 $ vim src/auth/mod.rs
 
 # Resume (pipeline detects Phase 1 and continues with Phase 2)
-$ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
+$ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 # ... Phase 2 passes ...
 # Exit code: 0
 ```
@@ -374,7 +374,7 @@ clean tree (no uncommitted changes left behind).
 
 ```bash
 # Initial run
-$ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
+$ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 # ... Phase 1 passes and commits with a Phase: 1 trailer ...
 # ... Phase 2's patch fails to apply and rolls back cleanly ...
 # Exit code: 2
@@ -386,7 +386,7 @@ nothing to commit, working tree clean
 
 # Resume (pipeline finds the Phase: 1 trailer regardless of clean tree,
 # resets to it as a no-op, and continues with Phase 2)
-$ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
+$ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 # ... Phase 2 passes ...
 # Exit code: 0
 ```
@@ -404,7 +404,7 @@ abc1234 feat: add auth module
 $ git reset --hard abc1234
 
 # Run the pipeline (will skip Phase 1 and Phase 2, continue with Phase 3)
-$ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
+$ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 # ... Phase 3 passes ...
 # Exit code: 0
 ```
@@ -415,13 +415,13 @@ $ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
 
 ```bash
 # Initial run
-$ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
+$ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 # ... Phase 1 passes (stored in memory) ...
 # ... Phase 2 fails ...
 # Exit code: 2
 
 # Resume (pipeline detects Phase 1 via git and memory)
-$ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
+$ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 # ... Memory provides context about Phase 1 ...
 # ... Phase 2 continues with richer context ...
 # Exit code: 0

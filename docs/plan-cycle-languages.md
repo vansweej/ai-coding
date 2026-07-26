@@ -1,8 +1,10 @@
 # Plan Cycle — Per-Language Reference
 
 Companion reference to [`docs/plan-cycle.md`](plan-cycle.md), covering the toolchain, Nix flake
-dev-shell prerequisites, and known caveats for each of the 9 languages registered in
-`PLAN_CONFIG_FACTORIES` (`ai-system/core/pipeline/definitions/language-configs.ts`).
+dev-shell prerequisites, and known caveats for each of the 8 toolchains registered in
+`PLAN_CONFIG_FACTORIES` (`ai-system/core/pipeline/definitions/language-configs.ts`). Each touched
+file is auto-routed to one of these toolchains based on what's available in the workspace's
+devShell (`flake.nix`); files with no matching or available toolchain are edit-only.
 
 ## Token Cap Note
 
@@ -28,7 +30,7 @@ workspace has a `flake.nix`; otherwise it runs the command directly against `PAT
 workspace, not the ai-coding monorepo, must expose these tools** — either via its own flake
 dev-shell or by having them already on `PATH`.
 
-### Rust — `--language rust` (also `rust-plan-cycle` alias)
+### Rust
 
 | Step | Command | Notes |
 |------|---------|-------|
@@ -49,7 +51,7 @@ a 15-minute timeout to accommodate it.
 
 Requires: `cargo`, `rustc`, `cargo-tarpaulin` (only invoked for gated phases), `clippy` component.
 
-### TypeScript — `--language typescript` (also the overall fallback default)
+### TypeScript
 
 | Step | Command | Timeout |
 |------|---------|---------|
@@ -60,7 +62,7 @@ Requires: `cargo`, `rustc`, `cargo-tarpaulin` (only invoked for gated phases), `
 No coverage gate. Requires: `bun`, a `package.json` with a `typecheck` script, and Biome
 available via `bunx`.
 
-### Python — `--language python`
+### Python
 
 | Step | Command | Timeout | Fatal? |
 |------|---------|---------|:---:|
@@ -76,7 +78,7 @@ day one since they don't have this maturity problem.
 
 Requires: `python3`, `ruff`, `mypy`, `pytest` on the flake dev-shell or `PATH`.
 
-### C++ — `--language cpp`
+### C++
 
 | Step | Command | Timeout |
 |------|---------|---------|
@@ -86,19 +88,7 @@ Requires: `python3`, `ruff`, `mypy`, `pytest` on the flake dev-shell or `PATH`.
 
 No coverage gate. Requires: `cmake`, a C++ toolchain (`gcc`/`clang`), `ctest`.
 
-### Docs — `--language docs`
-
-| Step | Command | Timeout |
-|------|---------|---------|
-| *(none)* | — | — |
-
-`toolchainSteps` is an intentionally empty array — no compiler, linter, or coverage gate ever
-runs. A `docs`-language phase still applies its patch and commits normally; only verification is
-skipped, since Markdown has nothing to build or test. No prerequisites required. Use this for
-documentation-only phases (e.g. a README edit) inside a compiled-language repo so they don't
-inherit that language's full toolchain purely because there was no lighter alternative.
-
-### Haskell — `--language haskell`
+### Haskell
 
 | Step | Command | Timeout |
 |------|---------|---------|
@@ -112,7 +102,7 @@ GHC's comparatively slow compile times, especially on a cold build cache.
 
 Requires: `ghc`, `cabal-install`, `hlint`.
 
-### Julia — `--language julia`
+### Julia
 
 | Step | Command | Timeout |
 |------|---------|---------|
@@ -126,7 +116,7 @@ precompilation overhead, which is substantial on a cold run.
 
 Requires: `julia` with the project's `Project.toml`/`Manifest.toml` resolved.
 
-### Nix — `--language nix`
+### Nix
 
 | Step | Command | Timeout |
 |------|---------|---------|
@@ -142,7 +132,7 @@ slow on repos with many outputs or a large `nixpkgs` pin.
 
 Requires: `nix` (flakes enabled), `nixpkgs-fmt`.
 
-### Shell — `--language shell`
+### Shell
 
 | Step | Command | Timeout |
 |------|---------|---------|
@@ -176,7 +166,7 @@ problem that predates it.
 
 This means Nix and Shell phases pay their whole-repo validation cost **twice**: once as the
 baseline check, once again as post-implementation verification. This is an accepted tradeoff —
-see [`nix flake check`](#nix--language-nix) above for the specific cost.
+see [Nix](#nix) above for the specific cost.
 
 No other language sets `baselineCheck` today; their toolchain steps operate on the working tree
 as modified by the phase's implementation, which is sufficient since none of their validators are
@@ -186,24 +176,23 @@ inherently whole-repo-only.
 
 ## Adding a New Language
 
-1. Add the language to `LanguageName` in `ai-system/core/pipeline/plan-parser.ts` and to
-   `KNOWN_LANGUAGES`.
-2. Add a `create<Lang>PlanConfig(coverage, diff): DevCycleLanguageConfig` factory in
+1. Add a `create<Lang>PlanConfig(coverage, diff): DevCycleLanguageConfig` factory in
    `language-configs.ts`, using `buildPatchSystem(languageHint, idioms)` for the implement
    system prompt (keeps the aider-style SEARCH/REPLACE format consistent across languages).
-3. Declare `sourceExtensions` and `sourceRoots` so `buildBaselineContext`/
+2. Declare `sourceExtensions` and `sourceRoots` so `buildBaselineContext`/
    `readCurrentFileContents` can discover the language's source files for prompt context.
    **Always include `".md"`** alongside the language's source extensions — every plan-cycle
    feature ends with a documentation phase that edits `README.md` (or similar), and if `.md`
    isn't discoverable the model never sees the current file content, can't produce a valid
    SEARCH/REPLACE anchor, and falls back to a full-file "create" patch that fails because the
    file already exists.
-4. Set `baselineCheck: true` only if the toolchain includes a validator that cannot be scoped to
+3. Set `baselineCheck: true` only if the toolchain includes a validator that cannot be scoped to
    a diff.
-5. Give every `createNixShellStep` an explicit `timeoutMs` — the shell-step default (60s) is too
+4. Give every `createNixShellStep` an explicit `timeoutMs` — the shell-step default (60s) is too
    low for most build/test tools.
-6. Register the factory in `PLAN_CONFIG_FACTORIES`.
-7. Add a row to the [Per-Language Toolchain and Prerequisites](#per-language-toolchain-and-prerequisites)
+5. Register the factory in `PLAN_CONFIG_FACTORIES` and add the toolchain to the routing table in
+   `ai-system/core/pipeline/routing/route.ts` so `devShellPalette` can detect and route to it.
+6. Add a row to the [Per-Language Toolchain and Prerequisites](#per-language-toolchain-and-prerequisites)
    table above, documenting required flake dev-shell tools.
 
 ---
