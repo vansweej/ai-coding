@@ -14,7 +14,7 @@ const DEFAULT_CPP_BUILD_DIR = "build";
  * @param languageHint - Human-readable language name used in the opening sentence (e.g. "Rust").
  * @param idioms       - Language-specific coding rules appended after the patch format block.
  */
-function buildPatchSystem(languageHint: string, idioms: string): string {
+export function buildPatchSystem(languageHint: string, idioms: string): string {
   return `You are a ${languageHint} coding assistant. Output ONLY aider-style SEARCH/REPLACE patches for files that need changes. Each patch must have the format:\n<file-path>\n<<<<<<< SEARCH\n<exact anchor text>\n=======\n<replacement text>\n>>>>>>> REPLACE\n\n${idioms} Do not include any explanation or prose outside the patches.`;
 }
 
@@ -601,6 +601,17 @@ export interface ToolchainDescriptor {
    * not resolve via `command -v`; `cargo-clippy`/`clippy-driver` do).
    */
   readonly markerTools: readonly string[];
+  /**
+   * Subset of `markerTools` whose presence (ANY one of them) means this
+   * toolchain is actually usable in a workspace's devShell -- e.g. Rust is
+   * available iff `cargo` is present, even though `markerTools` also lists
+   * `cargo-clippy`/`rustfmt`/`cargo-tarpaulin` for CANDIDATE_TOOLS purposes.
+   * Kept separate from `markerTools` (which is the FULL candidate set) so
+   * `route()` doesn't misreport a toolchain as available merely because one
+   * of its secondary tools (e.g. a linter) happens to be on PATH without the
+   * actual driver (e.g. `cargo`, `cabal`, `julia`).
+   */
+  readonly driverTools: readonly string[];
   /** Language-specific coding idioms appended to the aider patch-format prompt. */
   readonly idioms: string;
   /**
@@ -635,6 +646,7 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<
     id: "rust",
     languageHint: "Rust",
     markerTools: ["cargo", "rustc", "cargo-clippy", "rustfmt", "cargo-tarpaulin"],
+    driverTools: ["cargo"],
     idioms: RUST_PLAN_IDIOMS,
     toolchainSteps: (workspace, coverage, diff) =>
       createRustPlanConfig(coverage ?? DEFAULT_PLAN_COVERAGE, diff ?? "").toolchainSteps(workspace),
@@ -643,6 +655,7 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<
     id: "typescript",
     languageHint: "TypeScript",
     markerTools: ["bun"],
+    driverTools: ["bun"],
     idioms: TS_PLAN_IDIOMS,
     toolchainSteps: (workspace) =>
       createTsPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
@@ -651,6 +664,7 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<
     id: "python",
     languageHint: "Python",
     markerTools: ["ruff", "mypy", "pytest"],
+    driverTools: ["ruff", "pytest"],
     idioms: PYTHON_PLAN_IDIOMS,
     toolchainSteps: (workspace) =>
       createPythonPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
@@ -659,6 +673,7 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<
     id: "cpp",
     languageHint: "C++",
     markerTools: ["cmake", "ctest"],
+    driverTools: ["cmake"],
     idioms: CPP_PLAN_IDIOMS,
     toolchainSteps: (workspace) =>
       createCppPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
@@ -667,6 +682,7 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<
     id: "haskell",
     languageHint: "Haskell",
     markerTools: ["cabal", "hlint", "ghc"],
+    driverTools: ["cabal"],
     idioms: HASKELL_PLAN_IDIOMS,
     toolchainSteps: (workspace) =>
       createHaskellPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
@@ -675,6 +691,7 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<
     id: "julia",
     languageHint: "Julia",
     markerTools: ["julia"],
+    driverTools: ["julia"],
     idioms: JULIA_PLAN_IDIOMS,
     toolchainSteps: (workspace) =>
       createJuliaPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
@@ -683,6 +700,7 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<
     id: "nix",
     languageHint: "Nix",
     markerTools: ["nix", "nixpkgs-fmt"],
+    driverTools: ["nix"],
     idioms: NIX_PLAN_IDIOMS,
     isWholeRepoValidator: true,
     toolchainSteps: (workspace) =>
@@ -692,6 +710,7 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<
     id: "shell",
     languageHint: "Shell",
     markerTools: ["shfmt", "shellcheck"],
+    driverTools: ["shfmt", "shellcheck"],
     idioms: SHELL_PLAN_IDIOMS,
     isWholeRepoValidator: true,
     toolchainSteps: (workspace) =>
