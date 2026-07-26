@@ -4,10 +4,8 @@ import { runPipeline } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 import { $ } from "bun";
 
-import { PLAN_CONFIG_FACTORIES } from "../core/pipeline/definitions/language-configs";
-import { runFeature } from "../core/pipeline/feature-runner";
+import { DevShellPaletteError, runFeature } from "../core/pipeline/feature-runner";
 import { BaselineCheckError } from "../core/pipeline/phase-runner";
-import { KNOWN_LANGUAGES, type LanguageName } from "../core/pipeline/plan-parser";
 import type { OnProgress } from "../core/pipeline/progress";
 import { buildTheme, formatProgressEvent } from "../core/pipeline/progress";
 import { loadConfig } from "./load-config";
@@ -15,11 +13,6 @@ import { parseArgs } from "./parse-args";
 import { selectPipeline } from "./select-pipeline";
 
 const PREVIEW_MAX_CHARS = 200;
-
-/** Returns true when the pipeline name is the legacy Rust-specific alias. */
-function isRustPlanCycleAlias(name: string): boolean {
-  return name === "rust-plan-cycle";
-}
 
 /** Returns true for any plan-cycle variant (primary name or alias). */
 function isPlanCycle(name: string): boolean {
@@ -103,30 +96,13 @@ async function main(): Promise<void> {
     console.error(`Error: ${argsResult.error.message}`);
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
-  const { pipelineName, workspace, input, planPath, maxRetries, profileName, language, verbose } =
+  const { pipelineName, workspace, input, planPath, maxRetries, profileName, verbose } =
     argsResult.value;
 
   const configResult = await loadConfig(profileName);
   if (!configResult.ok) {
     console.error(`Error: ${configResult.error.message}`);
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
-  }
-
-  // Resolve default language: rust-plan-cycle alias always forces rust;
-  // otherwise honour --language, falling back to typescript.
-  let defaultLanguage: LanguageName;
-  if (isRustPlanCycleAlias(pipelineName)) {
-    defaultLanguage = "rust";
-  } else if (language !== undefined) {
-    if (!(KNOWN_LANGUAGES as readonly string[]).includes(language)) {
-      console.error(
-        `Error: unknown --language value "${language}". Must be one of: ${KNOWN_LANGUAGES.join(", ")}`,
-      );
-      process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
-    }
-    defaultLanguage = language as LanguageName;
-  } else {
-    defaultLanguage = "typescript";
   }
 
   // Enforce isolated run branch for plan-cycle pipelines
@@ -164,8 +140,6 @@ async function main(): Promise<void> {
     const outcome = await runFeature(planContent, {
       config: configResult.value,
       workspace,
-      defaultLanguage,
-      factories: PLAN_CONFIG_FACTORIES,
       retryConfig: { maxLocalRetries: maxRetries },
       onProgress,
     });
@@ -177,9 +151,13 @@ async function main(): Promise<void> {
         console.error(`Feature failed: ${outcome.error.message}`);
       }
       // A BaselineCheckError means the untouched tree was already broken before
-      // any implementation attempt — treat as an environment error, not a
-      // resumable phase failure.
-      if (outcome.error instanceof BaselineCheckError) {
+      // any implementation attempt, and a DevShellPaletteError means the
+      // workspace's devShell toolchain palette could not even be detected —
+      // both are environment errors, not resumable phase failures.
+      if (
+        outcome.error instanceof BaselineCheckError ||
+        outcome.error instanceof DevShellPaletteError
+      ) {
         process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
       }
       process.exit(EXIT_CODES.RESUMABLE_FAILURE);
@@ -187,7 +165,6 @@ async function main(): Promise<void> {
 
     console.log(`Running feature: ${outcome.value.feature}`);
     console.log(`Workspace:       ${workspace}`);
-    console.log(`Language:        ${defaultLanguage}`);
     for (const phase of outcome.value.phases) {
       console.log(`[ok] Phase ${phase.phaseNumber}: ${phase.commitMessage}`);
     }

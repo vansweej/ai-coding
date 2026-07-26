@@ -1,16 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 
-import type { PipelineStep, StepResult } from "@ai-coding/pipeline";
-import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
+import type { DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
 
 import { LOCAL_PROFILE } from "../../config/model-profiles";
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
-import type { DevCycleLanguageConfig, PlanConfigFactory } from "./definitions/language-configs";
-import { runFeature } from "./feature-runner";
+import { DevShellPaletteError, runFeature } from "./feature-runner";
 import type { ProgressEvent } from "./progress";
 
 const PLAN = `# Feature: Demo
@@ -32,6 +30,10 @@ Commit message: feat: two
 Do two.
 `;
 
+// Uses .md files (floor-routed regardless of devShell palette) so
+// verification is always an empty step list -- these tests exercise
+// feature-runner's own sequencing/resume/progress logic, independent of
+// which toolchains happen to be on PATH in the test environment.
 function config(): OrchestratorConfig {
   let requestCount = 0;
   const dispatcher: ModelDispatcher = {
@@ -41,14 +43,13 @@ function config(): OrchestratorConfig {
       if (requestCount === 1) {
         return {
           ok: true,
-          value: "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+          value: "docs/index.md\n<<<<<<< SEARCH\n=======\n# value: 1\n>>>>>>> REPLACE",
         };
       }
       // Second request (Phase 2): modify the existing file
       return {
         ok: true,
-        value:
-          "src/index.ts\n<<<<<<< SEARCH\nexport const value = 1;\n=======\nexport const value = 2;\n>>>>>>> REPLACE",
+        value: "docs/index.md\n<<<<<<< SEARCH\n# value: 1\n=======\n# value: 2\n>>>>>>> REPLACE",
       };
     },
   };
@@ -57,27 +58,6 @@ function config(): OrchestratorConfig {
     dispatchers: { "gemma4:26b": dispatcher },
   };
 }
-
-function languageConfig(): DevCycleLanguageConfig {
-  return {
-    name: "typescript",
-    implementSystem: "system",
-    languageHint: "TypeScript",
-    sourceExtensions: [".ts"],
-    sourceRoots: ["src"],
-    toolchainSteps: (_workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
-      {
-        name: "verify",
-        execute: async (): Promise<Result<StepResult>> => ({
-          ok: true,
-          value: { stepName: "verify", output: "ok", durationMs: 0 },
-        }),
-      },
-    ],
-  };
-}
-
-const testFactory: PlanConfigFactory = () => languageConfig();
 
 let workspace: string;
 
@@ -99,8 +79,6 @@ describe("runFeature", () => {
     const result = await runFeature(PLAN, {
       config: config(),
       workspace,
-      defaultLanguage: "typescript",
-      factories: { typescript: testFactory },
       commitPhase: async (_workspace, message, _phaseNumber) => {
         commits.push(message);
         return { ok: true, value: message };
@@ -120,8 +98,6 @@ describe("runFeature", () => {
     const result = await runFeature(PLAN, {
       config: config(),
       workspace,
-      defaultLanguage: "typescript",
-      factories: { typescript: testFactory },
       commitPhase: async (_workspace, message, _phaseNumber) => {
         commits.push(message);
         if (message === "feat: two") return { ok: false, error: new Error("commit failed") };
@@ -138,8 +114,6 @@ describe("runFeature", () => {
     const result = await runFeature(PLAN, {
       config: config(),
       workspace,
-      defaultLanguage: "typescript",
-      factories: { typescript: testFactory },
       onProgress: (e) => events.push(e),
       commitPhase: async (_workspace, message, _phaseNumber) => {
         if (message === "feat: two") return { ok: false, error: new Error("commit failed") };
@@ -158,5 +132,16 @@ describe("runFeature", () => {
       { kind: "step-finish", phase: 2, step: 1 },
       { kind: "phase-fail", phase: 2, reason: "commit failed" },
     ]);
+  });
+
+  it("returns a DevShellPaletteError-typed environment failure when the workspace's flake.nix is broken", async () => {
+    writeFileSync(join(workspace, "flake.nix"), "{ this is not valid nix");
+
+    const result = await runFeature(PLAN, { config: config(), workspace });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(DevShellPaletteError);
+    }
   });
 });
