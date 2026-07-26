@@ -96,7 +96,7 @@ export interface DevCycleLanguageConfig {
 export const TYPESCRIPT_CONFIG: DevCycleLanguageConfig = {
   name: "typescript",
   languageHint: "TypeScript",
-  sourceExtensions: [".ts"],
+  sourceExtensions: [".ts", ".md"],
   sourceRoots: ["src", "."],
   implementSystem:
     "You are a TypeScript coding assistant. Output ONLY implementation code in fenced code blocks. " +
@@ -118,8 +118,10 @@ export const TYPESCRIPT_CONFIG: DevCycleLanguageConfig = {
 export const RUST_CONFIG: DevCycleLanguageConfig = {
   name: "rust",
   languageHint: "Rust",
-  sourceExtensions: [".rs"],
-  sourceRoots: ["src"],
+  sourceExtensions: [".rs", ".md"],
+  // "src" for single-crate projects, "crates" for cargo workspaces
+  // (crates/<name>/src/*.rs), and "." as a catch-all for non-standard layouts.
+  sourceRoots: ["src", "crates", "."],
   implementSystem:
     "You are a Rust coding assistant. Output ONLY implementation code in fenced code blocks. " +
     "Each block must have the format: ```<language> <relative-file-path>. " +
@@ -171,37 +173,52 @@ export function createRustPlanConfig(
   return {
     name: "rust",
     languageHint: "Rust",
-    sourceExtensions: [".rs"],
-    sourceRoots: ["src"],
+    sourceExtensions: [".rs", ".md"],
+    sourceRoots: ["src", "crates", "."],
     implementSystem: buildPatchSystem("Rust", RUST_PLAN_IDIOMS),
-    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
-      createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt"], { cwd: workspace }),
-      createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], {
-        cwd: workspace,
-      }),
-      createNixShellStep<AIRequestEvent>("clippy", ["cargo", "clippy", "--", "-D", "warnings"], {
-        cwd: workspace,
-      }),
-      createNixShellStep<AIRequestEvent>("test", ["cargo", "test"], { cwd: workspace }),
-      createNixShellStep<AIRequestEvent>("tarpaulin", ["cargo", "tarpaulin"], {
-        cwd: workspace,
-        failOnNonZero: false,
-      }),
-      // Coverage gate is fatal (warnOnly: false) and respects per-phase directives
-      createCoverageGateStep<AIRequestEvent>(
-        "coverage",
-        "tarpaulin",
-        percent,
-        undefined,
-        !gated, // If gated is false, treat as warning-only; if true, make it fatal
-      ),
-    ],
+    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => {
+      const baseSteps: PipelineStep<AIRequestEvent>[] = [
+        createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt"], { cwd: workspace }),
+        createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], {
+          cwd: workspace,
+        }),
+        createNixShellStep<AIRequestEvent>("clippy", ["cargo", "clippy", "--", "-D", "warnings"], {
+          cwd: workspace,
+        }),
+        createNixShellStep<AIRequestEvent>("test", ["cargo", "test"], { cwd: workspace }),
+      ];
+
+      // When coverage isn't gated (Coverage: skip or auto-exempt), skip the
+      // tarpaulin instrumented rebuild entirely rather than just softening
+      // the gate. cargo tarpaulin performs its own instrumented build, which
+      // on heavy workspaces can exceed the shell step's 60s default timeout
+      // -- a timeout rejects the step regardless of failOnNonZero, failing
+      // verification even when the code is correct. If there's no coverage
+      // number to enforce, there's no reason to pay for that build.
+      if (!gated) {
+        return baseSteps;
+      }
+
+      return [
+        ...baseSteps,
+        createNixShellStep<AIRequestEvent>("tarpaulin", ["cargo", "tarpaulin"], {
+          cwd: workspace,
+          failOnNonZero: false,
+          // Instrumented rebuilds of heavy workspaces can take well over the
+          // 60s shell-step default; give gated phases a realistic budget.
+          timeoutMs: 900_000,
+        }),
+        // Coverage gate is fatal when gated (per-phase directives/auto-exempt
+        // already resolved above).
+        createCoverageGateStep<AIRequestEvent>("coverage", "tarpaulin", percent, undefined, false),
+      ];
+    },
   };
 }
 
-/** Exported constant for RUST_PLAN_CONFIG with default coverage (90%, gated). */
+/** Exported constant for RUST_PLAN_CONFIG with the default 90% fatal gate. */
 export const RUST_PLAN_CONFIG: DevCycleLanguageConfig = createRustPlanConfig(
-  { mode: "default" },
+  { mode: "threshold", percent: 90 },
   "",
 );
 
@@ -223,7 +240,7 @@ export function createTsPlanConfig(
   return {
     name: "typescript",
     languageHint: "TypeScript",
-    sourceExtensions: [".ts"],
+    sourceExtensions: [".ts", ".md"],
     sourceRoots: ["src", "."],
     implementSystem: buildPatchSystem("TypeScript", TS_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
@@ -257,7 +274,7 @@ export function createPythonPlanConfig(
   return {
     name: "python",
     languageHint: "Python",
-    sourceExtensions: [".py"],
+    sourceExtensions: [".py", ".md"],
     sourceRoots: ["src", "."],
     implementSystem: buildPatchSystem("Python", PYTHON_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
@@ -299,8 +316,8 @@ export function createCppPlanConfig(
   return {
     name: "cpp",
     languageHint: "C++",
-    sourceExtensions: [".cpp", ".h", ".hpp"],
-    sourceRoots: ["src", "include"],
+    sourceExtensions: [".cpp", ".h", ".hpp", ".md"],
+    sourceRoots: ["src", "include", "."],
     implementSystem: buildPatchSystem("C++", CPP_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>(
@@ -337,8 +354,8 @@ export function createHaskellPlanConfig(
   return {
     name: "haskell",
     languageHint: "Haskell",
-    sourceExtensions: [".hs"],
-    sourceRoots: ["src", "app"],
+    sourceExtensions: [".hs", ".md"],
+    sourceRoots: ["src", "app", "."],
     implementSystem: buildPatchSystem("Haskell", HASKELL_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
       // cabal build doubles as the typecheck step for Haskell.
@@ -376,8 +393,8 @@ export function createJuliaPlanConfig(
   return {
     name: "julia",
     languageHint: "Julia",
-    sourceExtensions: [".jl"],
-    sourceRoots: ["src"],
+    sourceExtensions: [".jl", ".md"],
+    sourceRoots: ["src", "."],
     implementSystem: buildPatchSystem("Julia", JULIA_PLAN_IDIOMS),
     toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>(
@@ -409,7 +426,7 @@ export function createNixPlanConfig(
   return {
     name: "nix",
     languageHint: "Nix",
-    sourceExtensions: [".nix"],
+    sourceExtensions: [".nix", ".md"],
     sourceRoots: ["."],
     baselineCheck: true,
     implementSystem: buildPatchSystem("Nix", NIX_PLAN_IDIOMS),
@@ -447,7 +464,7 @@ export function createShellPlanConfig(
   return {
     name: "shell",
     languageHint: "Shell",
-    sourceExtensions: [".sh"],
+    sourceExtensions: [".sh", ".md"],
     sourceRoots: ["."],
     baselineCheck: true,
     implementSystem: buildPatchSystem("Shell", SHELL_PLAN_IDIOMS),
@@ -492,8 +509,8 @@ export const PLAN_CONFIG_FACTORIES: Readonly<Partial<Record<LanguageName, PlanCo
 export const CPP_CONFIG: DevCycleLanguageConfig = {
   name: "cpp",
   languageHint: "C++",
-  sourceExtensions: [".cpp", ".h", ".hpp"],
-  sourceRoots: ["src", "include"],
+  sourceExtensions: [".cpp", ".h", ".hpp", ".md"],
+  sourceRoots: ["src", "include", "."],
   implementSystem:
     "You are a C++ coding assistant. Output ONLY implementation code in fenced code blocks. " +
     "Each block must have the format: ```<language> <relative-file-path>. " +

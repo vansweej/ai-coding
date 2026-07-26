@@ -65,7 +65,7 @@ git diff, producing a language-specific implementation prompt and toolchain.
 
 | Language | `--language` value | Toolchain steps | Coverage gate | `baselineCheck` |
 |----------|--------------------|-----------------|:---:|:---:|
-| Rust | `rust` | `cargo fmt` → `cargo check` → `cargo clippy -D warnings` → `cargo test` → `cargo tarpaulin` → coverage gate | ✅ fatal | — |
+| Rust | `rust` | `cargo fmt` → `cargo check` → `cargo clippy -D warnings` → `cargo test` → (if gated) `cargo tarpaulin` → coverage gate | ✅ fatal when gated | — |
 | TypeScript | `typescript` | `bun run typecheck` → `bunx biome check --write .` → `bun test` (300s) | — | — |
 | Python | `python` | `ruff format --check` → `ruff check` → `mypy .` (warning-only) → `pytest -q` (300s) | — | — |
 | C++ | `cpp` | `cmake -S . -B build` (120s) → `cmake --build build` (300s) → `ctest --test-dir build` (300s) | — | — |
@@ -76,6 +76,22 @@ git diff, producing a language-specific implementation prompt and toolchain.
 
 Only Rust currently gates on coverage; the other 7 languages accept the phase's `Coverage:`
 directive for `PlanConfigFactory` signature compatibility but do not act on it yet.
+
+**Rust `cargo tarpaulin` is only run when coverage is gated.** When a phase's `Coverage:`
+directive resolves to *not gated* (`skip`, or auto-exempt because the diff adds zero real lines),
+`createRustPlanConfig` omits the `tarpaulin` step and the `coverage` gate step entirely — the
+toolchain ends at `cargo test`. This isn't just a formality: `cargo tarpaulin` performs its own
+instrumented rebuild, which on a heavy workspace can exceed the shell step's 60s default timeout
+and fail verification even though the code is correct (a timeout rejects the step regardless of
+`failOnNonZero`). If there's no coverage number to enforce, skipping the instrumented build
+avoids that failure mode entirely. When coverage *is* gated, the `tarpaulin` step is given a
+15-minute timeout (`timeoutMs: 900_000`) to accommodate instrumented rebuilds of large workspaces.
+
+**Every language's `sourceExtensions` includes `.md`.** Plan-cycle features conventionally end
+with a documentation phase that edits `README.md`. Source discovery (`buildBaselineContext` /
+`readCurrentFileContents`) filters strictly by `sourceExtensions`, so without `.md` a docs phase's
+target file is invisible to the model — it can't produce a valid SEARCH/REPLACE anchor and falls
+back to a full-file "create" patch that fails because the file already exists.
 
 **`baselineCheck`** — Nix and Shell run their toolchain once on the *untouched* tree before any
 implementation attempt for a phase, because `nix flake check` and repo-wide `shellcheck` cannot
@@ -120,7 +136,8 @@ including required Nix flake dev-shell tooling.
 ┌─────────────────────────────────────────────────────────────┐
 │ 2. Detect Resume State (if needed)                           │
 │    - Check git log for Phase: N trailers                    │
-│    - Reset to last completed phase if dirty                 │
+│    - Reset to last completed phase if any trailer is found   │
+│      (regardless of dirty/clean tree — reset is a safe no-op)│
 │    - Skip completed phases                                  │
 └──────────────────┬──────────────────────────────────────────┘
                    │
@@ -363,7 +380,8 @@ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 ### How Resume Works
 
 1. **Detect last completed phase**: Scan git log for `Phase: N` trailers
-2. **Check for dirty state**: If working directory is dirty, reset to last phase commit
+2. **Reset to the last phase commit**: Happens whenever a trailer is found, regardless of
+   whether the tree is dirty or already clean — the reset is a safe no-op if nothing changed
 3. **Skip completed phases**: Start execution from the next phase
 4. **Continue normally**: Implement, verify, and commit remaining phases
 

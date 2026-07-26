@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import type { PipelineContext, StepResult } from "../pipeline-types";
 import { createCoverageGateStep } from "./coverage-gate-step";
+import { createShellStep } from "./shell-step";
 
 /** Minimal test event. */
 interface TestEvent {
@@ -112,5 +113,26 @@ describe("createCoverageGateStep", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.message).toContain("below threshold");
+  });
+
+  it("reads a tarpaulin coverage summary emitted on stderr via a real shell step", async () => {
+    const shellStep = createShellStep<TestEvent>("tarpaulin", [
+      "sh",
+      "-c",
+      "echo running; echo '94.00% coverage, 861/916 lines covered' >&2",
+    ]);
+    const ctx: PipelineContext<TestEvent> = { event: { id: "test" }, results: new Map() };
+    const shellResult = await shellStep.execute(ctx);
+
+    expect(shellResult.ok).toBe(true);
+    if (!shellResult.ok) return;
+    ctx.results.set("tarpaulin", shellResult.value);
+
+    const gateStep = createCoverageGateStep<TestEvent>("coverage", "tarpaulin", 90);
+    const gateResult = await gateStep.execute(ctx);
+
+    expect(gateResult.ok).toBe(true);
+    if (!gateResult.ok) return;
+    expect(gateResult.value.output).toContain("94.00%");
   });
 });

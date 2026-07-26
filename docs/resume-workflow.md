@@ -81,17 +81,22 @@ async function detectResumeState(workspace: string): Promise<ResumeState> {
 
 ### When Resume is Triggered
 
-Resume is triggered when:
+Resume is triggered whenever a `Phase: N` trailer is found in recent git history —
+**regardless of whether the working directory is currently dirty or clean.**
 
-1. **Previous run failed**: Exit code 2 (resumable failure)
-2. **Working directory is dirty**: Uncommitted changes exist
-3. **Phase trailers exist**: Git log contains `Phase: N` trailers
+Resume is **not** triggered only when:
 
-Resume is **not** triggered when:
+1. **First run**: No Phase trailers exist anywhere in the scanned git log window
 
-1. **First run**: No Phase trailers in git log
-2. **Clean state**: No uncommitted changes and no Phase trailers
-3. **Manual reset**: User explicitly reset to a different commit
+A clean working directory does **not** mean "nothing to resume." A phase can fail during
+patch application and roll back to a fully clean tree (patch application never partially
+writes files), which is indistinguishable from "no run has started yet" if resume only
+looked at dirtiness. Gating resume on dirty state caused exactly this bug: a feature with
+phases 1–6 committed and phase 7 failing cleanly would, on the next run, be silently
+restarted from phase 1 instead of continuing at phase 7 — re-applying already-committed
+phases and colliding with their now-stale SEARCH anchors. `resetToPhaseCommit` is always
+called before phases resume, and is a safe no-op when the tree already matches the target
+commit, so there is no cost to always resetting.
 
 ---
 
@@ -138,8 +143,7 @@ await $`git commit -m ${messageWithTrailer}`.cwd(workspace);
 
 2. **Detect resume state**
    - Scan git log for Phase trailers
-   - Find last completed phase number
-   - Check for dirty working directory
+   - Find last completed phase number (dirty vs. clean tree does not matter)
 
 3. **If resume needed**
    - Get the commit hash of the last phase
@@ -208,27 +212,28 @@ Changes not staged for commit:
   modified:   src/lib.rs
 ```
 
-### Why Reset on Dirty State?
+### Reset Always Runs on Resume
 
-If the working directory is dirty during resume:
-
-1. The uncommitted changes might be from a failed phase
-2. Continuing with dirty state could cause conflicts
-3. Resetting ensures a clean state for the next phase
-
-### Reset Behavior
-
-When resuming with dirty state:
+Whenever a `Phase: N` trailer is found, the pipeline always resets to that phase's commit
+before continuing — whether the tree is currently dirty or already clean:
 
 ```typescript
 // 1. Find the last completed phase commit
 const lastPhaseCommit = await findPhaseCommit(workspace, lastPhaseNumber);
 
-// 2. Reset to that commit (discards uncommitted changes)
+// 2. Reset to that commit (discards any uncommitted changes; a no-op if the
+//    tree already matches the target commit)
 await $`git reset --hard ${lastPhaseCommit}`.cwd(workspace);
+await $`git clean -fd`.cwd(workspace);
 
 // 3. Continue with the next phase
 ```
+
+This is deliberately unconditional. Earlier versions of the resume detector only reset when
+the tree was dirty, which meant a phase that failed and rolled back to a *clean* tree (patch
+application never partially writes) was treated as "no resume needed" and silently restarted
+the whole feature from phase 1. Since the reset is a safe no-op on an already-clean,
+already-matching tree, there's no downside to always performing it.
 
 ### Preserving Changes
 
@@ -362,26 +367,26 @@ $ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
 # Exit code: 0
 ```
 
-### Example 2: Resume with Dirty State
+### Example 2: Resume After a Clean Rollback
 
-**Scenario**: Phase 1 passes, Phase 2 fails, working directory is dirty.
+**Scenario**: Phase 1 passes, Phase 2 fails during patch application and rolls back to a
+clean tree (no uncommitted changes left behind).
 
 ```bash
 # Initial run
 $ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
-# ... Phase 1 passes ...
-# ... Phase 2 fails ...
+# ... Phase 1 passes and commits with a Phase: 1 trailer ...
+# ... Phase 2's patch fails to apply and rolls back cleanly ...
 # Exit code: 2
 
-# Working directory is dirty
+# Working directory is clean -- this does NOT mean "nothing to resume"
 $ git status
 On branch feat/my-feature
-Changes not staged for commit:
-  modified:   src/auth/mod.rs
+nothing to commit, working tree clean
 
-# Resume (pipeline resets to Phase 1 commit, then continues with Phase 2)
+# Resume (pipeline finds the Phase: 1 trailer regardless of clean tree,
+# resets to it as a no-op, and continues with Phase 2)
 $ bun run pipeline rust-plan-cycle ./my-project --plan ./plans/feature.md
-# ... Phase 1 commit is restored ...
 # ... Phase 2 passes ...
 # Exit code: 0
 ```

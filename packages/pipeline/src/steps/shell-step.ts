@@ -19,6 +19,7 @@ export interface ShellStepOptions {
  * Commands are passed as an array (never interpolated through a shell) to
  * prevent injection. The step does not read or write pipeline context -- it
  * runs the same fixed command on every invocation.
+ * StepResult.output is the combined stdout and stderr text.
  *
  * @param name    - Unique step name, used as the key in PipelineContext.results.
  * @param command - Command and arguments as an array, e.g. ["bun", "test"].
@@ -73,9 +74,17 @@ export function createShellStep<TEvent = unknown>(
           };
         }
 
+        // Combine stdout and stderr into the step output. Some toolchains
+        // (e.g. cargo tarpaulin) emit their summary via their tracing
+        // logger on stderr rather than stdout. The coverage gate step is
+        // the only downstream consumer that parses a shell step's output;
+        // every other toolchain step (fmt/check/clippy/test) signals
+        // pass/fail purely via exit code, so combining is safe.
+        const output = [stdoutText, stderrText].filter((s) => s.trim().length > 0).join("\n");
+
         return {
           ok: true,
-          value: { stepName: name, output: stdoutText, durationMs },
+          value: { stepName: name, output, durationMs },
         };
       } catch (err) {
         return {

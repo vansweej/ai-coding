@@ -20,7 +20,7 @@ describe("resume", () => {
   });
 
   describe("detectResumeState", () => {
-    it("returns needsResume=false when git is clean", async () => {
+    it("returns needsResume=false when clean and no Phase commits", async () => {
       // Create initial commit
       await $`echo "test" > file.txt`.cwd(tempDir).quiet();
       await $`git add file.txt`.cwd(tempDir).quiet();
@@ -54,6 +54,22 @@ describe("resume", () => {
       // Make dirty
       await $`echo "modified" > file.txt`.cwd(tempDir).quiet();
 
+      const state = await detectResumeState(tempDir);
+      expect(state.needsResume).toBe(true);
+      expect(state.lastPhaseNumber).toBe(1);
+    });
+
+    it("returns needsResume=true when CLEAN and a Phase commit exists", async () => {
+      // Regression guard: a phase can fail and roll back to a clean tree
+      // (patch application never partially writes), which must still be
+      // treated as resumable -- otherwise the next run silently restarts
+      // the whole feature from phase 1 instead of continuing past the last
+      // completed phase.
+      await $`echo "test" > file.txt`.cwd(tempDir).quiet();
+      await $`git add file.txt`.cwd(tempDir).quiet();
+      await $`git commit -m "feat: phase 1\n\nPhase: 1"`.cwd(tempDir).quiet();
+
+      // Tree is clean -- no dirty changes.
       const state = await detectResumeState(tempDir);
       expect(state.needsResume).toBe(true);
       expect(state.lastPhaseNumber).toBe(1);

@@ -25,24 +25,24 @@ describe("language configs", () => {
   });
 
   it("TYPESCRIPT_CONFIG declares correct source extensions and roots", () => {
-    expect(TYPESCRIPT_CONFIG.sourceExtensions).toEqual([".ts"]);
+    expect(TYPESCRIPT_CONFIG.sourceExtensions).toEqual([".ts", ".md"]);
     expect(TYPESCRIPT_CONFIG.sourceRoots).toEqual(["src", "."]);
   });
 
   it("RUST_CONFIG declares correct source extensions and roots", () => {
-    expect(RUST_CONFIG.sourceExtensions).toEqual([".rs"]);
-    expect(RUST_CONFIG.sourceRoots).toEqual(["src"]);
+    expect(RUST_CONFIG.sourceExtensions).toEqual([".rs", ".md"]);
+    expect(RUST_CONFIG.sourceRoots).toEqual(["src", "crates", "."]);
   });
 
   it("CPP_CONFIG declares correct source extensions and roots", () => {
-    expect(CPP_CONFIG.sourceExtensions).toEqual([".cpp", ".h", ".hpp"]);
-    expect(CPP_CONFIG.sourceRoots).toEqual(["src", "include"]);
+    expect(CPP_CONFIG.sourceExtensions).toEqual([".cpp", ".h", ".hpp", ".md"]);
+    expect(CPP_CONFIG.sourceRoots).toEqual(["src", "include", "."]);
   });
 
   it("createRustPlanConfig declares correct source extensions and roots", () => {
     const config = createRustPlanConfig({ mode: "default" }, "");
-    expect(config.sourceExtensions).toEqual([".rs"]);
-    expect(config.sourceRoots).toEqual(["src"]);
+    expect(config.sourceExtensions).toEqual([".rs", ".md"]);
+    expect(config.sourceRoots).toEqual(["src", "crates", "."]);
   });
 
   it("requires doc comments in every implement system prompt", () => {
@@ -91,8 +91,9 @@ describe("language configs", () => {
     const steps = RUST_PLAN_CONFIG.toolchainSteps("/tmp/ws");
     const coverageStep = steps.find((step) => step.name === "coverage");
     expect(coverageStep).toBeDefined();
-    // The coverage step should be fatal (warnOnly: false) for default coverage
+    // The coverage step should be fatal (warnOnly: false) for the default 90% gate
     expect(steps.map((step) => step.name)).toContain("coverage");
+    expect(steps.map((step) => step.name)).toContain("tarpaulin");
   });
 
   it("RUST_PLAN_CONFIG includes aider-style patch format in implementSystem", () => {
@@ -119,9 +120,19 @@ describe("language configs", () => {
   it("createRustPlanConfig respects skip directive", () => {
     const config = createRustPlanConfig({ mode: "skip" }, "");
     const steps = config.toolchainSteps("/tmp/ws");
-    const coverageStep = steps.find((step) => step.name === "coverage");
-    expect(coverageStep).toBeDefined();
-    // With skip directive, coverage should be warning-only (warnOnly: true)
+    // With skip directive, coverage is not gated -- the tarpaulin instrumented
+    // rebuild and the coverage gate are both omitted rather than made warn-only.
+    expect(steps.map((step) => step.name)).toEqual(["fmt", "check", "clippy", "test"]);
+    expect(steps.find((step) => step.name === "tarpaulin")).toBeUndefined();
+    expect(steps.find((step) => step.name === "coverage")).toBeUndefined();
+  });
+
+  it("createRustPlanConfig omits tarpaulin and coverage when not gated", () => {
+    const config = createRustPlanConfig({ mode: "skip" }, "");
+    const steps = config.toolchainSteps("/tmp/ws");
+    const names = steps.map((step) => step.name);
+    expect(names).not.toContain("tarpaulin");
+    expect(names).not.toContain("coverage");
   });
 
   it("createRustPlanConfig respects explicit threshold", () => {
@@ -129,7 +140,8 @@ describe("language configs", () => {
     const steps = config.toolchainSteps("/tmp/ws");
     const coverageStep = steps.find((step) => step.name === "coverage");
     expect(coverageStep).toBeDefined();
-    // With explicit threshold, coverage should be fatal (warnOnly: false)
+    // With explicit threshold, coverage is gated: tarpaulin runs and the gate is fatal
+    expect(steps.find((step) => step.name === "tarpaulin")).toBeDefined();
   });
 
   it("createRustPlanConfig respects auto-exempt", () => {
@@ -137,9 +149,10 @@ describe("language configs", () => {
 +    // comment`;
     const config = createRustPlanConfig({ mode: "default" }, diff);
     const steps = config.toolchainSteps("/tmp/ws");
-    const coverageStep = steps.find((step) => step.name === "coverage");
-    expect(coverageStep).toBeDefined();
-    // With auto-exempt, coverage should be warning-only (warnOnly: true)
+    // With auto-exempt, coverage is not gated -- tarpaulin and the gate are omitted
+    expect(steps.map((step) => step.name)).toEqual(["fmt", "check", "clippy", "test"]);
+    expect(steps.find((step) => step.name === "tarpaulin")).toBeUndefined();
+    expect(steps.find((step) => step.name === "coverage")).toBeUndefined();
   });
 
   it("createRustPlanConfig implementSystem is byte-identical before and after buildPatchSystem refactor", () => {
@@ -179,7 +192,7 @@ describe("language configs", () => {
 
   it("createTsPlanConfig declares correct source extensions and roots", () => {
     const config = createTsPlanConfig({ mode: "default" }, "");
-    expect(config.sourceExtensions).toEqual([".ts"]);
+    expect(config.sourceExtensions).toEqual([".ts", ".md"]);
     expect(config.sourceRoots).toEqual(["src", "."]);
   });
 
@@ -202,7 +215,7 @@ describe("language configs", () => {
   describe("createPythonPlanConfig", () => {
     it("declares correct source extensions and roots", () => {
       const config = createPythonPlanConfig({ mode: "default" }, "");
-      expect(config.sourceExtensions).toEqual([".py"]);
+      expect(config.sourceExtensions).toEqual([".py", ".md"]);
       expect(config.sourceRoots).toEqual(["src", "."]);
     });
 
@@ -239,8 +252,8 @@ describe("language configs", () => {
   describe("createCppPlanConfig", () => {
     it("declares correct source extensions and roots", () => {
       const config = createCppPlanConfig({ mode: "default" }, "");
-      expect(config.sourceExtensions).toEqual([".cpp", ".h", ".hpp"]);
-      expect(config.sourceRoots).toEqual(["src", "include"]);
+      expect(config.sourceExtensions).toEqual([".cpp", ".h", ".hpp", ".md"]);
+      expect(config.sourceRoots).toEqual(["src", "include", "."]);
     });
 
     it("produces aider-style patch system prompt", () => {
@@ -269,8 +282,8 @@ describe("language configs", () => {
   describe("createHaskellPlanConfig", () => {
     it("declares correct source extensions and roots", () => {
       const config = createHaskellPlanConfig({ mode: "default" }, "");
-      expect(config.sourceExtensions).toEqual([".hs"]);
-      expect(config.sourceRoots).toEqual(["src", "app"]);
+      expect(config.sourceExtensions).toEqual([".hs", ".md"]);
+      expect(config.sourceRoots).toEqual(["src", "app", "."]);
     });
 
     it("produces aider-style patch system prompt", () => {
@@ -299,8 +312,8 @@ describe("language configs", () => {
   describe("createJuliaPlanConfig", () => {
     it("declares correct source extensions and roots", () => {
       const config = createJuliaPlanConfig({ mode: "default" }, "");
-      expect(config.sourceExtensions).toEqual([".jl"]);
-      expect(config.sourceRoots).toEqual(["src"]);
+      expect(config.sourceExtensions).toEqual([".jl", ".md"]);
+      expect(config.sourceRoots).toEqual(["src", "."]);
     });
 
     it("produces aider-style patch system prompt", () => {
@@ -325,7 +338,7 @@ describe("language configs", () => {
   describe("createNixPlanConfig", () => {
     it("declares correct source extensions and roots", () => {
       const config = createNixPlanConfig({ mode: "default" }, "");
-      expect(config.sourceExtensions).toEqual([".nix"]);
+      expect(config.sourceExtensions).toEqual([".nix", ".md"]);
       expect(config.sourceRoots).toEqual(["."]);
     });
 
@@ -351,7 +364,7 @@ describe("language configs", () => {
   describe("createShellPlanConfig", () => {
     it("declares correct source extensions and roots", () => {
       const config = createShellPlanConfig({ mode: "default" }, "");
-      expect(config.sourceExtensions).toEqual([".sh"]);
+      expect(config.sourceExtensions).toEqual([".sh", ".md"]);
       expect(config.sourceRoots).toEqual(["."]);
     });
 
