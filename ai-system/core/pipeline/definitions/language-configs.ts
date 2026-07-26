@@ -575,3 +575,167 @@ export const DEV_CYCLE_LANGUAGE_CONFIGS: Readonly<
   rust: RUST_CONFIG,
   cpp: CPP_CONFIG,
 };
+
+/**
+ * Descriptor for one toolchain in the devShell-routed model (the eventual
+ * replacement for the `--language`/`Language:` knob -- see P1
+ * `devShellPalette`). Reuses the same toolchain step bodies and idiom
+ * fragments as the `LanguageName`-keyed registry above; this is purely an
+ * ADDITIVE re-keying by extension and marker tool, and does not yet change
+ * how any phase is routed (that is `route()`, a later phase).
+ */
+export interface ToolchainDescriptor {
+  /** Stable identifier, reusing the existing LanguageName values. */
+  readonly id: LanguageName;
+  /** Human-readable language name used in implement-prompt idiom text. */
+  readonly languageHint: string;
+  /**
+   * Every binary this toolchain's steps may invoke, e.g. ["cargo", "rustc",
+   * "cargo-clippy", "rustfmt", "cargo-tarpaulin"] for Rust. Used both to
+   * build the CANDIDATE_TOOLS union passed to `devShellPalette` and, later,
+   * by `route()` to decide whether this toolchain is available in a given
+   * workspace's devShell.
+   *
+   * NOTE: the Rust clippy binary is named `cargo-clippy`, not `clippy` --
+   * confirmed by manually probing a real Rust devShell (`clippy` alone does
+   * not resolve via `command -v`; `cargo-clippy`/`clippy-driver` do).
+   */
+  readonly markerTools: readonly string[];
+  /** Language-specific coding idioms appended to the aider patch-format prompt. */
+  readonly idioms: string;
+  /**
+   * True for toolchains whose verification cannot be scoped to a diff (e.g.
+   * `nix flake check`, whole-repo `shellcheck`) and must instead run once on
+   * the untouched tree, with a pre-existing failure treated as an
+   * environment error. Mirrors the role `DevCycleLanguageConfig.baselineCheck`
+   * plays today.
+   */
+  readonly isWholeRepoValidator?: boolean;
+  /** Verification steps for this toolchain, optionally coverage/diff-aware (Rust only, currently). */
+  toolchainSteps(
+    workspace: string,
+    coverage?: CoverageDirective,
+    diff?: string,
+  ): readonly PipelineStep<AIRequestEvent>[];
+}
+
+const DEFAULT_PLAN_COVERAGE: CoverageDirective = { mode: "threshold", percent: 90 };
+
+/**
+ * Registry of toolchain descriptors keyed by LanguageName, reusing the
+ * existing `create*PlanConfig` factories and `*_PLAN_IDIOMS` fragments so
+ * there is exactly one source of truth for each toolchain's steps and idioms.
+ * `docs` is intentionally absent: it is not a real toolchain but the
+ * no-toolchain floor that any unmapped file extension already falls back to.
+ */
+export const TOOLCHAIN_DESCRIPTORS: Readonly<
+  Record<Exclude<LanguageName, "docs">, ToolchainDescriptor>
+> = {
+  rust: {
+    id: "rust",
+    languageHint: "Rust",
+    markerTools: ["cargo", "rustc", "cargo-clippy", "rustfmt", "cargo-tarpaulin"],
+    idioms: RUST_PLAN_IDIOMS,
+    toolchainSteps: (workspace, coverage, diff) =>
+      createRustPlanConfig(coverage ?? DEFAULT_PLAN_COVERAGE, diff ?? "").toolchainSteps(workspace),
+  },
+  typescript: {
+    id: "typescript",
+    languageHint: "TypeScript",
+    markerTools: ["bun"],
+    idioms: TS_PLAN_IDIOMS,
+    toolchainSteps: (workspace) =>
+      createTsPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+  python: {
+    id: "python",
+    languageHint: "Python",
+    markerTools: ["ruff", "mypy", "pytest"],
+    idioms: PYTHON_PLAN_IDIOMS,
+    toolchainSteps: (workspace) =>
+      createPythonPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+  cpp: {
+    id: "cpp",
+    languageHint: "C++",
+    markerTools: ["cmake", "ctest"],
+    idioms: CPP_PLAN_IDIOMS,
+    toolchainSteps: (workspace) =>
+      createCppPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+  haskell: {
+    id: "haskell",
+    languageHint: "Haskell",
+    markerTools: ["cabal", "hlint", "ghc"],
+    idioms: HASKELL_PLAN_IDIOMS,
+    toolchainSteps: (workspace) =>
+      createHaskellPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+  julia: {
+    id: "julia",
+    languageHint: "Julia",
+    markerTools: ["julia"],
+    idioms: JULIA_PLAN_IDIOMS,
+    toolchainSteps: (workspace) =>
+      createJuliaPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+  nix: {
+    id: "nix",
+    languageHint: "Nix",
+    markerTools: ["nix", "nixpkgs-fmt"],
+    idioms: NIX_PLAN_IDIOMS,
+    isWholeRepoValidator: true,
+    toolchainSteps: (workspace) =>
+      createNixPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+  shell: {
+    id: "shell",
+    languageHint: "Shell",
+    markerTools: ["shfmt", "shellcheck"],
+    idioms: SHELL_PLAN_IDIOMS,
+    isWholeRepoValidator: true,
+    toolchainSteps: (workspace) =>
+      createShellPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+  },
+};
+
+/**
+ * Maps a file extension (including the leading dot, e.g. ".rs") to the
+ * toolchain descriptor responsible for it. Extensions absent from this map
+ * (e.g. ".md", ".toml", ".json") have no toolchain and route to the
+ * no-toolchain floor -- edit-only, no compiler/linter/test/coverage step.
+ *
+ * Locked route table (memory e06640ae): one canonical toolchain per source
+ * extension; `.nix`/`.sh` map to whole-repo validators.
+ */
+export const EXTENSION_TO_TOOLCHAIN: Readonly<Record<string, LanguageName>> = {
+  ".rs": "rust",
+  ".ts": "typescript",
+  ".tsx": "typescript",
+  ".mts": "typescript",
+  ".cts": "typescript",
+  ".py": "python",
+  ".pyi": "python",
+  ".cpp": "cpp",
+  ".cc": "cpp",
+  ".cxx": "cpp",
+  ".h": "cpp",
+  ".hpp": "cpp",
+  ".hh": "cpp",
+  ".hs": "haskell",
+  ".lhs": "haskell",
+  ".jl": "julia",
+  ".nix": "nix",
+  ".sh": "shell",
+  ".bash": "shell",
+};
+
+/**
+ * Union of every marker tool across all registered toolchain descriptors.
+ * This is the `candidateTools` argument passed to `devShellPalette` so a
+ * workspace's dev environment is probed exactly once per run for every tool
+ * any registered toolchain might need.
+ */
+export const CANDIDATE_TOOLS: readonly string[] = Array.from(
+  new Set(Object.values(TOOLCHAIN_DESCRIPTORS).flatMap((descriptor) => descriptor.markerTools)),
+);

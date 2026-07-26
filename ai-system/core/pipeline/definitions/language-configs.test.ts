@@ -1,11 +1,14 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  CANDIDATE_TOOLS,
   CPP_CONFIG,
   DEV_CYCLE_LANGUAGE_CONFIGS,
+  EXTENSION_TO_TOOLCHAIN,
   PLAN_CONFIG_FACTORIES,
   RUST_CONFIG,
   RUST_PLAN_CONFIG,
+  TOOLCHAIN_DESCRIPTORS,
   TYPESCRIPT_CONFIG,
   createCppPlanConfig,
   createDocsPlanConfig,
@@ -401,6 +404,192 @@ describe("language configs", () => {
     it("sets baselineCheck to true (whole-repo shellcheck cannot be scoped to a diff)", () => {
       const config = createShellPlanConfig({ mode: "default" }, "");
       expect(config.baselineCheck).toBe(true);
+    });
+  });
+
+  describe("TOOLCHAIN_DESCRIPTORS", () => {
+    it("registers all 8 non-docs languages", () => {
+      expect(Object.keys(TOOLCHAIN_DESCRIPTORS).sort()).toEqual(
+        ["cpp", "haskell", "julia", "nix", "python", "rust", "shell", "typescript"].sort(),
+      );
+    });
+
+    it("does not register docs (it is the no-toolchain floor, not a real toolchain)", () => {
+      expect("docs" in TOOLCHAIN_DESCRIPTORS).toBe(false);
+    });
+
+    it("uses cargo-clippy, not clippy, as the Rust marker tool", () => {
+      // Manually validated: `clippy` alone does not resolve via `command -v`
+      // in a real Rust devShell; the actual binary is `cargo-clippy`.
+      expect(TOOLCHAIN_DESCRIPTORS.rust.markerTools).toContain("cargo-clippy");
+      expect(TOOLCHAIN_DESCRIPTORS.rust.markerTools).not.toContain("clippy");
+    });
+
+    it("marks nix and shell as whole-repo validators", () => {
+      expect(TOOLCHAIN_DESCRIPTORS.nix.isWholeRepoValidator).toBe(true);
+      expect(TOOLCHAIN_DESCRIPTORS.shell.isWholeRepoValidator).toBe(true);
+    });
+
+    it("does not mark rust, typescript, python, cpp, haskell, julia as whole-repo validators", () => {
+      expect(TOOLCHAIN_DESCRIPTORS.rust.isWholeRepoValidator).toBeUndefined();
+      expect(TOOLCHAIN_DESCRIPTORS.typescript.isWholeRepoValidator).toBeUndefined();
+      expect(TOOLCHAIN_DESCRIPTORS.python.isWholeRepoValidator).toBeUndefined();
+      expect(TOOLCHAIN_DESCRIPTORS.cpp.isWholeRepoValidator).toBeUndefined();
+      expect(TOOLCHAIN_DESCRIPTORS.haskell.isWholeRepoValidator).toBeUndefined();
+      expect(TOOLCHAIN_DESCRIPTORS.julia.isWholeRepoValidator).toBeUndefined();
+    });
+
+    it("rust toolchainSteps delegates to createRustPlanConfig and reflects coverage gating", () => {
+      const gated = TOOLCHAIN_DESCRIPTORS.rust.toolchainSteps(
+        "/tmp/ws",
+        { mode: "threshold", percent: 90 },
+        "",
+      );
+      expect(gated.map((s) => s.name)).toContain("tarpaulin");
+      expect(gated.map((s) => s.name)).toContain("coverage");
+
+      const skipped = TOOLCHAIN_DESCRIPTORS.rust.toolchainSteps("/tmp/ws", { mode: "skip" }, "");
+      expect(skipped.map((s) => s.name)).not.toContain("tarpaulin");
+      expect(skipped.map((s) => s.name)).not.toContain("coverage");
+    });
+
+    it("typescript toolchainSteps delegates to createTsPlanConfig", () => {
+      expect(TOOLCHAIN_DESCRIPTORS.typescript.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual(
+        ["typecheck", "lint", "test"],
+      );
+    });
+
+    it("python toolchainSteps delegates to createPythonPlanConfig", () => {
+      expect(TOOLCHAIN_DESCRIPTORS.python.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual([
+        "format",
+        "lint",
+        "typecheck",
+        "test",
+      ]);
+    });
+
+    it("cpp toolchainSteps delegates to createCppPlanConfig", () => {
+      expect(TOOLCHAIN_DESCRIPTORS.cpp.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual([
+        "configure",
+        "build",
+        "test",
+      ]);
+    });
+
+    it("haskell toolchainSteps delegates to createHaskellPlanConfig", () => {
+      expect(TOOLCHAIN_DESCRIPTORS.haskell.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual([
+        "build",
+        "lint",
+        "test",
+      ]);
+    });
+
+    it("julia toolchainSteps delegates to createJuliaPlanConfig", () => {
+      expect(TOOLCHAIN_DESCRIPTORS.julia.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual([
+        "test",
+      ]);
+    });
+
+    it("nix toolchainSteps delegates to createNixPlanConfig", () => {
+      expect(TOOLCHAIN_DESCRIPTORS.nix.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual([
+        "format",
+        "check",
+      ]);
+    });
+
+    it("shell toolchainSteps delegates to createShellPlanConfig", () => {
+      expect(TOOLCHAIN_DESCRIPTORS.shell.toolchainSteps("/tmp/ws").map((s) => s.name)).toEqual([
+        "format",
+        "lint",
+      ]);
+    });
+
+    it("every descriptor's idioms match its corresponding *_PLAN_IDIOMS source", () => {
+      expect(TOOLCHAIN_DESCRIPTORS.rust.idioms).toContain("Rust idioms");
+      expect(TOOLCHAIN_DESCRIPTORS.typescript.idioms).toContain("named exports");
+      expect(TOOLCHAIN_DESCRIPTORS.python.idioms).toContain("type hints");
+      expect(TOOLCHAIN_DESCRIPTORS.cpp.idioms).toContain("C++20");
+      expect(TOOLCHAIN_DESCRIPTORS.haskell.idioms).toContain("Haddock");
+      expect(TOOLCHAIN_DESCRIPTORS.julia.idioms).toContain("multiple dispatch");
+      expect(TOOLCHAIN_DESCRIPTORS.nix.idioms).toContain("let-in");
+      expect(TOOLCHAIN_DESCRIPTORS.shell.idioms).toContain("shellcheck");
+    });
+  });
+
+  describe("EXTENSION_TO_TOOLCHAIN", () => {
+    it("maps each source extension to its expected language", () => {
+      expect(EXTENSION_TO_TOOLCHAIN[".rs"]).toBe("rust");
+      expect(EXTENSION_TO_TOOLCHAIN[".ts"]).toBe("typescript");
+      expect(EXTENSION_TO_TOOLCHAIN[".tsx"]).toBe("typescript");
+      expect(EXTENSION_TO_TOOLCHAIN[".mts"]).toBe("typescript");
+      expect(EXTENSION_TO_TOOLCHAIN[".cts"]).toBe("typescript");
+      expect(EXTENSION_TO_TOOLCHAIN[".py"]).toBe("python");
+      expect(EXTENSION_TO_TOOLCHAIN[".pyi"]).toBe("python");
+      expect(EXTENSION_TO_TOOLCHAIN[".cpp"]).toBe("cpp");
+      expect(EXTENSION_TO_TOOLCHAIN[".cc"]).toBe("cpp");
+      expect(EXTENSION_TO_TOOLCHAIN[".cxx"]).toBe("cpp");
+      expect(EXTENSION_TO_TOOLCHAIN[".h"]).toBe("cpp");
+      expect(EXTENSION_TO_TOOLCHAIN[".hpp"]).toBe("cpp");
+      expect(EXTENSION_TO_TOOLCHAIN[".hh"]).toBe("cpp");
+      expect(EXTENSION_TO_TOOLCHAIN[".hs"]).toBe("haskell");
+      expect(EXTENSION_TO_TOOLCHAIN[".lhs"]).toBe("haskell");
+      expect(EXTENSION_TO_TOOLCHAIN[".jl"]).toBe("julia");
+      expect(EXTENSION_TO_TOOLCHAIN[".nix"]).toBe("nix");
+      expect(EXTENSION_TO_TOOLCHAIN[".sh"]).toBe("shell");
+      expect(EXTENSION_TO_TOOLCHAIN[".bash"]).toBe("shell");
+    });
+
+    it("does not map .md, .toml, .json, .yaml, .yml, or .lock -- they route to the no-toolchain floor", () => {
+      expect(EXTENSION_TO_TOOLCHAIN[".md"]).toBeUndefined();
+      expect(EXTENSION_TO_TOOLCHAIN[".toml"]).toBeUndefined();
+      expect(EXTENSION_TO_TOOLCHAIN[".json"]).toBeUndefined();
+      expect(EXTENSION_TO_TOOLCHAIN[".yaml"]).toBeUndefined();
+      expect(EXTENSION_TO_TOOLCHAIN[".yml"]).toBeUndefined();
+      expect(EXTENSION_TO_TOOLCHAIN[".lock"]).toBeUndefined();
+    });
+  });
+
+  describe("CANDIDATE_TOOLS", () => {
+    it("is the deduplicated union of every descriptor's markerTools", () => {
+      const expected = new Set(
+        Object.values(TOOLCHAIN_DESCRIPTORS).flatMap((descriptor) => descriptor.markerTools),
+      );
+      expect(new Set(CANDIDATE_TOOLS)).toEqual(expected);
+    });
+
+    it("has no duplicate entries", () => {
+      expect(CANDIDATE_TOOLS.length).toBe(new Set(CANDIDATE_TOOLS).size);
+    });
+
+    it("includes cargo-clippy, not clippy", () => {
+      expect(CANDIDATE_TOOLS).toContain("cargo-clippy");
+      expect(CANDIDATE_TOOLS).not.toContain("clippy");
+    });
+
+    it("includes the union of tools across all 8 registered languages", () => {
+      expect(CANDIDATE_TOOLS).toEqual(
+        expect.arrayContaining([
+          "cargo",
+          "rustc",
+          "cargo-clippy",
+          "rustfmt",
+          "cargo-tarpaulin",
+          "bun",
+          "ruff",
+          "mypy",
+          "pytest",
+          "cmake",
+          "ctest",
+          "cabal",
+          "hlint",
+          "ghc",
+          "julia",
+          "nixpkgs-fmt",
+          "nix",
+          "shfmt",
+          "shellcheck",
+        ]),
+      );
     });
   });
 });
