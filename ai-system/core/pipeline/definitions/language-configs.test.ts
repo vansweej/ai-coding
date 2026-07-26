@@ -8,6 +8,7 @@ import {
   RUST_PLAN_CONFIG,
   TYPESCRIPT_CONFIG,
   createCppPlanConfig,
+  createDocsPlanConfig,
   createHaskellPlanConfig,
   createJuliaPlanConfig,
   createNixPlanConfig,
@@ -201,15 +202,31 @@ describe("language configs", () => {
     expect(PLAN_CONFIG_FACTORIES.typescript).toBe(createTsPlanConfig);
   });
 
-  it("PLAN_CONFIG_FACTORIES registers all 8 known languages", () => {
+  it("PLAN_CONFIG_FACTORIES registers all 9 known languages", () => {
     expect(PLAN_CONFIG_FACTORIES.rust).toBe(createRustPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.typescript).toBe(createTsPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.python).toBe(createPythonPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.cpp).toBe(createCppPlanConfig);
+    expect(PLAN_CONFIG_FACTORIES.docs).toBe(createDocsPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.haskell).toBe(createHaskellPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.julia).toBe(createJuliaPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.nix).toBe(createNixPlanConfig);
     expect(PLAN_CONFIG_FACTORIES.shell).toBe(createShellPlanConfig);
+  });
+
+  describe("createDocsPlanConfig", () => {
+    it("returns an empty toolchainSteps array (no compiler, linter, or coverage gate)", () => {
+      const config = createDocsPlanConfig({ mode: "default" }, "");
+      expect(config.toolchainSteps("/tmp/ws")).toEqual([]);
+    });
+
+    it("declares correct source extensions, roots, and language hint", () => {
+      const config = createDocsPlanConfig({ mode: "default" }, "");
+      expect(config.name).toBe("docs");
+      expect(config.languageHint).toBe("Markdown");
+      expect(config.sourceExtensions).toEqual([".md"]);
+      expect(config.sourceRoots).toEqual(["docs", "."]);
+    });
   });
 
   describe("createPythonPlanConfig", () => {
