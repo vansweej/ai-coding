@@ -20,7 +20,7 @@
       # and copy the hash from the "got:" line in the error output.
       bunCacheHashes = {
         "aarch64-darwin" = "sha256-IhkAEL/j+YzQsk37IVRSMis4wYWxFuWetUMKtz/+NeM=";
-        "x86_64-linux"   = "sha256-ja3oazefr+NFHJwjG/cy+dMfI8JRRK5uNTULnS8eSn8=";
+        "x86_64-linux"   = "sha256-IZNQ+EQKZCLnAqqUK8lehxNTUUmH3QutrigJE3QJJps=";
         "aarch64-linux"  = "sha256-g3TMVss4v/lZRMXhpT/0uoEFZ+91U6gD866MoM8xkSs=";
       };
     in
@@ -46,7 +46,7 @@
           # Populates the bun package cache from the npm registry.
           # Only rebuilds when bun.lock or a package.json changes.
           bunCache = pkgs.stdenv.mkDerivation {
-            name = "ai-coding-bun-cache";
+            name = "ai-coding-bun-cache-${pkgs.bun.version}";
             src = manifestsSrc;
 
             nativeBuildInputs = [
@@ -96,7 +96,7 @@
               cp -r ${bunCache} $TMPDIR/bun-cache
               chmod -R u+w $TMPDIR/bun-cache
               export BUN_INSTALL_CACHE_DIR=$TMPDIR/bun-cache
-              bun install --frozen-lockfile --no-progress
+              bun install --frozen-lockfile --no-progress --offline
             '';
 
             installPhase = ''
