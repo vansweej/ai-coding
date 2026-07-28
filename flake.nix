@@ -1,124 +1,149 @@
 {
   description = "AI Coding OS — TypeScript monorepo for AI coding workflows";
 
-  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+  nixConfig = {
+    extra-substituters = [
+      "https://nix-community.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    ];
+  };
+
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    bun2nix = {
+      url = "github:nix-community/bun2nix/2.1.2";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, bun2nix }:
     let
       systems = [
         "aarch64-darwin"
         "x86_64-linux"
         "aarch64-linux"
       ];
-      forEachSystem = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      # Per-platform hash for the bun cache FOD.
-      # Each platform downloads different native addons, producing a different output.
-      # To discover the hash for a new platform, run:
-      #   nix build .#packages.<system>.default
-      # and copy the hash from the "got:" line in the error output.
-      bunCacheHashes = {
-        "aarch64-darwin" = "sha256-IhkAEL/j+YzQsk37IVRSMis4wYWxFuWetUMKtz/+NeM=";
-        "x86_64-linux"   = "sha256-IZNQ+EQKZCLnAqqUK8lehxNTUUmH3QutrigJE3QJJps=";
-        "aarch64-linux"  = "sha256-g3TMVss4v/lZRMXhpT/0uoEFZ+91U6gD866MoM8xkSs=";
-      };
+      # Instantiate pkgs per system with the bun2nix overlay applied.
+      # This puts pkgs.bun2nix (the CLI binary + passthru functions) into scope.
+      pkgsFor = nixpkgs.lib.genAttrs systems (system:
+        import nixpkgs {
+          inherit system;
+          overlays = [ bun2nix.overlays.default ];
+        }
+      );
+
+      forEachSystem = f: nixpkgs.lib.genAttrs systems (system: f pkgsFor.${system});
     in
     {
-      packages = forEachSystem (pkgs:
-        let
-          # Minimal source for the cache-fetch FOD: only the lockfile and package
-          # manifests. Code-only changes do not invalidate the network-fetching step.
-          manifestsSrc = pkgs.runCommand "ai-coding-manifests" { } ''
-            mkdir -p $out/packages/codebase \
-                     $out/packages/embeddings \
-                     $out/packages/pipeline \
-                     $out/packages/skills
-            cp ${./package.json}                             $out/package.json
-            cp ${./bun.lock}                                 $out/bun.lock
-            cp ${./packages/codebase/package.json}           $out/packages/codebase/package.json
-            cp ${./packages/embeddings/package.json}         $out/packages/embeddings/package.json
-            cp ${./packages/pipeline/package.json}           $out/packages/pipeline/package.json
-            cp ${./packages/skills/package.json}             $out/packages/skills/package.json
+      packages = forEachSystem (pkgs: {
+        default = pkgs.stdenv.mkDerivation {
+          pname = "ai-coding";
+          version = "0.1.0";
+          src = pkgs.lib.cleanSource ./.;
+
+          nativeBuildInputs = [
+            pkgs.bun
+            pkgs.bun2nix.hook  # sets up BUN_INSTALL_CACHE_DIR + runs bun install
+          ];
+
+          # fetchBunDeps builds the per-package FOD cache from bun.nix.
+          # Hashes come from bun.lock's sha512 integrity — no per-platform table.
+          bunDeps = pkgs.bun2nix.fetchBunDeps {
+            bunNix = ./bun.nix;
+          };
+
+          # bun2nix's default isolated linker causes two known issues:
+          #   - On darwin: clonefile fails against nix-store permissions
+          #   - On both:   lancedb's prebuild resolver may fail to find the .node
+          #                addon under an isolated node_modules tree
+          # hoisted linker matches bun's own default since 1.3.2 and avoids both.
+          # copyfile backend is required on darwin because hardlink/symlink also fail
+          # against the store; on linux the default backend is fine.
+          bunInstallFlags =
+            if pkgs.stdenv.hostPlatform.isDarwin
+            then [ "--linker=hoisted" "--backend=copyfile" ]
+            else [ "--linker=hoisted" ];
+
+          # ai-coding runs TypeScript source directly via `bun run` — it is not
+          # compiled to a binary. Disable bun2nix's default compile + check phases.
+          dontUseBunBuild = true;
+          dontUseBunCheck = true;
+
+          # The hook's bunNodeModulesInstallPhase runs `bun install --ignore-scripts`.
+          # A separate bunLifecycleScriptsPhase then executes any missing lifecycle
+          # scripts — including `postinstall`, which would invoke `bun2nix -o bun.nix`
+          # inside the Nix sandbox where bun2nix is not a build input and the source
+          # tree is read-only. ai-coding needs no lifecycle scripts: LanceDB prebuilds
+          # are separate packages already listed in bun.nix, not fetched by scripts.
+          dontRunLifecycleScripts = true;
+
+          installPhase = ''
+            # Preserve the exact $out shape home-manager depends on:
+            #   $out/opencode.json          (home.file source for ~/.config/opencode/opencode.json)
+            #   $out/package.json + $out/ai-system/**/*.ts + $out/packages/**/*.ts
+            #   $out/tsconfig.json
+            #   $out/node_modules/**        (bun install output; workspace:* links resolved)
+            # opencode.nix:136 reads $out/opencode.json directly.
+            # opencode.nix:156 sets AI_CODING_MONOREPO=$out; tools run
+            #   `bun run --cwd $AI_CODING_MONOREPO <script>` against this layout.
+            mkdir -p $out
+            cp -rP . $out/
           '';
 
-          # Phase 1: fixed-output derivation — network access allowed, output hash-pinned.
-          # Populates the bun package cache from the npm registry.
-          # Only rebuilds when bun.lock or a package.json changes.
-          bunCache = pkgs.stdenv.mkDerivation {
-            name = "ai-coding-bun-cache-${pkgs.bun.version}";
-            src = manifestsSrc;
+          # Do not repath or strip binaries. The LanceDB prebuilt .node targets
+          # standard system library paths and must not be relinked against Nix store
+          # paths (same reason as the previous dontFixup = true).
+          dontFixup = true;
+        };
+      });
 
-            nativeBuildInputs = [
-              pkgs.bun
-              pkgs.cacert
-            ];
+      checks = forEachSystem (pkgs: {
+        # Regenerates bun.nix from bun.lock in a pure sandbox and diffs it against
+        # the committed ./bun.nix. Fails `nix flake check` if they differ.
+        # This catches: a dep bump with `bun update`, adding a package with
+        # `bun add`, or any bun.lock edit that wasn't followed by `bun2nix -o bun.nix`.
+        #
+        # NOTE: if a workspace package is added/removed, update the cp list below too.
+        # To fix a failure: nix develop . --command bun2nix -o bun.nix && git add bun.nix
+        bun-nix-fresh = pkgs.runCommand "check-bun-nix-fresh"
+          { nativeBuildInputs = [ pkgs.bun2nix ]; }
+          ''
+            cp ${./bun.lock} bun.lock
+            cp ${./package.json} package.json
+            mkdir -p packages/codebase packages/embeddings packages/pipeline packages/skills
+            cp ${./packages/codebase/package.json}   packages/codebase/package.json
+            cp ${./packages/embeddings/package.json} packages/embeddings/package.json
+            cp ${./packages/pipeline/package.json}   packages/pipeline/package.json
+            cp ${./packages/skills/package.json}     packages/skills/package.json
 
-            buildPhase = ''
-              export HOME=$TMPDIR/home
-              mkdir -p $HOME
-              export BUN_INSTALL_CACHE_DIR=$TMPDIR/bun-cache
-              mkdir -p $BUN_INSTALL_CACHE_DIR
-              bun install --frozen-lockfile --no-progress
-            '';
+            bun2nix -o bun-fresh.nix
 
-            installPhase = ''
-              mkdir -p $out
-              # Use -L to dereference symlinks: the bun cache contains absolute
-              # symlinks pointing into $TMPDIR. Those paths still exist during
-              # installPhase (same build), so dereferencing here produces a
-              # fully self-contained, symlink-free output in the Nix store.
-              cp -rL $TMPDIR/bun-cache/. $out/
-            '';
+            if ! diff ${./bun.nix} bun-fresh.nix > /dev/null 2>&1; then
+              echo ""
+              echo "ERROR: bun.nix is stale — it does not match the current bun.lock."
+              echo "Fix: nix develop . --command bun2nix -o bun.nix && git add bun.nix"
+              echo ""
+              diff ${./bun.nix} bun-fresh.nix || true
+              exit 1
+            fi
 
-            outputHashAlgo = "sha256";
-            outputHashMode = "recursive";
-            outputHash = bunCacheHashes.${pkgs.stdenv.hostPlatform.system};
-          };
-
-          # Phase 2: main derivation — fully pure, no network access.
-          # Copies the full source tree and installs node_modules from the cache.
-          default = pkgs.stdenv.mkDerivation {
-            pname = "ai-coding";
-            version = "0.1.0";
-            src = pkgs.lib.cleanSource ./.;
-
-            nativeBuildInputs = [ pkgs.bun ];
-
-            buildPhase = ''
-              export HOME=$TMPDIR/home
-              mkdir -p $HOME
-              # Copy the FOD cache into a writable dir before installing: newer
-              # bun versions write temp/lock files into BUN_INSTALL_CACHE_DIR,
-              # which fails with "AccessDenied" if it points directly at the
-              # read-only ${bunCache} store path. cp -r (not -rL) is sufficient
-              # since the FOD's installPhase already dereferenced symlinks.
-              cp -r ${bunCache} $TMPDIR/bun-cache
-              chmod -R u+w $TMPDIR/bun-cache
-              export BUN_INSTALL_CACHE_DIR=$TMPDIR/bun-cache
-              bun install --frozen-lockfile --no-progress --offline
-            '';
-
-            installPhase = ''
-              mkdir -p $out
-              cp -rP . $out/
-            '';
-
-            # Skip ELF patching and stripping — the LanceDB native addon is a
-            # pre-built binary targeting standard system library paths and must
-            # not be relinked against Nix store paths.
-            dontFixup = true;
-          };
-        in
-        { inherit default; });
+            touch $out
+          '';
+      });
 
       devShells = forEachSystem (pkgs: {
         default = pkgs.mkShell {
           # bun: runtime and package manager
           # ollama: local embedding model server (nomic-embed-text) for vector skill retrieval
+          # bun2nix: regenerate bun.nix after lockfile changes: bun2nix -o bun.nix
           packages = [
             pkgs.bun
             pkgs.ollama
+            pkgs.bun2nix
           ];
         };
       });
