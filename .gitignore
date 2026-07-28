@@ -14,3 +14,7 @@ tarpaulin-report.html*
 .spar/
 
 .DS_Store
+
+# Nix build output symlinks
+/result
+/result-*
