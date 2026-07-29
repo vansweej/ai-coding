@@ -253,7 +253,7 @@ ai-coding/
         feature-runner.ts            Parses plan and runs phases sequentially
         progress.ts                  ProgressEvent model + pure formatProgressEvent (--verbose feed)
     config/
-      model-profiles.ts              ModelRole, ModelProfile, copilot-default, hybrid, anthropic-sonnet, and bedrock-sonnet profiles
+      model-profiles.ts              ModelRole, ModelProfile, copilot-default, hybrid, anthropic-sonnet, bedrock-sonnet, and opencode-free profiles
       pipeline-registry.ts           Single source of truth for pipeline metadata
   opencode/
     mappings/                        OpenCode provider/model configs
@@ -526,6 +526,38 @@ SSO session credentials are time-bounded (commonly 1–8 hours); a long
 unattended `plan-cycle` run should start right after a fresh login, since
 expiry mid-run surfaces as a dispatch error (not retried by the backoff
 above — it is not transient).
+
+### opencode-free profile
+
+All roles route to a free model on **OpenCode Zen** via an OpenAI-compatible
+`chat/completions` endpoint (`https://opencode.ai/zen/v1/chat/completions`).
+As with `bedrock-sonnet`, the model key (`opencode-free`) is a stable
+*logical* token, not a real model ID: the concrete model (e.g.
+`deepseek-v4-flash-free`) is resolved from the `OPENCODE_ZEN_MODEL`
+environment variable at `load-config.ts` time and injected into the
+`OpenCodeZenDispatcher` constructor — mirroring how Bedrock's ARN is
+resolved from `AWS_BEDROCK_INFERENCE_PROFILE_ARN`. This makes swapping the
+free model when it rotates out a one-line env change, never a source edit.
+
+Authentication is a Bearer API key from the `OPENCODE_ZEN_API_KEY`
+environment variable. Unlike Anthropic's top-level `system` field, the
+system prompt is sent as a `system`-role message, and the response is read
+from `choices[0].message.content` (standard OpenAI chat shape).
+
+| Role          | Model             | Backend                                    |
+|---------------|-------------------|---------------------------------------------|
+| `planner`     | `opencode-free`   | OpenCode Zen (OpenAI-compatible endpoint)  |
+| `implementer` | `opencode-free`   | OpenCode Zen (OpenAI-compatible endpoint)  |
+| `debugger`    | `opencode-free`   | OpenCode Zen (OpenAI-compatible endpoint)  |
+| `fixer`       | `opencode-free`   | OpenCode Zen (OpenAI-compatible endpoint)  |
+| `reviewer`    | `opencode-free`   | OpenCode Zen (OpenAI-compatible endpoint)  |
+| `tester`      | `opencode-free`   | OpenCode Zen (OpenAI-compatible endpoint)  |
+| `scaffolder`  | `opencode-free`   | OpenCode Zen (OpenAI-compatible endpoint)  |
+| `explorer`    | `opencode-free`   | OpenCode Zen (OpenAI-compatible endpoint)  |
+| `default`     | `opencode-free`   | OpenCode Zen (OpenAI-compatible endpoint)  |
+
+Requires `OPENCODE_ZEN_API_KEY` and `OPENCODE_ZEN_MODEL`. Sign in at
+https://opencode.ai/auth to obtain a Zen API key.
 
 ### Profile resolution
 

@@ -10,10 +10,13 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
   `claude-sonnet-4.6`). Other built-in profiles: `local` (all roles → `gemma4:26b` via local
   Ollama; no cloud dependencies or API tokens required), `hybrid` (mixes Copilot and Ollama per
   role), `anthropic-sonnet` (all roles → `claude-sonnet-5` via the native Anthropic Messages
-  API; requires `ANTHROPIC_API_KEY`), and `bedrock-sonnet` (all roles → Claude Sonnet on Amazon
+  API; requires `ANTHROPIC_API_KEY`), `bedrock-sonnet` (all roles → Claude Sonnet on Amazon
   Bedrock via the InvokeModel API; requires `AWS_BEDROCK_INFERENCE_PROFILE_ARN` and AWS
   credentials resolved through the AWS SDK's default provider chain, e.g. `aws sso login` +
-  `AWS_PROFILE`).
+  `AWS_PROFILE`), and `opencode-free` (all roles → a free OpenCode Zen model via the
+  OpenAI-compatible chat/completions endpoint; requires `OPENCODE_ZEN_API_KEY` and
+  `OPENCODE_ZEN_MODEL`, e.g. `deepseek-v4-flash-free` -- swapping the free model when it
+  rotates out is a one-line `OPENCODE_ZEN_MODEL` change).
 - **Pipelines** -- plan-file driven workflows that implement steps, write files, verify with the
   language toolchain, retry locally, escalate fixes when needed, and commit each successful phase.
   `plan-cycle` auto-routes each touched file to a toolchain (rust, typescript, python, cpp,
