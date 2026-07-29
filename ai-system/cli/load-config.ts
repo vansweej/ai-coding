@@ -10,6 +10,7 @@ import {
 } from "../core/orchestrator/bedrock-dispatcher";
 import { CopilotDispatcher } from "../core/orchestrator/copilot-dispatcher";
 import { OllamaDispatcher } from "../core/orchestrator/ollama-dispatcher";
+import { OpenCodeZenDispatcher } from "../core/orchestrator/opencode-zen-dispatcher";
 import type { OrchestratorConfig } from "../core/orchestrator/orchestrate";
 
 /** Model IDs that indicate Copilot/cloud models (not local Ollama). */
@@ -20,6 +21,9 @@ const ANTHROPIC_MODEL_IDS = new Set(["claude-sonnet-5"]);
 
 /** Model IDs that indicate Claude-on-Amazon-Bedrock models. */
 const BEDROCK_MODEL_IDS = new Set(["bedrock-sonnet"]);
+
+/** Model IDs that indicate OpenCode Zen models (free OpenAI-compatible endpoint). */
+const OPENCODE_ZEN_MODEL_IDS = new Set(["opencode-free"]);
 
 /**
  * Check if a model ID is a Copilot/cloud model.
@@ -52,6 +56,16 @@ function isBedrockModel(modelId: string): boolean {
 }
 
 /**
+ * Check if a model ID is an OpenCode Zen model (free OpenAI-compatible endpoint).
+ *
+ * @param modelId - The model ID to check.
+ * @returns true if the model is an OpenCode Zen model, false otherwise.
+ */
+function isOpenCodeZenModel(modelId: string): boolean {
+  return OPENCODE_ZEN_MODEL_IDS.has(modelId);
+}
+
+/**
  * Build the OrchestratorConfig by wiring dispatchers for every model ID in the selected profile.
  *
  * For Ollama models: runs Ollama reachability + model-availability preflight.
@@ -60,6 +74,8 @@ function isBedrockModel(modelId: string): boolean {
  * For Bedrock models: requires AWS_BEDROCK_INFERENCE_PROFILE_ARN environment
  * variable; AWS credentials are resolved via the AWS SDK's default provider
  * chain (e.g. `aws sso login` + AWS_PROFILE), not read directly here.
+ * For OpenCode Zen models: requires OPENCODE_ZEN_API_KEY and
+ * OPENCODE_ZEN_MODEL environment variables.
  *
  * @param profileName - Profile name; defaults to DEFAULT_PROFILE_NAME.
  * @param ollamaUrl   - Override base URL for Ollama (for testing / remote).
@@ -75,11 +91,16 @@ export async function loadConfig(
 
   const modelIds = [...new Set(Object.values(profile.roles))];
   const ollamaModelIds = modelIds.filter(
-    (id) => !isCopilotModel(id) && !isAnthropicModel(id) && !isBedrockModel(id),
+    (id) =>
+      !isCopilotModel(id) &&
+      !isAnthropicModel(id) &&
+      !isBedrockModel(id) &&
+      !isOpenCodeZenModel(id),
   );
   const copilotModelIds = modelIds.filter((id) => isCopilotModel(id));
   const anthropicModelIds = modelIds.filter((id) => isAnthropicModel(id));
   const bedrockModelIds = modelIds.filter((id) => isBedrockModel(id));
+  const zenModelIds = modelIds.filter((id) => isOpenCodeZenModel(id));
 
   // Check Ollama reachability and model availability only for Ollama models
   if (ollamaModelIds.length > 0) {
@@ -150,6 +171,32 @@ export async function loadConfig(
     }
   }
 
+  // Check for the OpenCode Zen API key and model if using OpenCode Zen models.
+  let zenApiKey: string | undefined;
+  let zenModel: string | undefined;
+  if (zenModelIds.length > 0) {
+    zenApiKey = process.env.OPENCODE_ZEN_API_KEY;
+    if (!zenApiKey) {
+      return {
+        ok: false,
+        error: new Error(
+          "OpenCode Zen models require OPENCODE_ZEN_API_KEY environment variable to be set. " +
+            "Sign in at https://opencode.ai/auth and export your Zen API key before retrying.",
+        ),
+      };
+    }
+
+    zenModel = process.env.OPENCODE_ZEN_MODEL;
+    if (!zenModel) {
+      return {
+        ok: false,
+        error: new Error(
+          "OpenCode Zen models require OPENCODE_ZEN_MODEL environment variable to be set (e.g. deepseek-v4-flash-free).",
+        ),
+      };
+    }
+  }
+
   // Wire dispatchers
   const ollama = new OllamaDispatcher(ollamaUrl);
   const copilotToken = process.env.GITHUB_COPILOT_TOKEN ?? "";
@@ -166,6 +213,11 @@ export async function loadConfig(
     const region = parseRegionFromBedrockArn(bedrockArn) ?? process.env.AWS_REGION ?? "us-east-1";
     const bedrock = new BedrockDispatcher(bedrockArn, region);
     for (const id of bedrockModelIds) dispatchers[id] = bedrock;
+  }
+
+  if (zenApiKey !== undefined && zenModel !== undefined) {
+    const zen = new OpenCodeZenDispatcher(zenApiKey, zenModel);
+    for (const id of zenModelIds) dispatchers[id] = zen;
   }
 
   return {

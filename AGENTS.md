@@ -4,12 +4,14 @@
 
 TypeScript monorepo for an AI coding OS that routes requests to LLM models via
 named **model profiles** and runs multi-step agent pipelines. Uses **Bun** as
-runtime and package manager. LLM calls route through one of four providers
+runtime and package manager. LLM calls route through one of five providers
 depending on the active profile: **GitHub Copilot** (`claude-sonnet-4.6`, via
 `copilot-default`), local **Ollama** (`gemma4:26b`, via `local`), native
-**Anthropic** (`claude-sonnet-5`, via `anthropic-sonnet`), or **Claude on
+**Anthropic** (`claude-sonnet-5`, via `anthropic-sonnet`), **Claude on
 Amazon Bedrock** (via `bedrock-sonnet`, invoked through an application
-inference profile ARN using the AWS SDK credential chain). The `hybrid`
+inference profile ARN using the AWS SDK credential chain), or **OpenCode
+Zen** (via `opencode-free`, an OpenAI-compatible chat/completions endpoint
+resolved from the `OPENCODE_ZEN_MODEL` env var). The `hybrid`
 profile mixes Copilot and Ollama per role.
 
 ### Directory Structure
@@ -27,12 +29,12 @@ ai-coding/
                              CodebaseBackend, indexCodebase, CodebaseStore, ParserPool, chunkFile
   ai-system/
     config/
-      model-profiles.ts    - ModelRole, ModelProfile, copilot-default, hybrid, anthropic-sonnet, and bedrock-sonnet profiles
+      model-profiles.ts    - ModelRole, ModelProfile, copilot-default, hybrid, anthropic-sonnet, bedrock-sonnet, and opencode-free profiles
       pipeline-registry.ts - Single source of truth for pipeline metadata
     core/
       model-router/        - action → ModelRole; role + profile → model ID
       mode-router/         - source → AIMode ("editor" | "agentic")
-      orchestrator/        - Single LLM call lifecycle; CopilotDispatcher, OllamaDispatcher, AnthropicDispatcher
+      orchestrator/        - Single LLM call lifecycle; CopilotDispatcher, OllamaDispatcher, AnthropicDispatcher, OpenCodeZenDispatcher
       pipeline/
         steps/             - OrchestratorStep, SkillResolverStep, VerifiedImplementStep
         definitions/       - dev-cycle language configs (interactive), PLAN_CONFIG_FACTORIES

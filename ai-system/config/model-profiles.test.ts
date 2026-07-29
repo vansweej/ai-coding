@@ -8,6 +8,7 @@ import {
   HYBRID_PROFILE,
   LOCAL_PROFILE,
   MODEL_PROFILES,
+  OPENCODE_FREE_PROFILE,
   findProfile,
   resolveModelForRole,
 } from "./model-profiles";
@@ -169,6 +170,53 @@ describe("BEDROCK_SONNET_PROFILE", () => {
   });
 });
 
+describe("OPENCODE_FREE_PROFILE", () => {
+  it("has name opencode-free", () => {
+    expect(OPENCODE_FREE_PROFILE.name).toBe("opencode-free");
+  });
+
+  it("maps all roles to the opencode-free logical token", () => {
+    const roles = Object.values(OPENCODE_FREE_PROFILE.roles);
+    for (const model of roles) {
+      expect(model).toBe("opencode-free");
+    }
+  });
+
+  it("has all nine roles defined", () => {
+    const expectedRoles = [
+      "planner",
+      "implementer",
+      "debugger",
+      "fixer",
+      "reviewer",
+      "tester",
+      "scaffolder",
+      "explorer",
+      "default",
+    ];
+    for (const role of expectedRoles) {
+      expect(OPENCODE_FREE_PROFILE.roles).toHaveProperty(role);
+    }
+  });
+
+  it("resolves every role to opencode-free via resolveModelForRole", () => {
+    const roles: Array<keyof typeof OPENCODE_FREE_PROFILE.roles> = [
+      "planner",
+      "implementer",
+      "debugger",
+      "fixer",
+      "reviewer",
+      "tester",
+      "scaffolder",
+      "explorer",
+      "default",
+    ];
+    for (const role of roles) {
+      expect(resolveModelForRole(role, OPENCODE_FREE_PROFILE)).toBe("opencode-free");
+    }
+  });
+});
+
 describe("MODEL_PROFILES", () => {
   it("contains the local profile", () => {
     expect(MODEL_PROFILES.local).toBe(LOCAL_PROFILE);
@@ -188,6 +236,10 @@ describe("MODEL_PROFILES", () => {
 
   it("contains bedrock-sonnet", () => {
     expect(MODEL_PROFILES["bedrock-sonnet"]).toBe(BEDROCK_SONNET_PROFILE);
+  });
+
+  it("contains opencode-free", () => {
+    expect(MODEL_PROFILES["opencode-free"]).toBe(OPENCODE_FREE_PROFILE);
   });
 });
 
@@ -222,6 +274,11 @@ describe("resolveModelForRole", () => {
 describe("findProfile", () => {
   it("returns LOCAL_PROFILE for 'local'", () => {
     expect(findProfile("local")).toBe(LOCAL_PROFILE);
+  });
+
+  it("returns OPENCODE_FREE_PROFILE for 'opencode-free'", () => {
+    const profile = findProfile("opencode-free");
+    expect(profile?.name).toBe("opencode-free");
   });
 
   it("returns undefined for an unknown profile name", () => {
