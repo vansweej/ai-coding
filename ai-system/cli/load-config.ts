@@ -74,8 +74,10 @@ function isOpenCodeZenModel(modelId: string): boolean {
  * For Bedrock models: requires AWS_BEDROCK_INFERENCE_PROFILE_ARN environment
  * variable; AWS credentials are resolved via the AWS SDK's default provider
  * chain (e.g. `aws sso login` + AWS_PROFILE), not read directly here.
- * For OpenCode Zen models: requires OPENCODE_ZEN_API_KEY and
- * OPENCODE_ZEN_MODEL environment variables.
+ * For OpenCode Zen models: requires OPENCODE_ZEN_MODEL environment variable
+ * (the concrete model, e.g. `deepseek-v4-flash-free`). OPENCODE_ZEN_API_KEY is
+ * OPTIONAL -- free-tier Zen models accept unauthenticated requests; the key is
+ * only needed for paid Zen models, and Zen's own server enforces that.
  *
  * @param profileName - Profile name; defaults to DEFAULT_PROFILE_NAME.
  * @param ollamaUrl   - Override base URL for Ollama (for testing / remote).
@@ -171,20 +173,18 @@ export async function loadConfig(
     }
   }
 
-  // Check for the OpenCode Zen API key and model if using OpenCode Zen models.
+  // OpenCode Zen models need to know which concrete model to call, resolved
+  // from OPENCODE_ZEN_MODEL. The API key is OPTIONAL: OpenCode Zen's free-tier
+  // models (e.g. deepseek-v4-flash-free) accept unauthenticated requests --
+  // verified empirically (POST /v1/chat/completions with no Authorization
+  // header returns 200 for deepseek-v4-flash-free, 401 for a paid model like
+  // kimi-k3). So no key is required to use the free tier; OPENCODE_ZEN_API_KEY
+  // is read here only to pass through if present (e.g. for a paid Zen model),
+  // and the Zen server itself enforces whether the target model needs one.
   let zenApiKey: string | undefined;
   let zenModel: string | undefined;
   if (zenModelIds.length > 0) {
     zenApiKey = process.env.OPENCODE_ZEN_API_KEY;
-    if (!zenApiKey) {
-      return {
-        ok: false,
-        error: new Error(
-          "OpenCode Zen models require OPENCODE_ZEN_API_KEY environment variable to be set. " +
-            "Sign in at https://opencode.ai/auth and export your Zen API key before retrying.",
-        ),
-      };
-    }
 
     zenModel = process.env.OPENCODE_ZEN_MODEL;
     if (!zenModel) {
@@ -215,7 +215,7 @@ export async function loadConfig(
     for (const id of bedrockModelIds) dispatchers[id] = bedrock;
   }
 
-  if (zenApiKey !== undefined && zenModel !== undefined) {
+  if (zenModel !== undefined) {
     const zen = new OpenCodeZenDispatcher(zenApiKey, zenModel);
     for (const id of zenModelIds) dispatchers[id] = zen;
   }

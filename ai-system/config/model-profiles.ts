@@ -138,7 +138,10 @@ export const BEDROCK_SONNET_PROFILE: ModelProfile = {
  * environment variable in load-config.ts -- never hardcoded here. This
  * keeps the profile portable as the free model rotates out over time:
  * swapping the target model is a one-line env change, not a source edit.
- * Auth is a Bearer API key from OPENCODE_ZEN_API_KEY.
+ * Auth is an OPTIONAL Bearer API key from OPENCODE_ZEN_API_KEY -- OpenCode
+ * Zen's free-tier models (e.g. deepseek-v4-flash-free) accept unauthenticated
+ * requests, so no key is required unless you point this profile at a paid
+ * Zen model.
  */
 export const OPENCODE_FREE_PROFILE: ModelProfile = {
   name: "opencode-free",

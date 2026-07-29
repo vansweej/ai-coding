@@ -21,6 +21,11 @@ describe("OpenCodeZenDispatcher", () => {
     expect(dispatcher).toBeDefined();
   });
 
+  it("constructs with no api key (free-tier usage)", () => {
+    const dispatcher = new OpenCodeZenDispatcher(undefined, "deepseek-v4-flash-free");
+    expect(dispatcher).toBeDefined();
+  });
+
   it("dispatches a simple prompt successfully", async () => {
     global.fetch = (async () =>
       ({
@@ -261,6 +266,53 @@ describe("OpenCodeZenDispatcher", () => {
     if (capturedHeaders) {
       const headers = capturedHeaders as Record<string, string>;
       expect(headers.Authorization).toBe("Bearer test-key");
+    }
+  });
+
+  it("omits the Authorization header entirely when constructed with no API key (free-tier models require no auth)", async () => {
+    let capturedHeaders: Record<string, string> | null = null;
+
+    global.fetch = (async (_url: unknown, options: unknown) => {
+      const opts = options as RequestInit;
+      capturedHeaders = opts.headers as Record<string, string>;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "Response" } }] }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const dispatcher = new OpenCodeZenDispatcher(undefined, "deepseek-v4-flash-free");
+    await dispatcher.dispatch({ model: "opencode-free", prompt: "Say hello" });
+
+    expect(capturedHeaders).toBeDefined();
+    if (capturedHeaders) {
+      const headers = capturedHeaders as Record<string, string>;
+      expect(headers.Authorization).toBeUndefined();
+      expect(headers["Content-Type"]).toBe("application/json");
+    }
+  });
+
+  it("omits the Authorization header when constructed with an empty-string API key", async () => {
+    let capturedHeaders: Record<string, string> | null = null;
+
+    global.fetch = (async (_url: unknown, options: unknown) => {
+      const opts = options as RequestInit;
+      capturedHeaders = opts.headers as Record<string, string>;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "Response" } }] }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const dispatcher = new OpenCodeZenDispatcher("", "deepseek-v4-flash-free");
+    await dispatcher.dispatch({ model: "opencode-free", prompt: "Say hello" });
+
+    expect(capturedHeaders).toBeDefined();
+    if (capturedHeaders) {
+      const headers = capturedHeaders as Record<string, string>;
+      expect(headers.Authorization).toBeUndefined();
     }
   });
 
