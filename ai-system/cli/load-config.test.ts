@@ -7,6 +7,8 @@ describe("loadConfig", () => {
   const ORIG_COPILOT_TOKEN = process.env.GITHUB_COPILOT_TOKEN;
   const ORIG_ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
   const ORIG_BEDROCK_ARN = process.env.AWS_BEDROCK_INFERENCE_PROFILE_ARN;
+  const ORIG_ZEN_API_KEY = process.env.OPENCODE_ZEN_API_KEY;
+  const ORIG_ZEN_MODEL = process.env.OPENCODE_ZEN_MODEL;
 
   beforeEach(() => {
     // Clear Copilot token and Anthropic API key before each test
@@ -14,6 +16,8 @@ describe("loadConfig", () => {
     env.GITHUB_COPILOT_TOKEN = undefined;
     env.ANTHROPIC_API_KEY = undefined;
     env.AWS_BEDROCK_INFERENCE_PROFILE_ARN = undefined;
+    env.OPENCODE_ZEN_API_KEY = undefined;
+    env.OPENCODE_ZEN_MODEL = undefined;
   });
 
   afterEach(() => {
@@ -22,6 +26,8 @@ describe("loadConfig", () => {
     env.GITHUB_COPILOT_TOKEN = ORIG_COPILOT_TOKEN;
     env.ANTHROPIC_API_KEY = ORIG_ANTHROPIC_API_KEY;
     env.AWS_BEDROCK_INFERENCE_PROFILE_ARN = ORIG_BEDROCK_ARN;
+    env.OPENCODE_ZEN_API_KEY = ORIG_ZEN_API_KEY;
+    env.OPENCODE_ZEN_MODEL = ORIG_ZEN_MODEL;
   });
 
   it("returns a config with local profile and gemma4:26b dispatcher", async () => {
@@ -122,6 +128,32 @@ describe("loadConfig", () => {
     if (result.ok) {
       expect(result.value.profile?.name).toBe("bedrock-sonnet");
       expect(result.value.dispatchers["bedrock-sonnet"]).toBeDefined();
+    }
+  });
+
+  it("returns error for opencode-free profile when OPENCODE_ZEN_API_KEY is not set", async () => {
+    const result = await loadConfig("opencode-free");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("OPENCODE_ZEN_API_KEY");
+  });
+
+  it("returns error for opencode-free profile when OPENCODE_ZEN_MODEL is not set", async () => {
+    const env = process.env as Record<string, string>;
+    env.OPENCODE_ZEN_API_KEY = "test-zen-key";
+    const result = await loadConfig("opencode-free");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("OPENCODE_ZEN_MODEL");
+  });
+
+  it("returns a config with opencode-free profile when both Zen env vars are set", async () => {
+    const env = process.env as Record<string, string>;
+    env.OPENCODE_ZEN_API_KEY = "test-zen-key";
+    env.OPENCODE_ZEN_MODEL = "deepseek-v4-flash-free";
+    const result = await loadConfig("opencode-free");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.profile?.name).toBe("opencode-free");
+      expect(result.value.dispatchers["opencode-free"]).toBeDefined();
     }
   });
 });
