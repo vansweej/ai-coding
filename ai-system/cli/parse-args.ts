@@ -30,6 +30,9 @@ Profile names:
   bedrock-sonnet   All roles → Claude Sonnet on Amazon Bedrock (InvokeModel API); requires
                    AWS_BEDROCK_INFERENCE_PROFILE_ARN and AWS credentials (e.g. \`aws sso login\`
                    + AWS_PROFILE) resolved via the AWS SDK default provider chain
+  opencode-free    All roles → a free OpenCode Zen model via the OpenAI-compatible
+                   chat/completions endpoint; requires OPENCODE_ZEN_API_KEY and
+                   OPENCODE_ZEN_MODEL (e.g. deepseek-v4-flash-free) environment variables
 
 Flags:
   -v, --verbose    Stream per-phase/step progress (start/finish/retry) to stderr as a plan-cycle run executes
