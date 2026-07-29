@@ -129,6 +129,32 @@ export const BEDROCK_SONNET_PROFILE: ModelProfile = {
   },
 };
 
+/**
+ * All roles route to a free OpenCode Zen model via the OpenAI-compatible
+ * chat/completions endpoint.
+ *
+ * The model key here is a stable logical token, not a real model ID. The
+ * concrete model ID to invoke is resolved from the OPENCODE_ZEN_MODEL
+ * environment variable in load-config.ts -- never hardcoded here. This
+ * keeps the profile portable as the free model rotates out over time:
+ * swapping the target model is a one-line env change, not a source edit.
+ * Auth is a Bearer API key from OPENCODE_ZEN_API_KEY.
+ */
+export const OPENCODE_FREE_PROFILE: ModelProfile = {
+  name: "opencode-free",
+  roles: {
+    planner: "opencode-free",
+    implementer: "opencode-free",
+    debugger: "opencode-free",
+    fixer: "opencode-free",
+    reviewer: "opencode-free",
+    tester: "opencode-free",
+    scaffolder: "opencode-free",
+    explorer: "opencode-free",
+    default: "opencode-free",
+  },
+};
+
 /** Registry of all built-in profiles, keyed by profile name. */
 export const MODEL_PROFILES: Readonly<Record<string, ModelProfile>> = {
   [LOCAL_PROFILE.name]: LOCAL_PROFILE,
@@ -136,6 +162,7 @@ export const MODEL_PROFILES: Readonly<Record<string, ModelProfile>> = {
   [HYBRID_PROFILE.name]: HYBRID_PROFILE,
   [ANTHROPIC_SONNET_PROFILE.name]: ANTHROPIC_SONNET_PROFILE,
   [BEDROCK_SONNET_PROFILE.name]: BEDROCK_SONNET_PROFILE,
+  [OPENCODE_FREE_PROFILE.name]: OPENCODE_FREE_PROFILE,
 };
 
 /** The profile name used when no explicit profile is requested. */
