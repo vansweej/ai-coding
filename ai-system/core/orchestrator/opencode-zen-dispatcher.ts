@@ -19,14 +19,26 @@ interface OpenAIChatResponse {
  * argument resolved from an env var by the caller, so `request.model` (the
  * logical token) is intentionally ignored and `this.model` is always sent.
  * The system prompt is a message (not a top-level field), and the response
- * is read from `choices[0].message.content`. Auth is a Bearer API key.
+ * is read from `choices[0].message.content`.
+ *
+ * Auth is an optional Bearer API key. OpenCode Zen's free-tier models (e.g.
+ * `deepseek-v4-flash-free`, `big-pickle`) accept requests with no
+ * `Authorization` header at all (verified empirically: `POST
+ * /v1/chat/completions` with `model: "deepseek-v4-flash-free"` and no auth
+ * header returns HTTP 200; the same request for a paid model like `kimi-k3`
+ * returns HTTP 401 `AuthError: Missing API key`). So `apiKey` is optional here
+ * — when omitted, no `Authorization` header is sent, and the Zen server
+ * itself decides whether the target model requires one. This keeps the
+ * free-tier path usable with zero account/billing setup, while paid models
+ * still fail loudly (surfaced via the existing non-ok-response branch below)
+ * if used without a key.
  */
 export class OpenCodeZenDispatcher implements ModelDispatcher {
-  private readonly apiKey: string;
+  private readonly apiKey: string | undefined;
   private readonly model: string;
   private readonly endpoint: string;
 
-  constructor(apiKey: string, model: string, endpoint: string = ZEN_CHAT_URL) {
+  constructor(apiKey: string | undefined, model: string, endpoint: string = ZEN_CHAT_URL) {
     this.apiKey = apiKey;
     this.model = model;
     this.endpoint = endpoint;
@@ -53,13 +65,15 @@ export class OpenCodeZenDispatcher implements ModelDispatcher {
 
       if (request.temperature !== undefined) body.temperature = request.temperature;
 
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "User-Agent": "ai-coding-os/1.0.0",
+      };
+      if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
+
       const response = await fetch(this.endpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-          "User-Agent": "ai-coding-os/1.0.0",
-        },
+        headers,
         body: JSON.stringify(body),
       });
 

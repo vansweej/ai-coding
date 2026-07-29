@@ -131,18 +131,21 @@ describe("loadConfig", () => {
     }
   });
 
-  it("returns error for opencode-free profile when OPENCODE_ZEN_API_KEY is not set", async () => {
-    const result = await loadConfig("opencode-free");
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.message).toContain("OPENCODE_ZEN_API_KEY");
-  });
-
   it("returns error for opencode-free profile when OPENCODE_ZEN_MODEL is not set", async () => {
-    const env = process.env as Record<string, string>;
-    env.OPENCODE_ZEN_API_KEY = "test-zen-key";
     const result = await loadConfig("opencode-free");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("OPENCODE_ZEN_MODEL");
+  });
+
+  it("returns a config with opencode-free profile when OPENCODE_ZEN_MODEL is set and no API key is set (free-tier models require no auth)", async () => {
+    const env = process.env as Record<string, string>;
+    env.OPENCODE_ZEN_MODEL = "deepseek-v4-flash-free";
+    const result = await loadConfig("opencode-free");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.profile?.name).toBe("opencode-free");
+      expect(result.value.dispatchers["opencode-free"]).toBeDefined();
+    }
   });
 
   it("returns a config with opencode-free profile when both Zen env vars are set", async () => {
