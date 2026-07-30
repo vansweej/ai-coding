@@ -18,7 +18,11 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        # --ignore-scripts: postinstall regenerates bun.nix via `bun2nix`,
+        # a Nix-packaging concern that isn't installed (and isn't needed)
+        # on this plain Ubuntu runner. bun.nix is committed and only
+        # regenerated locally inside the Nix devShell.
+        run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Typecheck
         run: bun run typecheck
