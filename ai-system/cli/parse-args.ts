@@ -7,6 +7,14 @@ export interface CliArgs {
   readonly workspace: string;
   readonly input: string;
   readonly planPath?: string;
+  /** A cerebrum memory reference (plan id); the plan body is resolved from
+   * cerebrum's `plan:<id>` scope rather than read from disk. Mutually
+   * exclusive with `--plan`. */
+  readonly planRef?: string;
+  /** Session id, accepted for the caller's own bookkeeping (choragos owns
+   * the cerebrum session lifecycle — progress notes and cleanup). This
+   * process does not open, write to, or clear any cerebrum session. */
+  readonly session?: string;
   readonly maxRetries?: number;
   /** Profile name override. Falls back to AI_CODING_MODEL_PROFILE env var, then the default. */
   readonly profileName: string;
@@ -14,7 +22,7 @@ export interface CliArgs {
   readonly verbose: boolean;
 }
 
-const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--max-retries <n>] [--profile <name>] [-v | --verbose]
+const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --plan-ref <id> | --input "request text"] [--session <id>] [--max-retries <n>] [--profile <name>] [-v | --verbose]
 
 Pipeline names:
   plan-cycle       Unattended plan executor: parse plan → per-phase implement → verify/retry → commit; resumable
@@ -37,12 +45,16 @@ Profile names:
 
 Flags:
   -v, --verbose    Stream per-phase/step progress (start/finish/retry) to stderr as a plan-cycle run executes
+  --plan-ref <id>  Resolve the plan body from cerebrum's plan:<id> scope instead of reading a file.
+                   Requires CEREBRUM_BIN to be set. Mutually exclusive with --plan.
+  --session <id>   Session id for the caller's own bookkeeping; this process does not manage cerebrum sessions.
 
 Examples:
   bun run pipeline scaffold-rust /tmp/my-rust-project
   bun run pipeline scaffold-cpp /tmp/my-cpp-project
   bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --profile anthropic-sonnet
-  bun run pipeline plan-cycle ./my-project --input "Add tests" --max-retries 3`;
+  bun run pipeline plan-cycle ./my-project --input "Add tests" --max-retries 3
+  bun run pipeline plan-cycle ./my-project --plan-ref <memory-id> --session <id> --profile bedrock-sonnet`;
 
 function readFlag(args: readonly string[], flag: string): Result<string | undefined> {
   const index = args.indexOf(flag);
@@ -101,6 +113,18 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
   if (!planResult.ok) return planResult;
   const planPath = planResult.value;
 
+  const planRefResult = readFlag(rest, "--plan-ref");
+  if (!planRefResult.ok) return planRefResult;
+  const planRef = planRefResult.value;
+
+  if (planPath !== undefined && planRef !== undefined) {
+    return { ok: false, error: new Error("--plan and --plan-ref are mutually exclusive") };
+  }
+
+  const sessionResult = readFlag(rest, "--session");
+  if (!sessionResult.ok) return sessionResult;
+  const session = sessionResult.value;
+
   const rawMaxRetries = readFlag(rest, "--max-retries");
   if (!rawMaxRetries.ok) return rawMaxRetries;
   const maxRetries = parseMaxRetries(rawMaxRetries.value);
@@ -126,6 +150,8 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
       workspace,
       input,
       planPath,
+      planRef,
+      session,
       maxRetries: maxRetries.value,
       profileName,
       verbose,

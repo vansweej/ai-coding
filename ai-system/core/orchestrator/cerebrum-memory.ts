@@ -1,7 +1,12 @@
 import type { Result } from "@ai-coding/shared";
 
-/** Memory scope for isolation: global, user, agent, or session. */
-export type MemoryScope = "global" | `user:${string}` | `agent:${string}` | `session:${string}`;
+/** Memory scope for isolation: global, user, agent, session, or plan. */
+export type MemoryScope =
+  | "global"
+  | `user:${string}`
+  | `agent:${string}`
+  | `session:${string}`
+  | `plan:${string}`;
 
 /** Memory operation result with optional content. */
 export interface MemoryEntry {

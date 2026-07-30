@@ -283,10 +283,22 @@ bun run pipeline plan-cycle <workspace> --plan <file> [options]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--plan <file>` | Path to plan file (required, or use `--input` for a single-step plan) | — |
+| `--plan <file>` | Path to plan file (required, or use `--plan-ref`/`--input`) | — |
+| `--plan-ref <id>` | Resolve the plan body from cerebrum's `plan:<id>` scope instead of reading a file. Requires `CEREBRUM_BIN`. Mutually exclusive with `--plan`. | — |
+| `--session <id>` | Session id, accepted for the caller's own bookkeeping. This process does not open, write to, or clear any cerebrum session — the caller (e.g. choragos) owns that lifecycle. | — |
 | `--max-retries <n>` | Max local retries per phase | 3 |
 | `--profile <name>` | Model profile (`local`, `copilot-default`, `hybrid`, `anthropic-sonnet`, `bedrock-sonnet`) | `copilot-default` |
 | `-v`, `--verbose` | Stream per-phase/step progress (start/finish/retry/failure) to stderr | off |
+
+### Plans from cerebrum — `--plan-ref`
+
+Instead of a plan file on disk, `--plan-ref <id>` fetches the plan body from cerebrum: it calls the `recall_by_scope` MCP tool with `scope: "plan:<id>"` and `exact_scope: true`, then takes the result whose scope is exactly `plan:<id>` (this convention — an `exact_scope` fetch scoped to `plan:<id>` — must match how the plan was stored; choragos uses the identical rule on the Rust side, so a plan authored once and referenced by its cerebrum memory id resolves consistently regardless of which side fetches it). `CEREBRUM_BIN` (the absolute path to the cerebrum MCP server binary) must be set in the environment — when invoked by choragos, it inherits `CEREBRUM_BIN` from choragos's own process environment automatically.
+
+```bash
+CEREBRUM_BIN=/path/to/cerebrum bun run pipeline plan-cycle ./my-project --plan-ref <memory-id> --profile bedrock-sonnet
+```
+
+`--plan` and `--plan-ref` are mutually exclusive; supplying both is an environment error (exit code 3).
 
 ### Examples
 

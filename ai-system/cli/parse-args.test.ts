@@ -50,6 +50,39 @@ describe("parseArgs", () => {
     if (!result.ok) expect(result.error.message).toContain("--plan flag requires a value");
   });
 
+  it("parses --plan-ref flag", () => {
+    const result = parseArgs(["plan-cycle", "/tmp/ws", "--plan-ref", "mem-abc123"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.planRef).toBe("mem-abc123");
+  });
+
+  it("returns error when --plan-ref flag has no value", () => {
+    const result = parseArgs(["plan-cycle", "/tmp/ws", "--plan-ref"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("--plan-ref flag requires a value");
+  });
+
+  it("returns error when --plan and --plan-ref are both provided", () => {
+    const result = parseArgs([
+      "plan-cycle",
+      "/tmp/ws",
+      "--plan",
+      "plans/feature.md",
+      "--plan-ref",
+      "mem-abc123",
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("--plan and --plan-ref are mutually exclusive");
+    }
+  });
+
+  it("parses --session flag", () => {
+    const result = parseArgs(["plan-cycle", "/tmp/ws", "--session", "session-xyz"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.session).toBe("session-xyz");
+  });
+
   it("parses --max-retries flag", () => {
     const result = parseArgs(["plan-cycle", "/tmp/ws", "--max-retries", "2"]);
     expect(result.ok).toBe(true);

@@ -4,6 +4,7 @@ import { runPipeline } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 import { $ } from "bun";
 
+import { resolvePlanRef } from "../core/orchestrator/cerebrum-plan-source";
 import { DevShellPaletteError, runFeature } from "../core/pipeline/feature-runner";
 import { BaselineCheckError } from "../core/pipeline/phase-runner";
 import type { OnProgress } from "../core/pipeline/progress";
@@ -95,7 +96,7 @@ async function main(): Promise<void> {
     console.error(`Error: ${argsResult.error.message}`);
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
-  const { pipelineName, workspace, input, planPath, maxRetries, profileName, verbose } =
+  const { pipelineName, workspace, input, planPath, planRef, maxRetries, profileName, verbose } =
     argsResult.value;
 
   const configResult = await loadConfig(profileName);
@@ -117,16 +118,32 @@ async function main(): Promise<void> {
       );
       process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
     }
-    // Guard: plan-cycle requires either --plan or --input
-    if (planPath === undefined && input === "") {
-      console.error('Error: plan-cycle requires either --plan <file> or --input "..."');
+    // Guard: plan-cycle requires --plan, --plan-ref, or --input
+    if (planPath === undefined && planRef === undefined && input === "") {
+      console.error('Error: plan-cycle requires --plan <file>, --plan-ref <id>, or --input "..."');
       process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
     }
   }
 
-  if (isPlanCycle(pipelineName) && (planPath !== undefined || input !== "")) {
-    const planContent =
-      planPath !== undefined ? readFileSync(planPath, "utf8") : buildSingleStepPlan(input);
+  if (
+    isPlanCycle(pipelineName) &&
+    (planPath !== undefined || planRef !== undefined || input !== "")
+  ) {
+    let planContent: string;
+    if (planRef !== undefined) {
+      const resolved = await resolvePlanRef(planRef, {
+        cerebrumBin: process.env.CEREBRUM_BIN ?? "",
+      });
+      if (!resolved.ok) {
+        console.error(`Error: ${resolved.error.message}`);
+        process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+      }
+      planContent = resolved.value;
+    } else if (planPath !== undefined) {
+      planContent = readFileSync(planPath, "utf8");
+    } else {
+      planContent = buildSingleStepPlan(input);
+    }
 
     let onProgress: OnProgress | undefined;
     if (verbose) {
