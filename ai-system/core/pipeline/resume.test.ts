@@ -9,8 +9,11 @@ describe("resume", () => {
 
   beforeEach(async () => {
     tempDir = mkdtempSync(join("/tmp", "resume-test-"));
-    // Initialize a git repo
-    await $`git init`.cwd(tempDir).quiet();
+    // Initialize a git repo with a deterministic trunk branch name --
+    // resolveTrunkMergeBase compares the current branch name against
+    // "main"/"master" candidates, so pin it explicitly rather than relying
+    // on the host's init.defaultBranch config.
+    await $`git init -b main`.cwd(tempDir).quiet();
     await $`git config user.email "test@example.com"`.cwd(tempDir).quiet();
     await $`git config user.name "Test User"`.cwd(tempDir).quiet();
   });
@@ -95,6 +98,51 @@ describe("resume", () => {
       const state = await detectResumeState(tempDir);
       expect(state.needsResume).toBe(true);
       expect(state.lastPhaseNumber).toBe(3);
+    });
+
+    it("regression: does not adopt an unrelated Phase trailer from trunk history on a fresh feature branch", async () => {
+      // Reproduces a production bug: main has old, already-merged Phase: N
+      // commits from a completed feature. A brand-new feat/<slug> branch is
+      // forked off main with ZERO commits of its own. Because the fork
+      // point (merge-base) is bounded out of the search, detectResumeState
+      // must NOT find main's old Phase: 7 trailer and must NOT report a
+      // resume -- otherwise the fresh branch gets reset all the way back to
+      // an ancestor of its own base, failing any "HEAD descends from base"
+      // invariant a caller (e.g. choragos) enforces.
+      await $`echo "1" > file.txt`.cwd(tempDir).quiet();
+      await $`git add file.txt`.cwd(tempDir).quiet();
+      await $`git commit -m "feat: old feature phase 1\n\nPhase: 1"`.cwd(tempDir).quiet();
+
+      await $`echo "2" > file.txt`.cwd(tempDir).quiet();
+      await $`git add file.txt`.cwd(tempDir).quiet();
+      await $`git commit -m "docs: old feature phase 7\n\nPhase: 7"`.cwd(tempDir).quiet();
+
+      // Fork a fresh feature branch off main with no new commits -- exactly
+      // what choragos does when it creates feat/<slug> from base_sha.
+      await $`git checkout -b feat/new-thing`.cwd(tempDir).quiet();
+
+      const state = await detectResumeState(tempDir);
+      expect(state.needsResume).toBe(false);
+      expect(state.lastPhaseNumber).toBeUndefined();
+    });
+
+    it("still detects a legitimate resume on a feature branch's own Phase commits", async () => {
+      // The fix must not throw out real resume detection: commits made
+      // AFTER the fork point, on the feature branch itself, must still be
+      // found even though old unrelated Phase trailers exist on main too.
+      await $`echo "1" > file.txt`.cwd(tempDir).quiet();
+      await $`git add file.txt`.cwd(tempDir).quiet();
+      await $`git commit -m "docs: old feature phase 7\n\nPhase: 7"`.cwd(tempDir).quiet();
+
+      await $`git checkout -b feat/new-thing`.cwd(tempDir).quiet();
+
+      await $`echo "2" > file.txt`.cwd(tempDir).quiet();
+      await $`git add file.txt`.cwd(tempDir).quiet();
+      await $`git commit -m "feat: new thing phase 1\n\nPhase: 1"`.cwd(tempDir).quiet();
+
+      const state = await detectResumeState(tempDir);
+      expect(state.needsResume).toBe(true);
+      expect(state.lastPhaseNumber).toBe(1);
     });
   });
 
