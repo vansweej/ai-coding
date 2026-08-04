@@ -60,10 +60,38 @@ initial commit
 
 The resume detector:
 
-1. Scans git log from HEAD backwards
+1. Scans git log from HEAD backwards, bounded to commits made since the current
+   branch diverged from its trunk (see [Trunk-Bounded Search](#trunk-bounded-search)
+   below), when such a trunk can be identified
 2. Finds the first commit with a `Phase: N` trailer
 3. Extracts the phase number
 4. Returns `{ needsResume: true, lastPhaseNumber: 2 }`
+
+### Trunk-Bounded Search
+
+The Phase-trailer search is bounded to commits made **since the current branch
+diverged from its trunk**, not an unscoped "last 50 commits from HEAD". The
+detector resolves a trunk by trying, in order, `origin/main`, `origin/master`,
+`main`, then `master` — skipping any candidate that is simply the branch
+already checked out (so running plan-cycle directly on `main`/`master`, with
+no separate feature branch, preserves the original unscoped behavior). The
+first candidate that resolves gives a `git merge-base HEAD <trunk>`, and the
+search becomes `git log --format=%B -n 50 <merge-base>..HEAD` instead of
+`git log --format=%B -n 50`.
+
+Without this bound, a **brand-new** `feat/<slug>` branch forked from `main`
+with zero commits of its own would have its `git log -n 50` from HEAD walk
+straight through `main`'s own history — including any already-merged,
+unrelated feature's `Phase: N` commits — and could match a stale resume
+target from a completely different feature. This was observed in production:
+a fresh feature branch matched an old merged feature's `Phase: 7` commit
+within the last 50 commits of `main`, was reset all the way back to that
+ancestor commit, and landed behind its own `base_sha` — failing a caller's
+(e.g. choragos's) "HEAD must descend from base_sha" invariant even though the
+new branch had done nothing wrong. When no trunk can be identified (a
+standalone repo, or plan-cycle running directly on the trunk itself), the
+detector falls back to the original unscoped search, since there is no fork
+point to bound against.
 
 ### Resume State Detection
 

@@ -9,15 +9,81 @@ export interface ResumeState {
 }
 
 /**
+ * Trunk ref candidates tried, in order, to bound the Phase-trailer search to
+ * commits made since the current branch diverged from its trunk.
+ */
+const TRUNK_CANDIDATES = ["origin/main", "origin/master", "main", "master"];
+
+/**
+ * Resolve a lower-bound commit for the Phase-trailer search: the merge-base
+ * between HEAD and the first trunk candidate that (a) exists and (b) is not
+ * simply the branch we're already on.
+ *
+ * Returns undefined when no distinct trunk can be identified -- e.g. a
+ * standalone repo with no separate feature branch, or plan-cycle running
+ * directly on the trunk branch itself (main/master) rather than via a
+ * choragos-style `feat/<slug>` branch. In that case the caller falls back to
+ * the previous unscoped search, since there is no fork point to bound
+ * against and any Phase trailer found is legitimately part of the current
+ * workspace's own history.
+ */
+async function resolveTrunkMergeBase(workspace: string): Promise<string | undefined> {
+  let currentBranch: string;
+  try {
+    currentBranch = (await $`git rev-parse --abbrev-ref HEAD`.cwd(workspace).quiet().text()).trim();
+  } catch {
+    return undefined;
+  }
+
+  for (const trunk of TRUNK_CANDIDATES) {
+    const trunkShortName = trunk.replace(/^origin\//, "");
+    if (trunkShortName === currentBranch) continue; // already on the trunk itself
+
+    try {
+      const mergeBase = (
+        await $`git merge-base HEAD ${trunk}`.cwd(workspace).quiet().text()
+      ).trim();
+      if (mergeBase) return mergeBase;
+    } catch {
+      // Candidate ref doesn't exist locally (no such branch/remote) -- try the next one.
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Find the last commit with a "Phase: N" trailer.
+ *
+ * The search is bounded to commits made since the current branch diverged
+ * from its trunk (see `resolveTrunkMergeBase`), when such a trunk can be
+ * identified. Without this bound, a freshly created feature branch's `git
+ * log -n 50` from HEAD walks straight through the trunk's own history --
+ * including any already-merged, unrelated feature's `Phase: N` commits --
+ * and can incorrectly report a stale resume target from a completely
+ * different feature. This was observed in production: a brand-new
+ * `feat/<slug>` branch, freshly forked from `main` with zero commits of its
+ * own, matched an old merged feature's `Phase: 7` commit within the last 50
+ * commits of `main`'s history and was reset all the way back to that
+ * ancestor commit -- landing behind `base_sha` and failing choragos's "HEAD
+ * must descend from base_sha" invariant, even though the new branch had
+ * done nothing wrong.
+ *
+ * When no trunk can be identified (e.g. a standalone repo, or plan-cycle
+ * running directly on the trunk branch itself with no separate feature
+ * branch), falls back to the previous unscoped `-n 50` search from HEAD --
+ * there is no fork point to bound against, matching historical behavior for
+ * that case.
  *
  * @param workspace - The workspace directory
  * @returns The phase number from the last Phase: N commit, or undefined if not found
  */
 async function findLastPhaseNumber(workspace: string): Promise<number | undefined> {
   try {
-    // Get the last 50 commits with full message (including trailers)
-    const log = await $`git log --format=%B -n 50`.cwd(workspace).text();
+    const mergeBase = await resolveTrunkMergeBase(workspace);
+    const log = mergeBase
+      ? await $`git log --format=%B -n 50 ${mergeBase}..HEAD`.cwd(workspace).text()
+      : await $`git log --format=%B -n 50`.cwd(workspace).text();
 
     // Split by double newline to separate commits
     const commits = log.split(
