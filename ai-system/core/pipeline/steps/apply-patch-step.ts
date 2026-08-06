@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import type { PatchEdit } from "./parse-patch";
@@ -25,7 +25,13 @@ export interface PatchApplyError {
  * Apply a series of patch edits to the filesystem.
  *
  * For each edit:
- *   - If `isCreate` is true: write the replacement text to a new file. If the
+ *   - If `isMove` is true: relocate the file or directory at `filePath` to
+ *     `toPath` via `fs.rename`. Both endpoints are validated against the
+ *     workspace root. If the source is already gone and the destination
+ *     already exists, this is a no-op success (idempotent retry); if the
+ *     destination already exists while the source still exists, this fails
+ *     with `exists`; if neither exists, this fails with `not-found`.
+ *   - Else if `isCreate` is true: write the replacement text to a new file. If the
  *     file already exists with byte-identical content, this is a no-op
  *     success (idempotent retry); if it exists with different content, this
  *     fails.
@@ -70,7 +76,67 @@ export async function applyPatch(
     const absolutePath = pathValidation.value;
 
     try {
-      if (edit.isCreate) {
+      if (edit.isMove) {
+        // Move/rename mode: relocate a file or directory via fs.rename.
+        // The destination path must ALSO be validated against the workspace
+        // root -- the guard above only covers `edit.filePath` (the source).
+        const toPath = edit.toPath ?? "";
+        const destValidation = assertInsideWorkspace(root, toPath);
+        if (!destValidation.ok) {
+          return {
+            ok: false,
+            error: {
+              filePath: toPath,
+              reason: "io",
+              message: destValidation.error.message,
+            },
+          };
+        }
+        const destAbsolute = destValidation.value;
+
+        const sourceExists = existsSync(absolutePath);
+        const destExists = existsSync(destAbsolute);
+
+        // Idempotent-under-retry: a multi-step phase applies each step's
+        // patch as it succeeds; if a LATER step in the same round fails, the
+        // retry re-issues ALL steps (including this already-applied move) as
+        // one combined edit. If the source is already gone and the
+        // destination is already there, treat the move as already satisfied
+        // rather than failing with "not-found" (mirrors create-mode's
+        // byte-identical no-op above).
+        if (!sourceExists && destExists) {
+          applied.push({ filePath: toPath, created: false });
+          continue;
+        }
+
+        if (!sourceExists && !destExists) {
+          return {
+            ok: false,
+            error: {
+              filePath: edit.filePath,
+              reason: "not-found",
+              message: `File "${edit.filePath}" not found`,
+            },
+          };
+        }
+
+        if (destExists) {
+          return {
+            ok: false,
+            error: {
+              filePath: toPath,
+              reason: "exists",
+              message: `Move destination "${toPath}" already exists`,
+            },
+          };
+        }
+
+        // Create the destination's parent directories if needed, then
+        // rename. fs.rename works for both files and directories.
+        mkdirSync(dirname(destAbsolute), { recursive: true });
+        renameSync(absolutePath, destAbsolute);
+        applied.push({ filePath: toPath, created: false });
+      } else if (edit.isCreate) {
         // File creation mode: fail if the file already exists with DIFFERENT
         // content. If the content is byte-identical, treat this as a no-op
         // success instead of an error -- this makes create-mode idempotent

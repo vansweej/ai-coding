@@ -9,6 +9,7 @@ import {
   RUST_CONFIG,
   TOOLCHAIN_DESCRIPTORS,
   TYPESCRIPT_CONFIG,
+  buildPatchSystem,
   createCppPlanConfig,
   createHaskellPlanConfig,
   createJuliaPlanConfig,
@@ -20,6 +21,18 @@ import {
 } from "./language-configs";
 
 describe("language configs", () => {
+  it("buildPatchSystem includes the MOVE directive alongside SEARCH/REPLACE", () => {
+    const system = buildPatchSystem("Rust", "Some idioms.");
+    expect(system).toContain("<<<<<<< SEARCH");
+    expect(system).toContain(">>>>>>> REPLACE");
+    expect(system).toContain("<<<<<<< MOVE");
+    expect(system).toContain(">>>>>>> MOVE");
+    expect(system).toContain("move or rename a file or directory");
+    // The MOVE block appears after the SEARCH/REPLACE block and before the idioms.
+    expect(system.indexOf(">>>>>>> REPLACE")).toBeLessThan(system.indexOf("<<<<<<< MOVE"));
+    expect(system.indexOf(">>>>>>> MOVE")).toBeLessThan(system.indexOf("Some idioms."));
+  });
+
   it("registers TypeScript, Rust, and C++ configs", () => {
     expect(DEV_CYCLE_LANGUAGE_CONFIGS.typescript).toBe(TYPESCRIPT_CONFIG);
     expect(DEV_CYCLE_LANGUAGE_CONFIGS.rust).toBe(RUST_CONFIG);

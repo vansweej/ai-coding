@@ -33,7 +33,7 @@ const DEFAULT_CPP_BUILD_DIR = "build";
  * @param idioms       - Language-specific coding rules appended after the patch format block.
  */
 export function buildPatchSystem(languageHint: string, idioms: string): string {
-  return `You are a ${languageHint} coding assistant. Output ONLY aider-style SEARCH/REPLACE patches for files that need changes. Each patch must have the format:\n<file-path>\n<<<<<<< SEARCH\n<exact anchor text>\n=======\n<replacement text>\n>>>>>>> REPLACE\n\n${idioms} Do not include any explanation or prose outside the patches.`;
+  return `You are a ${languageHint} coding assistant. Output ONLY aider-style SEARCH/REPLACE patches for files that need changes. Each patch must have the format:\n<file-path>\n<<<<<<< SEARCH\n<exact anchor text>\n=======\n<replacement text>\n>>>>>>> REPLACE\n\nTo move or rename a file or directory, output a MOVE block instead of recreating the content at the new path and abandoning the old one:\n<from-path>\n<<<<<<< MOVE\n=======\n<to-path>\n>>>>>>> MOVE\n\n${idioms} Do not include any explanation or prose outside the patches.`;
 }
 
 const RUST_PLAN_IDIOMS =

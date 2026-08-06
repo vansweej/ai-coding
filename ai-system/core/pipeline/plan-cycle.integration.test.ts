@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -103,6 +103,33 @@ mod tests {
     }
 }
 >>>>>>> REPLACE`;
+
+// A single-phase plan whose only step relocates a pre-seeded file and
+// directory via a MOVE directive.
+const MOVE_PLAN = `# Feature: Relocate legacy module
+
+## Phase 1: Move legacy files into the new layout
+
+Commit message: refactor: relocate legacy module into new layout
+
+### Step 1: Move the legacy file and directory
+
+Move legacy/mod.rs to crates/parlang/legacy/mod.rs, and move legacy/support
+to crates/parlang/legacy/support.
+`;
+
+// Aider-style MOVE-directive response relocating a file and a directory.
+const MOVE_RESPONSE = `legacy/mod.rs
+<<<<<<< MOVE
+=======
+crates/parlang/legacy/mod.rs
+>>>>>>> MOVE
+
+legacy/support
+<<<<<<< MOVE
+=======
+crates/parlang/legacy/support
+>>>>>>> MOVE`;
 
 let workspace: string;
 
@@ -413,5 +440,52 @@ pub mod utils {
 
     // Should fail on phase 2
     expect(result.ok).toBe(false);
+  });
+
+  it("relocates a file and a directory via a MOVE directive and records a rename commit", async () => {
+    // Seed the legacy paths that the plan will relocate.
+    const legacyFile = join(workspace, "legacy", "mod.rs");
+    mkdirSync(join(workspace, "legacy"), { recursive: true });
+    writeFileSync(legacyFile, "// legacy module\n", "utf8");
+
+    const legacyDir = join(workspace, "legacy", "support");
+    mkdirSync(legacyDir, { recursive: true });
+    writeFileSync(join(legacyDir, "helper.rs"), "// legacy helper\n", "utf8");
+
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -m "seed legacy files"`.cwd(workspace).quiet();
+
+    const dispatcher = createMockDispatcher([MOVE_RESPONSE]);
+    const config = createMockConfig(dispatcher);
+
+    const result = await runFeature(MOVE_PLAN, {
+      config,
+      workspace,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.phases).toHaveLength(1);
+    expect(result.value.phases[0].commitMessage).toBe(
+      "refactor: relocate legacy module into new layout",
+    );
+
+    // Old paths are gone; new paths exist with identical content.
+    expect(existsSync(join(workspace, "legacy", "mod.rs"))).toBe(false);
+    expect(existsSync(join(workspace, "legacy", "support"))).toBe(false);
+    expect(existsSync(join(workspace, "crates/parlang/legacy/mod.rs"))).toBe(true);
+    expect(existsSync(join(workspace, "crates/parlang/legacy/support/helper.rs"))).toBe(true);
+
+    // The resulting commit records renames (status "R...") for both paths,
+    // with the expected Phase trailer.
+    const logOutput = await $`git log --oneline --format=%B`.cwd(workspace).text();
+    expect(logOutput).toContain("Phase: 1");
+
+    const nameStatus = await $`git show --name-status --format= HEAD`.cwd(workspace).text();
+    const renameLines = nameStatus
+      .split("\n")
+      .filter((line) => line.trim().length > 0 && line.startsWith("R"));
+    expect(renameLines.length).toBeGreaterThanOrEqual(1);
   });
 });

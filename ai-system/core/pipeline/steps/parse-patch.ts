@@ -13,12 +13,63 @@
  *
  * When the SEARCH body is empty (anchor is blank), `isCreate` is set to true,
  * indicating the file should be created with the replacement text as its content.
+ *
+ * A MOVE block relocates a file or directory instead of editing content. It is
+ * isomorphic to the SEARCH/REPLACE shape (same header + separator + terminator
+ * rhythm) so the model reuses grammar it already knows:
+ * ```
+ * <from-path>
+ * <<<<<<< MOVE
+ * =======
+ * <to-path>
+ * >>>>>>> MOVE
+ * ```
+ * For a move edit, `filePath` is the source path, `toPath` is the destination,
+ * `isMove` is `true`, and `search`/`replace` are both empty strings (unused).
  */
 export interface PatchEdit {
   readonly filePath: string;
   readonly search: string;
   readonly replace: string;
   readonly isCreate: boolean;
+  readonly isMove: boolean;
+  readonly toPath?: string;
+}
+
+/**
+ * Strip a single enclosing code fence from raw model output before parsing.
+ *
+ * Some models wrap their aider-style patch output in a Markdown code fence
+ * (e.g. ```bash ... ```), which breaks `parsePatch` because the fence's
+ * opening line is misread as a file-path header. This function removes
+ * exactly one OUTER fence -- an opening line that is ``` optionally followed
+ * by a language tag, and a matching closing ``` line at the end -- and
+ * returns the content between them unchanged. If the input is not fenced
+ * this way, it is returned unchanged. Inner fences (e.g. inside a REPLACE
+ * body) are never touched; only the enclosing wrapper is stripped.
+ *
+ * @param raw - Raw model output, possibly wrapped in a single code fence.
+ * @returns The de-fenced content, or the original input if it was not fenced.
+ */
+export function stripEnclosingFence(raw: string): string {
+  const trimmed = raw.trim();
+  const lines = trimmed.split("\n");
+
+  if (lines.length < 2) {
+    return raw;
+  }
+
+  const firstLine = lines[0] ?? "";
+  const lastLine = lines[lines.length - 1] ?? "";
+
+  const openerMatches = /^```[a-zA-Z0-9_-]*$/.test(firstLine.trim());
+  const closerMatches = lastLine.trim() === "```";
+
+  if (!openerMatches || !closerMatches) {
+    return raw;
+  }
+
+  return lines.slice(1, -1).join("\n");
 }
 
 /**
@@ -74,7 +125,9 @@ export function parsePatch(
     if (
       line.startsWith("<<<<<<< SEARCH") ||
       line.startsWith("=======") ||
-      line.startsWith(">>>>>>> REPLACE")
+      line.startsWith(">>>>>>> REPLACE") ||
+      line.startsWith("<<<<<<< MOVE") ||
+      line.startsWith(">>>>>>> MOVE")
     ) {
       return {
         ok: false,
@@ -85,11 +138,11 @@ export function parsePatch(
       };
     }
 
-    // This line is the file path
+    // This line is the file path (or, for a MOVE block, the source path)
     const filePath = line.trim();
     i++;
 
-    // Expect <<<<<<< SEARCH marker
+    // Expect either <<<<<<< SEARCH or <<<<<<< MOVE
     if (i >= lines.length) {
       return {
         ok: false,
@@ -100,13 +153,88 @@ export function parsePatch(
       };
     }
 
-    const searchMarker = lines[i] ?? "";
-    if (searchMarker !== "<<<<<<< SEARCH") {
+    const blockMarker = lines[i] ?? "";
+
+    if (blockMarker === "<<<<<<< MOVE") {
+      i++;
+
+      // The body between <<<<<<< MOVE and ======= must be empty for a move.
+      const moveSearchLines: string[] = [];
+      while (i < lines.length) {
+        const currentLine = lines[i] ?? "";
+        if (currentLine === "=======") {
+          break;
+        }
+        moveSearchLines.push(currentLine);
+        i++;
+      }
+
+      if (i >= lines.length) {
+        return {
+          ok: false,
+          error: {
+            message: `File "${filePath}" has unterminated MOVE block (missing "=======" separator)`,
+            fragment: filePath,
+          },
+        };
+      }
+
+      // Skip the separator line
+      i++;
+
+      // Collect the to-path lines until the MOVE terminator
+      const toPathLines: string[] = [];
+      while (i < lines.length) {
+        const currentLine = lines[i] ?? "";
+        if (currentLine === ">>>>>>> MOVE") {
+          break;
+        }
+        toPathLines.push(currentLine);
+        i++;
+      }
+
+      if (i >= lines.length) {
+        return {
+          ok: false,
+          error: {
+            message: `File "${filePath}" has unterminated MOVE block (missing ">>>>>>> MOVE" marker)`,
+            fragment: filePath,
+          },
+        };
+      }
+
+      // Skip the end marker
+      i++;
+
+      const toPath = toPathLines.join("\n").trim();
+      if (toPath === "") {
+        return {
+          ok: false,
+          error: {
+            message: `File "${filePath}" has an empty MOVE destination path`,
+            fragment: filePath,
+          },
+        };
+      }
+
+      edits.push({
+        filePath,
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+        toPath,
+      });
+
+      continue;
+    }
+
+    if (blockMarker !== "<<<<<<< SEARCH") {
       return {
         ok: false,
         error: {
           message: `File "${filePath}" is missing "<<<<<<< SEARCH" marker`,
-          fragment: searchMarker,
+          fragment: blockMarker,
         },
       };
     }
@@ -170,6 +298,7 @@ export function parsePatch(
       search,
       replace,
       isCreate,
+      isMove: false,
     });
   }
 

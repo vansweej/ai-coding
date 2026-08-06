@@ -16,7 +16,7 @@ import {
   runUnionVerification,
 } from "../routing/route";
 import { applyPatch } from "./apply-patch-step";
-import { parsePatch } from "./parse-patch";
+import { parsePatch, stripEnclosingFence } from "./parse-patch";
 
 const IMPLEMENT_RESULT_NAME = "verified-implement-output";
 
@@ -316,8 +316,11 @@ async function writeImplementation(
   workspace: string,
   implementation: string,
 ): Promise<Result<void>> {
-  // Parse the implementation as aider-style patches
-  const parseResult = parsePatch(implementation);
+  // Parse the implementation as aider-style patches. Tolerate a single
+  // enclosing code fence (e.g. ```bash ... ```) that some models wrap their
+  // output in -- stripping it here keeps parsePatch's grammar strict while
+  // absorbing this common weak-model failure mode before it reaches parsing.
+  const parseResult = parsePatch(stripEnclosingFence(implementation));
   if (!parseResult.ok) {
     return {
       ok: false,

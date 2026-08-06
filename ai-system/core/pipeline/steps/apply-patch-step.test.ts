@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { applyPatch } from "./apply-patch-step";
 import type { PatchEdit } from "./parse-patch";
@@ -27,6 +27,7 @@ describe("applyPatch", () => {
         search: "const x = 1;",
         replace: "const x = 2;",
         isCreate: false,
+        isMove: false,
       },
     ];
 
@@ -50,6 +51,7 @@ describe("applyPatch", () => {
         search: "",
         replace: "const newCode = 'hello';",
         isCreate: true,
+        isMove: false,
       },
     ];
 
@@ -74,6 +76,7 @@ describe("applyPatch", () => {
         search: "",
         replace: "export const value = 42;",
         isCreate: true,
+        isMove: false,
       },
     ];
 
@@ -97,6 +100,7 @@ describe("applyPatch", () => {
         search: "",
         replace: "new content",
         isCreate: true,
+        isMove: false,
       },
     ];
 
@@ -121,6 +125,7 @@ describe("applyPatch", () => {
         search: "",
         replace: "export const value = 1;",
         isCreate: true,
+        isMove: false,
       },
     ];
 
@@ -147,6 +152,7 @@ describe("applyPatch", () => {
         search: "const y = 2;",
         replace: "const y = 3;",
         isCreate: false,
+        isMove: false,
       },
     ];
 
@@ -169,6 +175,7 @@ describe("applyPatch", () => {
         search: "const x = 1;",
         replace: "const x = 2;",
         isCreate: false,
+        isMove: false,
       },
     ];
 
@@ -187,6 +194,7 @@ describe("applyPatch", () => {
         search: "",
         replace: "hacked",
         isCreate: true,
+        isMove: false,
       },
     ];
 
@@ -205,6 +213,7 @@ describe("applyPatch", () => {
         search: "",
         replace: "hacked",
         isCreate: true,
+        isMove: false,
       },
     ];
 
@@ -227,6 +236,7 @@ describe("applyPatch", () => {
         search: "function old() {\n  return 1;\n}",
         replace: "function new() {\n  return 2;\n}",
         isCreate: false,
+        isMove: false,
       },
     ];
 
@@ -251,12 +261,14 @@ describe("applyPatch", () => {
         search: "old a",
         replace: "new a",
         isCreate: false,
+        isMove: false,
       },
       {
         filePath: "b.ts",
         search: "old b",
         replace: "new b",
         isCreate: false,
+        isMove: false,
       },
     ];
 
@@ -280,12 +292,14 @@ describe("applyPatch", () => {
         search: "old a",
         replace: "new a",
         isCreate: false,
+        isMove: false,
       },
       {
         filePath: "nonexistent.ts",
         search: "old",
         replace: "new",
         isCreate: false,
+        isMove: false,
       },
     ];
 
@@ -311,6 +325,7 @@ describe("applyPatch", () => {
         search: "const pattern = /[a-z]+/;",
         replace: "const pattern = /[0-9]+/;",
         isCreate: false,
+        isMove: false,
       },
     ];
 
@@ -320,5 +335,161 @@ describe("applyPatch", () => {
 
     const content = readFileSync(filePath, "utf8");
     expect(content).toBe("const pattern = /[0-9]+/;");
+  });
+
+  it("moves a file", async () => {
+    const oldPath = join(tempDir, "old-name.ts");
+    writeFileSync(oldPath, "export const value = 1;", "utf8");
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "old-name.ts",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+        toPath: "new-name.ts",
+      },
+    ];
+
+    const result = await applyPatch(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected ok result");
+
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0]?.filePath).toBe("new-name.ts");
+
+    expect(existsSync(oldPath)).toBe(false);
+    const newPath = join(tempDir, "new-name.ts");
+    expect(existsSync(newPath)).toBe(true);
+    expect(readFileSync(newPath, "utf8")).toBe("export const value = 1;");
+  });
+
+  it("moves a directory with nested files", async () => {
+    const oldDir = join(tempDir, "src");
+    mkdirSync(join(oldDir, "nested"), { recursive: true });
+    writeFileSync(join(oldDir, "lib.ts"), "export const a = 1;", "utf8");
+    writeFileSync(join(oldDir, "nested", "deep.ts"), "export const b = 2;", "utf8");
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "src",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+        toPath: "crates/parlang/src",
+      },
+    ];
+
+    const result = await applyPatch(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected ok result");
+
+    expect(existsSync(oldDir)).toBe(false);
+    const newDir = join(tempDir, "crates/parlang/src");
+    expect(readFileSync(join(newDir, "lib.ts"), "utf8")).toBe("export const a = 1;");
+    expect(readFileSync(join(newDir, "nested", "deep.ts"), "utf8")).toBe("export const b = 2;");
+  });
+
+  it("treats a re-issued move as a no-op success when already applied", async () => {
+    // Simulates a retry re-issuing an already-applied move step (see the
+    // create-mode idempotency test above for the same multi-step-retry
+    // rationale): a prior attempt already relocated the file before a later
+    // step failed, and the retry re-sends all steps combined.
+    const newPath = join(tempDir, "new-name.ts");
+    writeFileSync(newPath, "export const value = 1;", "utf8");
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "old-name.ts",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+        toPath: "new-name.ts",
+      },
+    ];
+
+    const result = await applyPatch(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected ok result");
+
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0]?.filePath).toBe("new-name.ts");
+    expect(readFileSync(newPath, "utf8")).toBe("export const value = 1;");
+  });
+
+  it("fails a move when the destination already exists and the source is still present", async () => {
+    const oldPath = join(tempDir, "old-name.ts");
+    const newPath = join(tempDir, "new-name.ts");
+    writeFileSync(oldPath, "old content", "utf8");
+    writeFileSync(newPath, "different content", "utf8");
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "old-name.ts",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+        toPath: "new-name.ts",
+      },
+    ];
+
+    const result = await applyPatch(tempDir, edits);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected error result");
+
+    expect(result.error.reason).toBe("exists");
+    expect(result.error.message).toContain("already exists");
+    // Neither file was touched.
+    expect(readFileSync(oldPath, "utf8")).toBe("old content");
+    expect(readFileSync(newPath, "utf8")).toBe("different content");
+  });
+
+  it("fails a move when neither the source nor the destination exists", async () => {
+    const edits: PatchEdit[] = [
+      {
+        filePath: "missing-source.ts",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+        toPath: "missing-dest.ts",
+      },
+    ];
+
+    const result = await applyPatch(tempDir, edits);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected error result");
+
+    expect(result.error.reason).toBe("not-found");
+    expect(result.error.filePath).toBe("missing-source.ts");
+  });
+
+  it("rejects a move whose destination escapes the workspace root via ../", async () => {
+    const oldPath = join(tempDir, "old-name.ts");
+    writeFileSync(oldPath, "content", "utf8");
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "old-name.ts",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+        toPath: "../../../etc/passwd",
+      },
+    ];
+
+    const result = await applyPatch(tempDir, edits);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected error result");
+
+    expect(result.error.reason).toBe("io");
+    expect(result.error.message).toContain("escapes the workspace root");
+    // Source is untouched since the destination guard fails first.
+    expect(existsSync(oldPath)).toBe(true);
   });
 });
