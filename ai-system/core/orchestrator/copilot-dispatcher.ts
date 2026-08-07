@@ -58,12 +58,25 @@ export class CopilotDispatcher implements ModelDispatcher {
       if (request.temperature !== undefined) body.temperature = request.temperature;
       if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
 
+      // Direct-token passthrough: the durable GITHUB_COPILOT_TOKEN is sent
+      // straight to the chat endpoint as the Bearer credential. There is NO
+      // copilot_internal/v2/token exchange here — that exchange was observed
+      // to be WAF-blocked ("scraping" 403) for opencode-minted OAuth tokens
+      // as of the last verification, whereas the durable token authenticates
+      // directly (HTTP 200). If this ever changes, re-verify before assuming
+      // otherwise. The X-GitHub-Api-Version header is modeled on opencode's
+      // own observed behaviour at the time of writing, while keeping
+      // ai-coding's own honest User-Agent (no Copilot-Integration-Id or
+      // Editor-Version — those belong to the VS Code profile, not opencode's).
+      // Copilot-Vision-Request is intentionally omitted: DispatchRequest has no
+      // image field, so every request here is text-only.
       const response = await fetch(this.endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.token}`,
           "User-Agent": "ai-coding-os/1.0.0",
+          "X-GitHub-Api-Version": "2026-06-01",
           "Openai-Intent": "conversation-edits",
           "x-initiator": "user",
         },

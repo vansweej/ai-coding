@@ -290,7 +290,9 @@ import type { OrchestratorConfig } from
 const config: OrchestratorConfig = {
   profile: COPILOT_DEFAULT_PROFILE,
   dispatchers: {
-    "claude-sonnet-4.6": new CopilotDispatcher(process.env.COPILOT_TOKEN ?? ""),
+    // GITHUB_COPILOT_TOKEN is the durable GitHub OAuth access token; it is sent
+    // directly as the chat Bearer credential (no exchange).
+    "claude-sonnet-4.6": new CopilotDispatcher(process.env.GITHUB_COPILOT_TOKEN ?? ""),
   },
 };
 ```

@@ -35,7 +35,7 @@ ai-coding/
     core/
       model-router/        - action → ModelRole; role + profile → model ID
       mode-router/         - source → AIMode ("editor" | "agentic")
-      orchestrator/        - Single LLM call lifecycle; CopilotDispatcher, OllamaDispatcher, AnthropicDispatcher, OpenCodeZenDispatcher
+      orchestrator/        - Single LLM call lifecycle; CopilotDispatcher (sends the durable GITHUB_COPILOT_TOKEN OAuth token DIRECTLY as the chat Bearer credential — NO copilot_internal/v2/token exchange, which is WAF-blocked for opencode-minted tokens — with an honest User-Agent and X-GitHub-Api-Version: 2026-06-01 mirroring opencode), OllamaDispatcher, AnthropicDispatcher, OpenCodeZenDispatcher
       pipeline/
         steps/             - OrchestratorStep, SkillResolverStep, VerifiedImplementStep
         definitions/       - dev-cycle language configs (interactive), PLAN_CONFIG_FACTORIES

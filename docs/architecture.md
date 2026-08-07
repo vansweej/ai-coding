@@ -573,7 +573,17 @@ built by `load-config.ts` is provider-agnostic, binding each model-ID string to
 its dispatcher (`claude-sonnet-5` → Anthropic native, `copilot/claude-sonnet-5`
 → Copilot-served Sonnet 5 (namespaced to stay distinct from the Anthropic-native
 bare id; the CopilotDispatcher strips the `copilot/` prefix on the wire),
-`claude-sonnet-4.6` → Copilot, `gemma4:26b` → Ollama). There is no separate
+`claude-sonnet-4.6` → Copilot, `gemma4:26b` → Ollama). The CopilotDispatcher
+sends the durable GitHub OAuth token from `GITHUB_COPILOT_TOKEN` DIRECTLY to
+`https://api.githubcopilot.com/chat/completions` as the `Authorization: Bearer`
+credential — there is NO `copilot_internal/v2/token` exchange, because that
+exchange was observed to be blocked by GitHub's anti-scraping WAF (403) for
+opencode-minted OAuth tokens as of the last verification, whereas the durable
+token authenticates directly (HTTP 200); re-verify before assuming this still
+holds. Requests carry ai-coding's own honest `User-Agent`
+(`ai-coding-os/1.0.0`) plus `X-GitHub-Api-Version: 2026-06-01`, modeled on
+opencode's own observed behaviour at the time of writing; `Copilot-Integration-Id`
+and `Editor-Version` are deliberately NOT sent (those belong to the VS Code editor profile). There is no separate
 model-override flag; adding a new
 provider mix is pure data — define another `ModelProfile` and register it.
 

@@ -209,11 +209,43 @@ describe("CopilotDispatcher", () => {
     if (capturedHeaders) {
       expect((capturedHeaders as Record<string, unknown>)["Content-Type"]).toBe("application/json");
       expect((capturedHeaders as Record<string, unknown>)["User-Agent"]).toBe("ai-coding-os/1.0.0");
+      expect((capturedHeaders as Record<string, unknown>)["X-GitHub-Api-Version"]).toBe(
+        "2026-06-01",
+      );
       expect((capturedHeaders as Record<string, unknown>)["Openai-Intent"]).toBe(
         "conversation-edits",
       );
       expect((capturedHeaders as Record<string, unknown>)["x-initiator"]).toBe("user");
     }
+  });
+
+  it("sends the X-GitHub-Api-Version header on chat requests", async () => {
+    let capturedHeaders: Record<string, string> | null = null;
+
+    global.fetch = (async (_url: unknown, options: unknown) => {
+      const opts = options as RequestInit;
+      capturedHeaders = opts.headers as Record<string, string>;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: "Response" } }],
+        }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const dispatcher = new CopilotDispatcher("test-token");
+    const request: DispatchRequest = {
+      model: "claude-sonnet-4.6",
+      prompt: "Say hello",
+    };
+
+    await dispatcher.dispatch(request);
+
+    expect(capturedHeaders).not.toBeNull();
+    expect((capturedHeaders as Record<string, unknown> | null)?.["X-GitHub-Api-Version"]).toBe(
+      "2026-06-01",
+    );
   });
 
   it("sends bare catalog name when model is copilot/ namespaced", async () => {
