@@ -318,6 +318,34 @@ See [`docs/plan-cycle.md`](plan-cycle.md) and
 [`docs/plan-cycle-languages.md`](plan-cycle-languages.md) for the full user-facing guide and
 per-language prerequisites.
 
+### Commit-guard sequence in `runPhase` (false-green hardening)
+
+After a phase's verified-implement step reports verification success, `runPhase`
+(`ai-system/core/pipeline/phase-runner.ts`) runs two guards, in order, before it is
+allowed to commit:
+
+1. **Net working-tree change gate** (`hasNetWorkingTreeChange`, via `git status
+   --porcelain`, fail-open on git error) — refuses to commit a phase that left the
+   working tree provably clean. This closes the false-green failure mode where a
+   phase reports `[ok]` even though its declared edits never actually landed (e.g. a
+   partial or mis-applied patch), since a clean tree can never legitimately
+   represent a completed implementation phase.
+2. **`checkAssertions`** (`ai-system/core/pipeline/phase-assertions.ts`) — enforces
+   any author-declared `Assert:` directives parsed onto the phase (see the plan file
+   format above and the README's Structural Assertions section). A violated
+   assertion fails the phase with a clear message naming the assertion; no commit is
+   made.
+
+Author-declared `Assert:` directives are the primary mechanism for expressing a
+plan's structural intent as a machine-checked invariant; the aider-text fallback and
+structured-patch apply paths are otherwise unchanged by this hardening. Plans with
+no `Assert:` lines are unaffected (`phase.assertions ?? []` is checked trivially).
+A previously-proposed alternative fix — tightening the verified-implement step's
+recheck escape hatches in `verified-implement-step.ts` — was evaluated and rejected
+as provably inert: in phase mode, `implementation !== ""` already implies
+`stepCursor === phaseSteps.length`, so that guard would never change behavior. It is
+not part of this change.
+
 ---
 
 ## Progress Reporting (`--verbose`)

@@ -248,9 +248,49 @@ Add comprehensive unit tests to src/auth/mod.rs.
 
 Each phase is committed separately with a `Phase: N` trailer for resume tracking.
 
+### Structural Assertions (`Assert:`)
+
+A phase may optionally declare `Assert:` directives (alongside `Commit message:`
+and `Coverage:`) to encode machine-checked, author-declared invariants about
+the final state of the workspace. Four grammars are supported:
+
+```
+Assert: contains <path> :: <needle>
+Assert: not-contains <path> :: <needle>
+Assert: exists <path>
+Assert: not-exists <path>
+```
+
+The ` :: ` separator splits the path from the needle for the two
+content-checking verbs; the needle may itself contain spaces (only the
+*first* ` :: ` is treated as the separator).
+
+Assertions are **runner-enforced**: they are checked by the pipeline itself
+after the phase's verification (build/test/lint) succeeds and *before* the
+phase commits. A violated assertion fails the phase with a non-zero exit and
+**no commit is made** — the branch is left exactly as-is for inspection.
+This closes a "false-green" failure mode where a phase's toolchain passes
+even though the phase's intended edits never actually landed.
+
+Plans with no `Assert:` lines are entirely unaffected — the feature is fully
+backward compatible.
+
+Worked example — a documentation phase asserting that its own directive name
+made it into the README it just edited:
+
+```markdown
+## Phase 5: Documentation
+
+Commit message: docs: document the Assert directive
+Assert: contains README.md :: Assert:
+
+### Step 1: ...
+```
+
 ### Resume Workflow
 
 If a phase fails and exhausts its repair budget (exit code 2):
+
 
 ```bash
 # Fix the issue manually or wait for the next retry
