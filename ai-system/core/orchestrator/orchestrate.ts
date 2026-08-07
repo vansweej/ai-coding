@@ -160,10 +160,13 @@ export async function orchestrate(
  * `"not-capable"` signals the caller to fall back to the string
  * `orchestrate()` path + the existing aider-text/parsePatch loop -- it is
  * NOT an error, just "this model/attempt doesn't support structured output".
+ * `reason` distinguishes a text-mode model-ID (`"text-mode"`) from a
+ * structured-capable model whose resolved dispatcher lacks a `dispatchPatch`
+ * channel (`"no-dispatch-patch"`).
  */
 export type PatchStructuredOutcome =
   | { readonly kind: "structured"; readonly ops: readonly PatchOp[] }
-  | { readonly kind: "not-capable" };
+  | { readonly kind: "not-capable"; readonly reason: "text-mode" | "no-dispatch-patch" };
 
 /**
  * Structured-output counterpart to `orchestrate()`. Resolves the model and
@@ -199,8 +202,12 @@ export async function orchestratePatch(
     };
   }
 
-  if (patchModeForModel(model) === "text" || dispatcher.dispatchPatch === undefined) {
-    return { ok: true, value: { kind: "not-capable" } };
+  if (patchModeForModel(model) === "text") {
+    return { ok: true, value: { kind: "not-capable", reason: "text-mode" } };
+  }
+
+  if (dispatcher.dispatchPatch === undefined) {
+    return { ok: true, value: { kind: "not-capable", reason: "no-dispatch-patch" } };
   }
 
   const prompt = event.payload.input ?? "";

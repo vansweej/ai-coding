@@ -76,7 +76,7 @@ describe("orchestratePatch", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value).toEqual({ kind: "not-capable" });
+      expect(result.value).toEqual({ kind: "not-capable", reason: "text-mode" });
     }
   });
 
@@ -103,7 +103,7 @@ describe("orchestratePatch", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value).toEqual({ kind: "not-capable" });
+      expect(result.value).toEqual({ kind: "not-capable", reason: "no-dispatch-patch" });
     }
   });
 
@@ -214,7 +214,7 @@ describe("orchestratePatch", () => {
     const editResult = await orchestratePatch(makeEvent({ source: "cli", action: "edit" }), config);
     expect(editResult.ok).toBe(true);
     if (editResult.ok) {
-      expect(editResult.value).toEqual({ kind: "not-capable" });
+      expect(editResult.value).toEqual({ kind: "not-capable", reason: "text-mode" });
     }
 
     // "fix" -> fixer -> claude-sonnet-5, anthropic-tool-use -> structured
