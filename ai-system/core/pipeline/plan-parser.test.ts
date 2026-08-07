@@ -319,4 +319,87 @@ body
       expect(result.value.phases[0].assertions ?? []).toHaveLength(0);
     }
   });
+
+  it("parses a matches Assert directive onto a phase", () => {
+    const content = `# Feature: With a matches assertion
+
+## Phase 1: Phase
+
+Commit message: feat: thing
+Assert: matches src/foo.ts :: ^export
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.phases[0].assertions).toEqual([
+        { kind: "matches", path: "src/foo.ts", pattern: "^export" },
+      ]);
+    }
+  });
+
+  it("returns a phase-scoped error for a matches directive with an empty path", () => {
+    const content = `# Feature: Bad matches assertion
+
+## Phase 1: Phase
+
+Commit message: feat: thing
+Assert: matches  :: ^export
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("Phase 1");
+      expect(result.error.message).toContain("invalid Assert directive");
+    }
+  });
+
+  it("returns a phase-scoped error for a matches directive with an invalid regex, without throwing", () => {
+    const content = `# Feature: Bad matches regex
+
+## Phase 1: Phase
+
+Commit message: feat: thing
+Assert: matches src/foo.ts :: (
+
+### Step 1: Do
+
+body
+`;
+    expect(() => parsePlanFile(content)).not.toThrow();
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(false);
+  });
+
+  it("collects matches alongside contains and exists directives in order", () => {
+    const content = `# Feature: Mixed assertions
+
+## Phase 1: Phase
+
+Commit message: feat: thing
+Assert: contains src/x.ts :: value
+Assert: matches src/foo.ts :: ^export
+Assert: exists docs/x.md
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.phases[0].assertions).toEqual([
+        { kind: "contains", path: "src/x.ts", needle: "value" },
+        { kind: "matches", path: "src/foo.ts", pattern: "^export" },
+        { kind: "exists", path: "docs/x.md" },
+      ]);
+    }
+  });
 });
