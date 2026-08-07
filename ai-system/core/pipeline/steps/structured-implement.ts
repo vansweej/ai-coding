@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AIRequestEvent, Result } from "@ai-coding/shared";
 
@@ -23,8 +23,20 @@ interface PathSnapshot {
  * all edits, plus `toPath` for move edits -- and snapshot each one's
  * pre-apply state (existence + content) so a partial-apply failure can be
  * rolled back cleanly.
+ *
+ * Returns an error `Result` -- refusing BEFORE any mutation occurs -- when a
+ * touched path is an existing DIRECTORY. A move op may legitimately target a
+ * directory (the applier's `renameSync` supports directories), but this
+ * transactional snapshot/rollback design cannot faithfully represent or
+ * restore a directory (rollback rewrites content via `writeFileSync`, which
+ * assumes a file); attempting to `readFileSync` a directory would otherwise
+ * throw `EISDIR`. Declining here lets the caller fall back cleanly to the
+ * incremental aider-text loop instead of crashing.
  */
-function snapshotTouchedPaths(workspace: string, edits: readonly PatchEdit[]): PathSnapshot[] {
+function snapshotTouchedPaths(
+  workspace: string,
+  edits: readonly PatchEdit[],
+): Result<PathSnapshot[]> {
   const paths = new Set<string>();
   for (const edit of edits) {
     paths.add(edit.filePath);
@@ -37,13 +49,21 @@ function snapshotTouchedPaths(workspace: string, edits: readonly PatchEdit[]): P
   for (const relPath of paths) {
     const absPath = resolve(workspace, relPath);
     const existed = existsSync(absPath);
+    if (existed && lstatSync(absPath).isDirectory()) {
+      return {
+        ok: false,
+        error: new Error(
+          `Refusing structured patch: touched path "${relPath}" is a directory, which cannot be transactionally snapshotted/rolled back`,
+        ),
+      };
+    }
     snapshots.push({
       path: absPath,
       existed,
       content: existed ? readFileSync(absPath, "utf8") : undefined,
     });
   }
-  return snapshots;
+  return { ok: true, value: snapshots };
 }
 
 /**
@@ -83,12 +103,19 @@ function rollbackToSnapshot(snapshots: readonly PathSnapshot[]): void {
  * create / already-satisfied move) -- those exist to make the TEXT loop's
  * re-issued edits safe to retry; this whole-phase attempt is transactional
  * instead, via snapshot + rollback.
+ *
+ * Returns early with an error `Result` -- with NO mutation and NO rollback
+ * needed -- when `snapshotTouchedPaths` refuses a directory-touching path.
  */
 async function applyEditsTransactionally(
   workspace: string,
   edits: readonly PatchEdit[],
 ): Promise<Result<void>> {
-  const snapshots = snapshotTouchedPaths(workspace, edits);
+  const snapshotResult = snapshotTouchedPaths(workspace, edits);
+  if (!snapshotResult.ok) {
+    return snapshotResult;
+  }
+  const snapshots = snapshotResult.value;
 
   const applyResult = await applyPatch(workspace, edits);
   if (!applyResult.ok) {
@@ -110,42 +137,53 @@ async function applyEditsTransactionally(
  * `orchestratePatch`), convert it to `PatchEdit[]`, and apply it
  * transactionally.
  *
- * Returns an error Result -- never throws -- for every non-success case:
- * the model/attempt is not structured-capable (`orchestratePatch` returned
- * `{ kind: "not-capable" }`), the dispatch itself failed, the ops failed
- * `patchOpsToEdits` conversion, or the transactional apply failed (in which
- * case the workspace has already been rolled back to its pre-attempt
- * state). In EVERY error case the caller is expected to fall back to the
- * existing incremental aider-text loop for this attempt -- this function
- * never mutates pipeline/retry state itself.
+ * This function NEVER THROWS. Returns an error `Result` for every
+ * non-success case: the model/attempt is not structured-capable
+ * (`orchestratePatch` returned `{ kind: "not-capable" }`), the dispatch
+ * itself failed, the ops failed `patchOpsToEdits` conversion, or the
+ * transactional apply failed (in which case the workspace has already been
+ * rolled back to its pre-attempt state). In every error case the caller is
+ * expected to fall back to the existing incremental aider-text loop for
+ * this attempt -- this function never mutates pipeline/retry state itself.
  *
  * Never touches `config.dispatchers` directly -- all model resolution and
  * capability feature-detection happens inside `orchestratePatch`, so this
  * helper stays behind the same facade the text path already depends on.
+ *
+ * The entire body runs inside a single try/catch: any thrown error --
+ * including a rejected `dispatchPatch` propagating up through
+ * `orchestratePatch` (which does not itself guard against a rejecting
+ * dispatcher) -- is converted into an error `Result`, so this function
+ * structurally never throws and the caller's fallback-to-text-loop contract
+ * always holds.
  */
 export async function tryStructuredPhase(
   event: AIRequestEvent,
   config: OrchestratorConfig,
   workspace: string,
 ): Promise<Result<"applied">> {
-  const outcome = await orchestratePatch(event, config);
-  if (!outcome.ok) {
-    return outcome;
-  }
+  try {
+    const outcome = await orchestratePatch(event, config);
+    if (!outcome.ok) {
+      return outcome;
+    }
 
-  if (outcome.value.kind === "not-capable") {
-    return { ok: false, error: new Error("Model/attempt is not structured-patch capable") };
-  }
+    if (outcome.value.kind === "not-capable") {
+      return { ok: false, error: new Error("Model/attempt is not structured-patch capable") };
+    }
 
-  const editsResult = patchOpsToEdits(outcome.value.ops);
-  if (!editsResult.ok) {
-    return { ok: false, error: new Error(editsResult.error.message) };
-  }
+    const editsResult = patchOpsToEdits(outcome.value.ops);
+    if (!editsResult.ok) {
+      return { ok: false, error: new Error(editsResult.error.message) };
+    }
 
-  const applyResult = await applyEditsTransactionally(workspace, editsResult.value);
-  if (!applyResult.ok) {
-    return applyResult;
-  }
+    const applyResult = await applyEditsTransactionally(workspace, editsResult.value);
+    if (!applyResult.ok) {
+      return applyResult;
+    }
 
-  return { ok: true, value: "applied" };
+    return { ok: true, value: "applied" };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
+  }
 }

@@ -698,6 +698,16 @@ retry/escalation loop in `createVerifiedImplementStep`:
    make the *text* loop's re-issued edits safe to retry; the whole-phase
    structured attempt is transactional instead, since a caller falling back
    to the text loop must always start from a clean tree.
+4. Declines cleanly without mutating when a touched path is an existing
+   directory (e.g. a directory move): directory moves cannot be faithfully
+   snapshotted or rolled back (`writeFileSync`-based rollback assumes files),
+   and per operating rule are not valid pipeline-plan operations anyway. The
+   decline returns an error `Result` that triggers the aider-text fallback,
+   never a crash.
+5. Never throws. Any thrown error — including a rejected `dispatchPatch`
+   propagating up through `orchestratePatch` (which does not itself guard
+   against a rejecting dispatcher) — is converted into an error `Result`, so
+   the caller's fallback-to-text-loop contract always holds.
 
 On success + green verification, the phase is done and the text loop is never
 entered. On success + red verification, the attempt is treated as if the text
