@@ -17,6 +17,7 @@ import {
 } from "../routing/route";
 import { applyPatch } from "./apply-patch-step";
 import { parsePatch, stripEnclosingFence } from "./parse-patch";
+import { tryStructuredPhase } from "./structured-implement";
 
 const IMPLEMENT_RESULT_NAME = "verified-implement-output";
 
@@ -525,6 +526,57 @@ export function createVerifiedImplementStep(
       // A value less than steps.length means a retry should resume from
       // exactly that step rather than re-sending already-applied steps.
       let stepCursor = 0;
+
+      // Try the WHOLE-PHASE structured patch path first, ahead of the
+      // incremental text loop below. `tryStructuredPhase` is a no-op for any
+      // model/attempt that isn't structured-capable (it never touches
+      // config.dispatchers directly -- see orchestratePatch) and never
+      // mutates the workspace on failure (transactional apply with
+      // rollback). If it succeeds and verification goes green, the phase is
+      // done and the text loop below is never entered. If it succeeds but
+      // verification is red, this is treated as if the local loop's FIRST
+      // attempt (index 0) already ran and failed on verification -- the
+      // loop below then starts at attemptNumber 1 with `implementation`/
+      // `lastError`/`stepCursor`/`prompt` pre-populated exactly as the
+      // bottom of the loop body would leave them after a failed verification
+      // attempt, so every existing retry/escalation branch runs completely
+      // UNCHANGED from here on. On any structured failure (not-capable,
+      // dispatch error, conversion error, or apply failure), nothing is
+      // touched and the loop below runs exactly as it does today.
+      const structuredResult = await tryStructuredPhase(
+        makeEvent(ctx, "edit", prompt),
+        options.config,
+        options.workspace,
+      );
+      if (structuredResult.ok) {
+        const verificationResult = await runVerification(ctx, verificationSteps);
+        if (verificationResult.ok) {
+          return {
+            ok: true,
+            value: {
+              stepName: name,
+              output: "Verified implementation via structured whole-phase patch",
+              durationMs: Date.now() - startedAt,
+            },
+          };
+        }
+
+        implementation = "<structured whole-phase patch>";
+        lastError = verificationResult.error;
+        stepCursor = phaseSteps?.length ?? 0;
+        attemptNumber = 1;
+
+        const currentFileContents = readCurrentFileContents(
+          options.workspace,
+          options.languageConfig,
+        );
+        prompt = buildVerificationFailurePrompt(
+          phaseSteps === undefined ? originalInstruction : formatPhaseInstruction(phaseSteps),
+          implementation,
+          lastError.message,
+          currentFileContents,
+        );
+      }
 
       const totalImplementerAttempts = 1 + maxLocalRetries;
       for (; attemptNumber < totalImplementerAttempts; attemptNumber++) {

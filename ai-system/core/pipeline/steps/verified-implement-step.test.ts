@@ -6,9 +6,16 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { $ } from "bun";
 
 import type { PipelineStep, StepResult } from "@ai-coding/pipeline";
-import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
+import type {
+  AIRequestEvent,
+  DispatchRequest,
+  ModelDispatcher,
+  PatchOp,
+  Result,
+} from "@ai-coding/shared";
 
 import { LOCAL_PROFILE } from "../../../config/model-profiles";
+import type { ModelProfile } from "../../../config/model-profiles";
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
 import type { Step } from "../plan-parser";
@@ -478,6 +485,174 @@ describe("createVerifiedImplementStep", () => {
     expect(result.ok).toBe(true);
     expect(dispatcher.prompts[0]).toContain("existing.rs");
     expect(dispatcher.prompts[0]).toContain("pub fn existing()");
+  });
+});
+
+describe("createVerifiedImplementStep (structured whole-phase dual path)", () => {
+  const CLAUDE_SONNET_PROFILE: ModelProfile = {
+    name: "anthropic-sonnet",
+    roles: {
+      planner: "claude-sonnet-5",
+      implementer: "claude-sonnet-5",
+      debugger: "claude-sonnet-5",
+      fixer: "claude-sonnet-5",
+      reviewer: "claude-sonnet-5",
+      tester: "claude-sonnet-5",
+      scaffolder: "claude-sonnet-5",
+      explorer: "claude-sonnet-5",
+      default: "claude-sonnet-5",
+    },
+  };
+
+  /** A dispatcher exposing BOTH dispatch (text) and dispatchPatch (structured). */
+  function dualPathDispatcher(ops: readonly PatchOp[]): ModelDispatcher & { textCalls: number } {
+    const state = { textCalls: 0 };
+    return {
+      get textCalls() {
+        return state.textCalls;
+      },
+      dispatch: async (_req: DispatchRequest): Promise<Result<string>> => {
+        state.textCalls += 1;
+        return { ok: true, value: "text-path-should-not-be-used" };
+      },
+      dispatchPatch: async (_req: DispatchRequest): Promise<Result<readonly PatchOp[]>> => ({
+        ok: true,
+        value: ops,
+      }),
+    };
+  }
+
+  it("structured-green: applies via structured path and never enters the text loop", async () => {
+    const dispatcher = dualPathDispatcher([
+      { kind: "create", filePath: "src/index.ts", contents: "export const value = 1;" },
+    ]);
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: { "claude-sonnet-5": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(0)),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(workspace, "src/index.ts"), "utf8")).toBe("export const value = 1;");
+    expect(dispatcher.textCalls).toBe(0);
+  });
+
+  it("structured-red: falls back into the text loop when verification fails after structured apply", async () => {
+    const dispatcher: ModelDispatcher & { textCalls: number } = (() => {
+      const state = { textCalls: 0 };
+      return {
+        get textCalls() {
+          return state.textCalls;
+        },
+        dispatch: async (_req: DispatchRequest): Promise<Result<string>> => {
+          state.textCalls += 1;
+          return {
+            ok: true,
+            value:
+              "src/index.ts\n<<<<<<< SEARCH\nexport const value = 'bad';\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+          };
+        },
+        dispatchPatch: async (_req: DispatchRequest): Promise<Result<readonly PatchOp[]>> => ({
+          ok: true,
+          value: [
+            { kind: "create", filePath: "src/index.ts", contents: "export const value = 'bad';" },
+          ],
+        }),
+      };
+    })();
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: { "claude-sonnet-5": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(1)),
+      retryConfig: { maxLocalRetries: 1, maxEscalationRetries: 0 },
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(dispatcher.textCalls).toBe(1);
+    expect(readFileSync(join(workspace, "src/index.ts"), "utf8")).toBe("export const value = 1;");
+  });
+
+  it("not-capable: falls back immediately to the text loop, unchanged behavior", async () => {
+    const dispatcher = sequenceDispatcher([
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+    ]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(0)),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(workspace, "src/index.ts"), "utf8")).toBe("export const value = 1;");
+  });
+
+  it("partial-apply: rolls back structured changes and falls back to the text loop", async () => {
+    writeFileSync(join(workspace, "existing.ts"), "export const a = 1;");
+    const dispatcher = (() => {
+      const state = { textCalls: 0 };
+      return {
+        get textCalls() {
+          return state.textCalls;
+        },
+        dispatch: async (_req: DispatchRequest): Promise<Result<string>> => {
+          state.textCalls += 1;
+          return {
+            ok: true,
+            value:
+              "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+          };
+        },
+        dispatchPatch: async (_req: DispatchRequest): Promise<Result<readonly PatchOp[]>> => ({
+          ok: true,
+          value: [
+            // op 1 succeeds via applyPatch (a brand-new file).
+            { kind: "create", filePath: "src/index.ts", contents: "export const value = 'x';" },
+            // op 2 fails via applyPatch: the anchor does not exist in
+            // existing.ts, so the whole structured attempt is rejected --
+            // op 1's already-applied create must be rolled back before
+            // falling back to the text loop.
+            { kind: "edit", filePath: "existing.ts", search: "not-present-anchor", replace: "z" },
+          ],
+        }),
+      };
+    })();
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: { "claude-sonnet-5": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(0)),
+      retryConfig: { maxLocalRetries: 1, maxEscalationRetries: 0 },
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(dispatcher.textCalls).toBe(1);
+    // The rolled-back create must be gone before the text loop's own create succeeds.
+    expect(readFileSync(join(workspace, "src/index.ts"), "utf8")).toBe("export const value = 1;");
   });
 });
 
