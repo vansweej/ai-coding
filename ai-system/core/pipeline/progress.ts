@@ -53,6 +53,13 @@ export type ProgressEvent =
       readonly step?: number;
       readonly path: "structured-applied" | "fell-back-to-text";
       readonly reason: StructuredPatchReason;
+      /**
+       * Optional human-readable diagnostic detail, present only for the
+       * `dispatch-error` fell-back-to-text case. Carries the underlying
+       * transport failure (derived from the dispatch error's cause) so the
+       * progress line can surface it without re-appending it to the reason.
+       */
+      readonly detail?: string;
     };
 
 /** Callback invoked with each `ProgressEvent` as a plan-cycle run progresses. */
@@ -143,10 +150,17 @@ function buildLabel(event: ProgressEvent): string {
       return `Step ${event.step}  failed: ${event.reason}`;
     case "step-retry":
       return `Step ${event.step}  ${event.retry} retry ${event.index}/${event.max}`;
-    case "patch-path":
-      return event.path === "structured-applied"
-        ? `Phase ${event.phase}  structured patch applied (${event.reason})`
-        : `Phase ${event.phase}  fell back to text loop (${event.reason})`;
+    case "patch-path": {
+      const base =
+        event.path === "structured-applied"
+          ? `Phase ${event.phase}  structured patch applied (${event.reason})`
+          : `Phase ${event.phase}  fell back to text loop (${event.reason})`;
+      return event.path === "fell-back-to-text" &&
+        event.detail !== undefined &&
+        event.detail.length > 0
+        ? `${base}: ${event.detail}`
+        : base;
+    }
   }
 }
 

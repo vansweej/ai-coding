@@ -793,6 +793,13 @@ silent:
      structured attempt declined outright (any `StructuredDeclineReason`), and
      the text loop runs from the start.
 
+When the fell-back-to-text reason is `dispatch-error`, the rendered progress
+line appends the underlying transport failure as a `: <detail>` suffix — for
+example `(dispatch-error): ECONNREFUSED`. The `detail` field on the event is
+optional and present only for that reason (carried from the dispatch error's
+cause), and every other patch-path line — including `structured-applied` —
+renders exactly as before, with no trailing detail.
+
 This is **observability only** — none of these three emission points change
 which branch executes; they report a decision that was already being made
 silently.
