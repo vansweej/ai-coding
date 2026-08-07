@@ -116,7 +116,7 @@ afterEach(() => {
 describe("createVerifiedImplementStep", () => {
   it("writes code and succeeds on the happy path", async () => {
     const dispatcher = sequenceDispatcher([
-      "```typescript src/index.ts\nexport const value = 1;\n```",
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
@@ -136,8 +136,8 @@ describe("createVerifiedImplementStep", () => {
 
   it("retries locally with verification diagnostics", async () => {
     const dispatcher = sequenceDispatcher([
-      "```typescript src/index.ts\nexport const value = 'bad';\n```",
-      "```typescript src/index.ts\nexport const value = 1;\n```",
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 'bad';\n>>>>>>> REPLACE",
+      "src/index.ts\n<<<<<<< SEARCH\nexport const value = 'bad';\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
@@ -159,8 +159,8 @@ describe("createVerifiedImplementStep", () => {
 
   it("escalates to fixer after local retries are exhausted", async () => {
     const dispatcher = sequenceDispatcher([
-      "```typescript src/index.ts\nexport const value = 'bad';\n```",
-      "```typescript src/index.ts\nexport const value = 1;\n```",
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 'bad';\n>>>>>>> REPLACE",
+      "src/index.ts\n<<<<<<< SEARCH\nexport const value = 'bad';\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
@@ -182,7 +182,7 @@ describe("createVerifiedImplementStep", () => {
 
   it("halts with diagnostics after retry limits are exhausted", async () => {
     const dispatcher = sequenceDispatcher([
-      "```typescript src/index.ts\nexport const value = 'bad';\n```",
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 'bad';\n>>>>>>> REPLACE",
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
