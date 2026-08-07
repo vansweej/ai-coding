@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,6 +15,7 @@ import {
   BaselineCheckError,
   attributePhaseFailure,
   findImplicatedWholeRepoValidators,
+  hasNetWorkingTreeChange,
   runPhase,
   runValidatorSteps,
 } from "./phase-runner";
@@ -209,6 +210,156 @@ describe("runPhase", () => {
     expect(readFileSync(join(workspace, "flake.nix"), "utf8")).toBe(
       "{ this-phase-broke-it = true; }\n",
     );
+  });
+
+  it("does not commit a phase that leaves no net working-tree change", async () => {
+    mkdirSync(join(workspace, "src"), { recursive: true });
+    writeFileSync(join(workspace, "src", "index.md"), "# Hello\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m baseline`.cwd(workspace).quiet();
+
+    const commits: string[] = [];
+    const result = await runPhase(PHASE, {
+      config: config("src/index.md\n<<<<<<< SEARCH\n# Hello\n=======\n# Hello\n>>>>>>> REPLACE"),
+      workspace,
+      palette: new Set(),
+      commitPhase: async (_workspace, message, _phaseNumber) => {
+        commits.push(message);
+        return { ok: true, value: message };
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("no net working-tree change");
+    }
+    expect(commits).toEqual([]);
+  });
+
+  it("commits when the phase produces a real net working-tree change", async () => {
+    mkdirSync(join(workspace, "src"), { recursive: true });
+    writeFileSync(join(workspace, "src", "index.md"), "# Hello\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m baseline`.cwd(workspace).quiet();
+
+    const commits: string[] = [];
+    const result = await runPhase(PHASE, {
+      config: config(
+        "src/index.md\n<<<<<<< SEARCH\n# Hello\n=======\n# Hello, world\n>>>>>>> REPLACE",
+      ),
+      workspace,
+      palette: new Set(),
+      commitPhase: async (_workspace, message, _phaseNumber) => {
+        commits.push(message);
+        return { ok: true, value: message };
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(commits).toEqual(["feat: add core"]);
+  });
+
+  it("blocks commit when a structural assertion is violated even though verification is green", async () => {
+    mkdirSync(join(workspace, "src"), { recursive: true });
+    writeFileSync(join(workspace, "src", "index.md"), "seed\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m baseline`.cwd(workspace).quiet();
+
+    const commits: string[] = [];
+    const phaseWithAssertion: Phase = {
+      ...PHASE,
+      assertions: [{ kind: "contains", path: "src/index.md", needle: "GOODBYE" }],
+    };
+    const result = await runPhase(phaseWithAssertion, {
+      config: config("src/index.md\n<<<<<<< SEARCH\nseed\n=======\n# Hello\n>>>>>>> REPLACE"),
+      workspace,
+      palette: new Set(),
+      commitPhase: async (_workspace, message, _phaseNumber) => {
+        commits.push(message);
+        return { ok: true, value: message };
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("failed a structural assertion");
+    }
+    expect(commits).toEqual([]);
+  });
+
+  it("commits when the structural assertion is satisfied", async () => {
+    mkdirSync(join(workspace, "src"), { recursive: true });
+    writeFileSync(join(workspace, "src", "index.md"), "seed\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m baseline`.cwd(workspace).quiet();
+
+    const commits: string[] = [];
+    const phaseWithAssertion: Phase = {
+      ...PHASE,
+      assertions: [{ kind: "contains", path: "src/index.md", needle: "# Hello" }],
+    };
+    const result = await runPhase(phaseWithAssertion, {
+      config: config("src/index.md\n<<<<<<< SEARCH\nseed\n=======\n# Hello\n>>>>>>> REPLACE"),
+      workspace,
+      palette: new Set(),
+      commitPhase: async (_workspace, message, _phaseNumber) => {
+        commits.push(message);
+        return { ok: true, value: message };
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(commits).toEqual(["feat: add core"]);
+  });
+
+  it("omitted assertions field is a no-op", async () => {
+    mkdirSync(join(workspace, "src"), { recursive: true });
+    writeFileSync(join(workspace, "src", "index.md"), "seed\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m baseline`.cwd(workspace).quiet();
+
+    const commits: string[] = [];
+    const result = await runPhase(PHASE, {
+      config: config("src/index.md\n<<<<<<< SEARCH\nseed\n=======\n# Hello\n>>>>>>> REPLACE"),
+      workspace,
+      palette: new Set(),
+      commitPhase: async (_workspace, message, _phaseNumber) => {
+        commits.push(message);
+        return { ok: true, value: message };
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(commits).toEqual(["feat: add core"]);
+  });
+});
+
+describe("hasNetWorkingTreeChange", () => {
+  it("returns false for a clean git repo", async () => {
+    writeFileSync(join(workspace, "a.txt"), "content\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m baseline`.cwd(workspace).quiet();
+
+    expect(hasNetWorkingTreeChange(workspace)).toBe(false);
+  });
+
+  it("returns true for a dirty tree (untracked file)", async () => {
+    writeFileSync(join(workspace, "a.txt"), "content\n");
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -q -m baseline`.cwd(workspace).quiet();
+
+    writeFileSync(join(workspace, "untracked.txt"), "new\n");
+
+    expect(hasNetWorkingTreeChange(workspace)).toBe(true);
+  });
+
+  it("fails open (returns true) for a non-git directory", () => {
+    const nonGitDir = mkdtempSync(join(tmpdir(), "phase-runner-nongit-"));
+    try {
+      expect(hasNetWorkingTreeChange(nonGitDir)).toBe(true);
+    } finally {
+      rmSync(nonGitDir, { recursive: true, force: true });
+    }
   });
 });
 

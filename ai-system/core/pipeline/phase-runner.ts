@@ -6,6 +6,7 @@ import type { AIRequestEvent } from "@ai-coding/shared";
 
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import type { ToolchainDescriptor } from "./definitions/language-configs";
+import { checkAssertions } from "./phase-assertions";
 import type { Phase } from "./plan-parser";
 import type { OnProgress } from "./progress";
 import { getTouchedFiles, route } from "./routing/route";
@@ -111,6 +112,34 @@ function safeGitDiff(workspace: string): string {
     return execSync("git diff", { cwd: workspace, encoding: "utf8" });
   } catch {
     return "";
+  }
+}
+
+/**
+ * Returns whether the workspace has any net change in its working tree
+ * (tracked-file modifications, additions, deletions, or untracked files) as
+ * reported by `git status --porcelain`.
+ *
+ * FALSE-GREEN GUARD: a phase can report verification success while its intended
+ * edits never landed (e.g. a partial/failed patch apply). Committing then
+ * produces an empty commit that the pipeline records as `[ok]`. This function
+ * lets `runPhase` refuse to commit when the tree is provably clean.
+ *
+ * FAIL-OPEN on git error: if `git status` cannot run (git unavailable, not a
+ * repository), we cannot prove the tree is clean, so we return `true`. The gate
+ * therefore only ever blocks when git DEFINITIVELY reports an empty tree; it
+ * never false-blocks a legitimate change in a non-git context.
+ *
+ * @param workspace - Absolute path to the workspace root.
+ * @returns `true` if the tree has changes or git status is indeterminate;
+ *   `false` only when git succeeds and reports a clean tree.
+ */
+export function hasNetWorkingTreeChange(workspace: string): boolean {
+  try {
+    const status = execSync("git status --porcelain", { cwd: workspace, encoding: "utf8" });
+    return status.trim().length > 0;
+  } catch {
+    return true;
   }
 }
 
@@ -266,6 +295,25 @@ export async function runPhase(
   });
   if (!result.ok) {
     return attributePhaseFailure(options.workspace, options.palette, result);
+  }
+
+  if (!hasNetWorkingTreeChange(options.workspace)) {
+    return {
+      ok: false,
+      error: new Error(
+        `Phase ${phase.number} produced no net working-tree change; refusing to commit an empty phase (possible false-green partial apply)`,
+      ),
+    };
+  }
+
+  const assertionResult = checkAssertions(options.workspace, phase.assertions ?? []);
+  if (!assertionResult.ok) {
+    return {
+      ok: false,
+      error: new Error(
+        `Phase ${phase.number} failed a structural assertion: ${assertionResult.error.message}`,
+      ),
+    };
   }
 
   const commit = options.commitPhase ?? commitPhaseChanges;
