@@ -577,12 +577,13 @@ bare id; the CopilotDispatcher strips the `copilot/` prefix on the wire),
 sends the durable GitHub OAuth token from `GITHUB_COPILOT_TOKEN` DIRECTLY to
 `https://api.githubcopilot.com/chat/completions` as the `Authorization: Bearer`
 credential — there is NO `copilot_internal/v2/token` exchange, because that
-exchange is blocked by GitHub's anti-scraping WAF (403) for opencode-minted
-OAuth tokens (verified 2026-08-07), whereas the durable token authenticates
-directly (HTTP 200). Requests carry ai-coding's own honest `User-Agent`
-(`ai-coding-os/1.0.0`) plus `X-GitHub-Api-Version: 2026-06-01`, mirroring
-opencode's behaviour; `Copilot-Integration-Id` and `Editor-Version` are
-deliberately NOT sent (those belong to the VS Code editor profile). There is no separate
+exchange was observed to be blocked by GitHub's anti-scraping WAF (403) for
+opencode-minted OAuth tokens as of the last verification, whereas the durable
+token authenticates directly (HTTP 200); re-verify before assuming this still
+holds. Requests carry ai-coding's own honest `User-Agent`
+(`ai-coding-os/1.0.0`) plus `X-GitHub-Api-Version: 2026-06-01`, modeled on
+opencode's own observed behaviour at the time of writing; `Copilot-Integration-Id`
+and `Editor-Version` are deliberately NOT sent (those belong to the VS Code editor profile). There is no separate
 model-override flag; adding a new
 provider mix is pure data — define another `ModelProfile` and register it.
 

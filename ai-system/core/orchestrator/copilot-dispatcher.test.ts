@@ -242,12 +242,10 @@ describe("CopilotDispatcher", () => {
 
     await dispatcher.dispatch(request);
 
-    expect(capturedHeaders).toBeDefined();
-    if (capturedHeaders) {
-      expect((capturedHeaders as Record<string, unknown>)["X-GitHub-Api-Version"]).toBe(
-        "2026-06-01",
-      );
-    }
+    expect(capturedHeaders).not.toBeNull();
+    expect((capturedHeaders as Record<string, unknown> | null)?.["X-GitHub-Api-Version"]).toBe(
+      "2026-06-01",
+    );
   });
 
   it("sends bare catalog name when model is copilot/ namespaced", async () => {
