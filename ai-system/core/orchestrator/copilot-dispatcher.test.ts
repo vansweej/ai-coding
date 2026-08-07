@@ -475,3 +475,223 @@ describe("CopilotDispatcher", () => {
     }
   });
 });
+
+describe("CopilotDispatcher.dispatchPatch", () => {
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    global.fetch = (async () => {
+      throw new Error("fetch not mocked");
+    }) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("sends forced tools/tool_choice with parameters in the captured body", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    global.fetch = (async (_url: string, options?: RequestInit) => {
+      capturedBody = JSON.parse(options?.body as string);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [
+                  {
+                    id: "call_1",
+                    type: "function",
+                    function: { name: "emit_patch", arguments: JSON.stringify({ ops: [] }) },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const dispatcher = new CopilotDispatcher("test-token");
+    await dispatcher.dispatchPatch({ model: "claude-sonnet-4.6", prompt: "implement it" });
+
+    expect(capturedBody?.tool_choice).toEqual({
+      type: "function",
+      function: { name: "emit_patch" },
+    });
+    const tools = capturedBody?.tools as Array<{ function: { name: string; parameters: unknown } }>;
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.function.name).toBe("emit_patch");
+    expect(tools[0]?.function.parameters).toBeDefined();
+  });
+
+  it("returns ok(ops) for a valid tool_calls arguments JSON string", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [
+                  {
+                    id: "call_1",
+                    type: "function",
+                    function: {
+                      name: "emit_patch",
+                      arguments: JSON.stringify({
+                        ops: [{ kind: "create", filePath: "a.ts", contents: "x" }],
+                      }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new CopilotDispatcher("test-token");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-4.6",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual([{ kind: "create", filePath: "a.ts", contents: "x" }]);
+    }
+  });
+
+  it("returns error when tool_calls is missing", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "no tools here" } }] }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new CopilotDispatcher("test-token");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-4.6",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("emit_patch");
+    }
+  });
+
+  it("returns error when arguments is malformed JSON (no throw)", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [
+                  {
+                    id: "call_1",
+                    type: "function",
+                    function: { name: "emit_patch", arguments: "{not valid json" },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new CopilotDispatcher("test-token");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-4.6",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("not valid JSON");
+    }
+  });
+
+  it("returns error when arguments parses to a schema-violating object", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [
+                  {
+                    id: "call_1",
+                    type: "function",
+                    function: {
+                      name: "emit_patch",
+                      arguments: JSON.stringify({ ops: [{ kind: "unknown-kind" }] }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new CopilotDispatcher("test-token");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-4.6",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("returns error on non-2xx response", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        text: async () => "Internal Server Error",
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new CopilotDispatcher("test-token");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-4.6",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("500");
+    }
+  });
+
+  it("returns error when fetch throws", async () => {
+    global.fetch = (async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+
+    const dispatcher = new CopilotDispatcher("test-token");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-4.6",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("network down");
+    }
+  });
+});

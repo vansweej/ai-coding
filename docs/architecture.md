@@ -591,3 +591,171 @@ provider mix is pure data — define another `ModelProfile` and register it.
 
 When no profile is set, the legacy `selectModel(event, mode)` heuristic is used
 (preserved for backward compatibility). New code should always pass a profile.
+
+---
+
+## Structured Patch Output Contract
+
+The `plan-cycle`/`dev-cycle` implement step traditionally asks the model for
+raw **aider-style SEARCH/REPLACE/MOVE patch text** (parsed by
+`parse-patch.ts`'s `parsePatch`), which breaks when a chatty model interleaves
+prose or code fences into the patch body. A **provider-agnostic structured
+patch output contract** was added as a parallel, preferred path for backends
+that can *guarantee* valid structured output — with the aider-text path
+**always retained as the fallback**, so no backend is ever hard-excluded.
+
+### The contract
+
+`ai-system/shared/event-types.ts` (the `@ai-coding/shared` alias target, which
+imports nothing — see the hard rule at the top of that file) defines:
+
+- **`PatchOp`** — a discriminated union on `kind`: `create` (`filePath`,
+  `contents`), `move` (`filePath`, `toPath`), `edit` (`filePath`, `search`,
+  `replace`). This is the WIRE shape a structured-capable model emits.
+- **`PATCH_TOOL_NAME`** (`"emit_patch"`) — the name of the forced
+  tool/function every structured-capable dispatcher exposes.
+- **`PATCH_OPS_JSON_SCHEMA`** — one provider-neutral JSON Schema describing
+  `{ ops: PatchOp[] }`, reused verbatim as Anthropic's `input_schema`,
+  Copilot/OpenAI's `function.parameters`, and (planned) Ollama's `format`.
+- **`ModelDispatcher.dispatchPatch?`** — an OPTIONAL sibling to `dispatch()`,
+  additive so every existing dispatcher stays valid unchanged. Present only on
+  backends that can guarantee structured output; called ONLY by
+  `orchestratePatch()`, never directly by pipeline steps.
+
+`ai-system/core/orchestrator/patch-contract.ts` converts between the wire
+shape and the applier's internal shape:
+
+- `parsePatchOps(raw: unknown)` — structurally validates an already-parsed
+  JSON value against `{ ops: PatchOp[] }` (the guard for backends whose
+  "structured" output is actually a JSON string, e.g. Copilot's tool_calls
+  `arguments`).
+- `patchOpsToEdits(ops)` — converts `PatchOp[]` into the exact `PatchEdit[]`
+  flags-on-one-struct shape `applyPatch` already consumes (`isCreate`,
+  `isMove`, `toPath`) — the applier's verbs are never changed by this work.
+
+### Per-model capability registry
+
+`ai-system/core/orchestrator/patch-capability.ts` keys structured-patch
+capability by the bare **model-ID string** (never per-profile, never
+per-role), because `HYBRID_PROFILE` mixes providers per-role and the same
+profile's `implementer`/`fixer` roles can resolve to different models with
+different capabilities:
+
+```ts
+type PatchMode = "text" | "anthropic-tool-use" | "openai-tool-calls";
+```
+
+| Model-ID                    | PatchMode             | Status                        |
+|------------------------------|-----------------------|-------------------------------|
+| `claude-sonnet-5`             | `anthropic-tool-use`  | Confirmed (dry-run, plumbing) |
+| `copilot/claude-sonnet-5`     | `openai-tool-calls`   | **Confirmed live** (real Copilot call, see `docs/adr/0001-copilot-structured-patch.md`) |
+| `claude-sonnet-4.6`           | `openai-tool-calls`   | **Confirmed live** |
+| everything else (default)    | `text`                | Unchanged aider-text path     |
+
+The default is always `"text"`, so every model not explicitly registered
+keeps using the existing aider-text + `parsePatch` path, byte-for-byte
+unchanged.
+
+### `orchestratePatch()` facade
+
+`ai-system/core/orchestrator/orchestrate.ts` adds `orchestratePatch()`
+alongside the existing `orchestrate()`, sharing model/dispatcher resolution
+(`resolveDispatcher`) and the memory side-effect (`writeMemory`) so neither is
+ever forked between the string and structured paths. It:
+
+1. Resolves the model-ID from the action + profile identically to
+   `orchestrate()`.
+2. Checks `patchModeForModel(model)` and feature-detects `dispatcher.dispatchPatch`
+   — **recomputed fresh on every call**, never cached, so a profile whose
+   per-role model mix flips backends mid-run (e.g. `HYBRID_PROFILE`'s
+   `implementer` vs. `fixer`) is handled correctly with no extra plumbing.
+3. Returns `{ kind: "not-capable" }` (not an error) when the model/attempt
+   isn't structured-capable — the sentinel telling the caller to fall back to
+   the string `orchestrate()` path.
+4. Otherwise calls `dispatchPatch`, and on success writes the same memory
+   record `orchestrate()` writes.
+
+This is the **only** seam that reaches `config.dispatchers` for the structured
+path; pipeline steps must go through this facade, never index
+`config.dispatchers` directly.
+
+### Whole-phase structured attempt in the implement step
+
+`ai-system/core/pipeline/steps/structured-implement.ts` (`tryStructuredPhase`)
+is tried **once per phase, ahead of** the existing incremental aider-text
+retry/escalation loop in `createVerifiedImplementStep`:
+
+1. Calls `orchestratePatch()` for the whole phase at once — a single forced
+   tool call returning **all** ops for the phase, not one call per step.
+2. Converts ops via `patchOpsToEdits`.
+3. Applies them **transactionally**: snapshots every touched path (source and
+   destination for moves) before calling `applyPatch`, and on any failure
+   (including a partial apply, e.g. op 3 of 5) **rolls back every touched
+   path** to its pre-attempt state — restoring edited/moved files, deleting
+   newly-created ones, reversing partial moves — before returning an error.
+   This is deliberately different from the applier's idempotent no-op
+   semantics (byte-identical create / already-satisfied move), which exist to
+   make the *text* loop's re-issued edits safe to retry; the whole-phase
+   structured attempt is transactional instead, since a caller falling back
+   to the text loop must always start from a clean tree.
+
+On success + green verification, the phase is done and the text loop is never
+entered. On success + red verification, the attempt is treated as if the text
+loop's first iteration already ran and failed on verification — state
+(`implementation`, `lastError`, `stepCursor`, `prompt`) is pre-populated
+exactly as that failure path would leave it, and the loop resumes from its
+second iteration, so every existing retry/escalation branch runs completely
+unchanged. On ANY structured failure (not-capable, dispatch error, conversion
+error, or apply failure), nothing is touched and the loop runs exactly as it
+does today.
+
+### Per-backend implementations
+
+- **Anthropic** (`anthropic-dispatcher.ts`) — forces a single `tool_choice`
+  naming `emit_patch`, with `input_schema: PATCH_OPS_JSON_SCHEMA`. The
+  response's `content` array is a `text | tool_use` discriminated union;
+  `dispatchPatch` selects the `tool_use` block by name (never assumes
+  position — a response may contain both a text and a tool_use block), treats
+  `stop_reason === "max_tokens"` as an unrecoverable truncation (never
+  attempts to parse partial JSON), and passes the tool_use block's `input`
+  (already a parsed object) through `parsePatchOps`.
+- **Copilot** (`copilot-dispatcher.ts`) — forces the same `emit_patch` call via
+  OpenAI-shaped `tools`/`tool_choice` (`function.parameters:
+  PATCH_OPS_JSON_SCHEMA`), reusing the exact auth path `dispatch()` uses
+  (direct `GITHUB_COPILOT_TOKEN` Bearer, honest `User-Agent`,
+  `X-GitHub-Api-Version` header). Unlike Anthropic's pre-parsed `input`,
+  Copilot's `tool_calls[0].function.arguments` is a JSON-encoded **string**
+  that must be `JSON.parse`d (never throws; a malformed string is a Result
+  err) before `parsePatchOps` validates it. **Empirically confirmed against
+  live Copilot** — see `docs/adr/0001-copilot-structured-patch.md` and
+  `scripts/probe-copilot-toolcalls.ts` — the proxy reliably honors forced
+  `tool_calls` and returns schema-valid arguments.
+- **Ollama, OpenCode Zen, Bedrock** — not yet wired to a `dispatchPatch`
+  implementation; all three remain on the `"text"` default (unchanged
+  aider-text path). Ollama's constrained-decoding `format` field and Zen's
+  best-effort JSON mode are planned; Bedrock shares Anthropic's `tool_use`
+  seam and can be folded in later as a one-file mirror of the Anthropic
+  implementation.
+
+### Verification status
+
+The dual path has been verified two ways so far:
+
+1. **Plumbing verification** (real filesystem, real
+   `createVerifiedImplementStep`/`applyPatch`/`orchestratePatch` chain, fake
+   dispatcher standing in only for the network call) — covers
+   structured-green, structured-red-then-fallback, partial-apply rollback,
+   and not-capable-model-unaffected scenarios. All passed.
+2. **Live end-to-end verification against Copilot** — a real network call
+   through the real `CopilotDispatcher.dispatchPatch`, driving the real
+   `createVerifiedImplementStep`, successfully created and verified a file via
+   the structured whole-phase path (confirmed by the step's own output
+   string: `"Verified implementation via structured whole-phase patch"`).
+
+Live end-to-end verification against **Anthropic** is still outstanding
+(requires `ANTHROPIC_API_KEY` in a session that has it) — the code path is the
+same shape already proven live for Copilot, but Anthropic's forced
+`tool_choice` behavior has only been confirmed via the plumbing-level dry run,
+not a live call.
+
+

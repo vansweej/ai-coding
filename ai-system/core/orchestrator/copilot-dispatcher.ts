@@ -1,4 +1,7 @@
-import type { DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
+import { PATCH_OPS_JSON_SCHEMA, PATCH_TOOL_NAME } from "@ai-coding/shared";
+import type { DispatchRequest, ModelDispatcher, PatchOp, Result } from "@ai-coding/shared";
+
+import { parsePatchOps } from "./patch-contract";
 
 const COPILOT_CHAT_URL = "https://api.githubcopilot.com/chat/completions";
 
@@ -21,7 +24,20 @@ export function toCopilotWireModel(modelId: string): string {
 }
 
 interface CopilotChoice {
-  readonly message: { readonly content: string };
+  readonly message: {
+    readonly content: string;
+    readonly tool_calls?: readonly CopilotToolCall[];
+  };
+}
+
+interface CopilotToolCall {
+  readonly id: string;
+  readonly type: string;
+  readonly function: {
+    readonly name: string;
+    /** JSON-encoded arguments string -- OpenAI-shaped, unlike Anthropic's pre-parsed `input`. */
+    readonly arguments: string;
+  };
 }
 
 interface CopilotChatResponse {
@@ -98,6 +114,112 @@ export class CopilotDispatcher implements ModelDispatcher {
       }
 
       return { ok: true, value: content };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+    }
+  }
+
+  /**
+   * Dispatch a prompt to Copilot, forcing a single `emit_patch` function
+   * call via OpenAI-shaped `tools`/`tool_choice` that returns the WHOLE
+   * phase's structured patch ops at once (see PATCH_OPS_JSON_SCHEMA).
+   * Callers must treat any error Result as a signal to fall back to
+   * `dispatch()` + the aider-text parser.
+   *
+   * Empirically confirmed against live Copilot (see
+   * docs/adr/0001-copilot-structured-patch.md): the proxy honors forced
+   * tool_calls and returns a well-formed `arguments` JSON string. Unlike
+   * Anthropic's `input` (already a parsed object), Copilot's
+   * `function.arguments` is a JSON-encoded STRING that must be
+   * `JSON.parse`d before `parsePatchOps` can validate it.
+   */
+  async dispatchPatch(request: DispatchRequest): Promise<Result<readonly PatchOp[]>> {
+    try {
+      type Message = { role: string; content: string };
+      const messages: Message[] = [];
+
+      if (request.system !== undefined) {
+        messages.push({ role: "system", content: request.system });
+      }
+
+      messages.push({ role: "user", content: request.prompt });
+
+      const body: Record<string, unknown> = {
+        model: toCopilotWireModel(request.model),
+        messages,
+        stream: false,
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: PATCH_TOOL_NAME,
+              description:
+                "Emit the complete set of file create/edit/move operations for this phase as structured data.",
+              parameters: PATCH_OPS_JSON_SCHEMA,
+            },
+          },
+        ],
+        tool_choice: { type: "function", function: { name: PATCH_TOOL_NAME } },
+      };
+
+      if (request.temperature !== undefined) body.temperature = request.temperature;
+      if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
+
+      const response = await fetch(this.endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.token}`,
+          "User-Agent": "ai-coding-os/1.0.0",
+          "X-GitHub-Api-Version": "2026-06-01",
+          "Openai-Intent": "conversation-edits",
+          "x-initiator": "user",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          error: new Error(`Copilot returned ${response.status}: ${await response.text()}`),
+        };
+      }
+
+      const data = (await response.json()) as CopilotChatResponse;
+      const toolCall = data.choices[0]?.message.tool_calls?.find(
+        (call) => call.function.name === PATCH_TOOL_NAME,
+      );
+
+      if (toolCall === undefined) {
+        return {
+          ok: false,
+          error: new Error(`Copilot response contained no "${PATCH_TOOL_NAME}" tool_calls entry`),
+        };
+      }
+
+      let parsedArguments: unknown;
+      try {
+        parsedArguments = JSON.parse(toolCall.function.arguments);
+      } catch (parseError) {
+        return {
+          ok: false,
+          error: new Error(
+            `Copilot tool_calls arguments is not valid JSON: ${
+              parseError instanceof Error ? parseError.message : String(parseError)
+            }`,
+          ),
+        };
+      }
+
+      const parsed = parsePatchOps(parsedArguments);
+      if (!parsed.ok) {
+        return { ok: false, error: new Error(parsed.error.message) };
+      }
+
+      return { ok: true, value: parsed.value };
     } catch (error) {
       return {
         ok: false,
