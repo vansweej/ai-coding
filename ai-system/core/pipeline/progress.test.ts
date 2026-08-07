@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import type { StructuredPatchReason } from "@ai-coding/shared";
+
 import type { ProgressEvent } from "./progress";
 import { buildTheme, formatProgressEvent } from "./progress";
 
@@ -12,6 +14,18 @@ const EVENTS: readonly ProgressEvent[] = [
   { kind: "step-finish", phase: 1, step: 2 },
   { kind: "step-fail", phase: 1, step: 2, reason: "patch anchor not found" },
   { kind: "step-retry", phase: 1, step: 2, index: 1, max: 3, retry: "local" },
+  {
+    kind: "patch-path",
+    phase: 1,
+    path: "structured-applied",
+    reason: "structured-applied",
+  },
+  {
+    kind: "patch-path",
+    phase: 1,
+    path: "fell-back-to-text",
+    reason: "apply-failed",
+  },
 ];
 
 describe("buildTheme", () => {
@@ -77,6 +91,18 @@ describe("formatProgressEvent (plain theme)", () => {
     expect(formatProgressEvent(EVENTS[7], theme)).toBe("  ~ Step 2  local retry 1/3");
   });
 
+  it("formats patch-path structured-applied without indentation", () => {
+    expect(formatProgressEvent(EVENTS[8], theme)).toBe(
+      "= Phase 1  structured patch applied (structured-applied)",
+    );
+  });
+
+  it("formats patch-path fell-back-to-text without indentation", () => {
+    expect(formatProgressEvent(EVENTS[9], theme)).toBe(
+      "= Phase 1  fell back to text loop (apply-failed)",
+    );
+  });
+
   it("never emits ANSI escape codes under the plain theme", () => {
     for (const event of EVENTS) {
       expect(formatProgressEvent(event, theme)).not.toContain("\x1b[");
@@ -103,5 +129,58 @@ describe("formatProgressEvent (color theme)", () => {
   it("formats step-fail with the red glyph, indented", () => {
     const line = formatProgressEvent(EVENTS[6], theme);
     expect(line).toBe("  \x1b[31m✗\x1b[0m Step 2  failed: patch anchor not found");
+  });
+
+  it("formats patch-path with the magenta glyph, unindented", () => {
+    const line = formatProgressEvent(EVENTS[8], theme);
+    expect(line).toBe("\x1b[35m⇄\x1b[0m Phase 1  structured patch applied (structured-applied)");
+  });
+});
+
+describe("formatProgressEvent (patch-path)", () => {
+  const theme = buildTheme(false);
+
+  const ALL_REASONS: readonly StructuredPatchReason[] = [
+    "structured-applied",
+    "not-capable-text-mode",
+    "not-capable-no-dispatch-patch",
+    "dispatch-error",
+    "conversion-failed",
+    "apply-failed",
+    "directory-declined",
+    "threw",
+    "verification-red-after-structured",
+  ];
+
+  it("renders every StructuredPatchReason value for both path values without throwing", () => {
+    for (const reason of ALL_REASONS) {
+      for (const path of ["structured-applied", "fell-back-to-text"] as const) {
+        const event: ProgressEvent = { kind: "patch-path", phase: 1, path, reason };
+        const line = formatProgressEvent(event, theme);
+        expect(line.length).toBeGreaterThan(0);
+        expect(line).toContain(reason);
+      }
+    }
+  });
+
+  it("indents a patch-path event that carries a step", () => {
+    const event: ProgressEvent = {
+      kind: "patch-path",
+      phase: 1,
+      step: 2,
+      path: "fell-back-to-text",
+      reason: "apply-failed",
+    };
+    expect(formatProgressEvent(event, theme).startsWith("  ")).toBe(true);
+  });
+
+  it("does not indent a patch-path event without a step", () => {
+    const event: ProgressEvent = {
+      kind: "patch-path",
+      phase: 1,
+      path: "structured-applied",
+      reason: "structured-applied",
+    };
+    expect(formatProgressEvent(event, theme).startsWith("  ")).toBe(false);
   });
 });
