@@ -21,12 +21,20 @@ import type { Result } from "@ai-coding/pipeline";
  * - `checkAssertions` evaluates a list of assertions against a workspace on
  *   disk, in order, short-circuiting on the first violation. Never throws;
  *   returns a `Result`.
+ *
+ * The `matches` kind checks a file's content against an anchored-capable
+ * regular expression (compiled with `new RegExp`), rather than a plain
+ * substring. It exists to express exact structural invariants that a plain
+ * `contains` needle cannot -- e.g. "this table has EXACTLY this one key" --
+ * closing the false-green loophole where unrelated surrounding content
+ * still satisfies a substring check.
  */
 export type PhaseAssertion =
   | { readonly kind: "contains"; readonly path: string; readonly needle: string }
   | { readonly kind: "not-contains"; readonly path: string; readonly needle: string }
   | { readonly kind: "exists"; readonly path: string }
-  | { readonly kind: "not-exists"; readonly path: string };
+  | { readonly kind: "not-exists"; readonly path: string }
+  | { readonly kind: "matches"; readonly path: string; readonly pattern: string };
 
 const SEPARATOR = " :: ";
 
@@ -38,6 +46,7 @@ const SEPARATOR = " :: ";
  * - `not-contains <path> :: <needle>`
  * - `exists <path>`
  * - `not-exists <path>`
+ * - `matches <path> :: <regex>`
  *
  * The `::` separator (surrounded by single spaces) splits the path from the
  * needle for the two content-checking verbs; only the FIRST occurrence of
@@ -97,6 +106,41 @@ export function parseAssertion(spec: string): Result<PhaseAssertion> {
     };
   }
 
+  if (verb === "matches") {
+    const separatorIndex = rest.indexOf(SEPARATOR);
+    if (separatorIndex === -1) {
+      return {
+        ok: false,
+        error: new Error(
+          `invalid "matches" assertion (missing " :: " separator between path and pattern): "${spec}"`,
+        ),
+      };
+    }
+    const path = rest.slice(0, separatorIndex).trim();
+    const pattern = rest.slice(separatorIndex + SEPARATOR.length).trim();
+    if (path === "") {
+      return {
+        ok: false,
+        error: new Error(`invalid "matches" assertion (empty path): "${spec}"`),
+      };
+    }
+    if (pattern === "") {
+      return {
+        ok: false,
+        error: new Error(`invalid "matches" assertion (empty pattern): "${spec}"`),
+      };
+    }
+    try {
+      new RegExp(pattern);
+    } catch {
+      return {
+        ok: false,
+        error: new Error(`invalid "matches" assertion (invalid regex): "${spec}"`),
+      };
+    }
+    return { ok: true, value: { kind: "matches", path, pattern } };
+  }
+
   return {
     ok: false,
     error: new Error(`unknown assertion verb in: "${spec}"`),
@@ -106,10 +150,12 @@ export function parseAssertion(spec: string): Result<PhaseAssertion> {
 /**
  * Evaluates a list of structural assertions against a workspace on disk, in
  * order. Returns `{ ok: false }` naming the first violated assertion's kind,
- * path, and (where applicable) needle. Returns `{ ok: true }` when every
- * assertion is satisfied (including the empty list). Never throws --
- * unreadable files are treated as assertion failures for `contains`, and as
- * "nothing to contain" (satisfied) for `not-contains`.
+ * path, and (where applicable) needle/pattern. Returns `{ ok: true }` when
+ * every assertion is satisfied (including the empty list). Never throws --
+ * an unreadable file is a FAILURE for `contains`, `not-contains`, and
+ * `matches` alike (absence of a needle, or a pattern match, cannot be proven
+ * for a file that cannot be read). `matches` also fails on an invalid regex
+ * or on a non-match, never throwing.
  */
 export function checkAssertions(
   workspace: string,
@@ -168,14 +214,51 @@ export function checkAssertions(
         try {
           content = readFileSync(resolvedPath, "utf8");
         } catch {
-          // Missing/unreadable file has nothing to contain -- satisfied.
-          break;
+          return {
+            ok: false,
+            error: new Error(
+              `Structural assertion failed: file "${assertion.path}" must not contain "${assertion.needle}" but could not be read`,
+            ),
+          };
         }
         if (content.includes(assertion.needle)) {
           return {
             ok: false,
             error: new Error(
               `Structural assertion failed: file "${assertion.path}" must not contain "${assertion.needle}"`,
+            ),
+          };
+        }
+        break;
+      }
+      case "matches": {
+        let content: string;
+        try {
+          content = readFileSync(resolvedPath, "utf8");
+        } catch {
+          return {
+            ok: false,
+            error: new Error(
+              `Structural assertion failed: file "${assertion.path}" must match /${assertion.pattern}/ but could not be read`,
+            ),
+          };
+        }
+        let regex: RegExp;
+        try {
+          regex = new RegExp(assertion.pattern);
+        } catch {
+          return {
+            ok: false,
+            error: new Error(
+              `Structural assertion failed: assertion for "${assertion.path}" has an invalid regex "${assertion.pattern}"`,
+            ),
+          };
+        }
+        if (!regex.test(content)) {
+          return {
+            ok: false,
+            error: new Error(
+              `Structural assertion failed: file "${assertion.path}" must match /${assertion.pattern}/`,
             ),
           };
         }
