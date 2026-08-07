@@ -12,6 +12,8 @@
  * color is used.
  */
 
+import type { StructuredPatchReason } from "@ai-coding/shared";
+
 /** A single phase or step lifecycle event emitted during a plan-cycle run. */
 export type ProgressEvent =
   | { readonly kind: "phase-start"; readonly phase: number; readonly title: string }
@@ -44,6 +46,13 @@ export type ProgressEvent =
       readonly index: number;
       readonly max: number;
       readonly retry: "local" | "escalation";
+    }
+  | {
+      readonly kind: "patch-path";
+      readonly phase: number;
+      readonly step?: number;
+      readonly path: "structured-applied" | "fell-back-to-text";
+      readonly reason: StructuredPatchReason;
     };
 
 /** Callback invoked with each `ProgressEvent` as a plan-cycle run progresses. */
@@ -67,6 +76,7 @@ const NERD_GLYPHS: Readonly<Record<ProgressEvent["kind"], string>> = {
   "step-finish": "✓",
   "step-fail": "✗",
   "step-retry": "↻",
+  "patch-path": "⇄",
 };
 
 /** ASCII fallback glyphs used when color/Unicode is not appropriate. */
@@ -79,6 +89,7 @@ const ASCII_GLYPHS: Readonly<Record<ProgressEvent["kind"], string>> = {
   "step-finish": "+",
   "step-fail": "x",
   "step-retry": "~",
+  "patch-path": "=",
 };
 
 /** ANSI SGR codes used to color each event kind's glyph. */
@@ -91,6 +102,7 @@ const SGR: Readonly<Record<ProgressEvent["kind"], string>> = {
   "step-finish": "\x1b[32m", // green
   "step-fail": "\x1b[31m", // red
   "step-retry": "\x1b[33m", // yellow
+  "patch-path": "\x1b[35m", // magenta
 };
 
 const SGR_RESET = "\x1b[0m";
@@ -131,6 +143,10 @@ function buildLabel(event: ProgressEvent): string {
       return `Step ${event.step}  failed: ${event.reason}`;
     case "step-retry":
       return `Step ${event.step}  ${event.retry} retry ${event.index}/${event.max}`;
+    case "patch-path":
+      return event.path === "structured-applied"
+        ? `Phase ${event.phase}  structured patch applied (${event.reason})`
+        : `Phase ${event.phase}  fell back to text loop (${event.reason})`;
   }
 }
 
@@ -152,7 +168,10 @@ function isStepEvent(kind: ProgressEvent["kind"]): boolean {
  * @param theme - The rendering theme (glyphs + color on/off).
  */
 export function formatProgressEvent(event: ProgressEvent, theme: Theme): string {
-  const indent = isStepEvent(event.kind) ? "  " : "";
+  const indent =
+    isStepEvent(event.kind) || (event.kind === "patch-path" && event.step !== undefined)
+      ? "  "
+      : "";
   const glyph = paintGlyph(event.kind, theme.glyphs[event.kind], theme);
   const label = buildLabel(event);
   return `${indent}${glyph} ${label}`;

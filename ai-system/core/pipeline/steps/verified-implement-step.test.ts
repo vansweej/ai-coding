@@ -334,6 +334,7 @@ describe("createVerifiedImplementStep", () => {
 
     expect(result.ok).toBe(true);
     expect(events).toEqual([
+      { kind: "patch-path", phase: 3, path: "fell-back-to-text", reason: "not-capable-text-mode" },
       { kind: "step-start", phase: 3, step: 1, title: "Create a.ts" },
       { kind: "step-finish", phase: 3, step: 1 },
       { kind: "step-start", phase: 3, step: 2, title: "Create b.ts" },
@@ -369,11 +370,17 @@ describe("createVerifiedImplementStep", () => {
     const result = await step.execute({ event: makeEvent("Add both files"), results: new Map() });
 
     expect(result.ok).toBe(true);
-    expect(events[0]).toEqual({ kind: "step-start", phase: 5, step: 1, title: "Create a.ts" });
-    expect(events[1]).toEqual({ kind: "step-finish", phase: 5, step: 1 });
-    expect(events[2]).toEqual({ kind: "step-start", phase: 5, step: 2, title: "Create b.ts" });
-    expect(events[3].kind).toBe("step-fail");
-    expect(events[4]).toEqual({
+    expect(events[0]).toEqual({
+      kind: "patch-path",
+      phase: 5,
+      path: "fell-back-to-text",
+      reason: "not-capable-text-mode",
+    });
+    expect(events[1]).toEqual({ kind: "step-start", phase: 5, step: 1, title: "Create a.ts" });
+    expect(events[2]).toEqual({ kind: "step-finish", phase: 5, step: 1 });
+    expect(events[3]).toEqual({ kind: "step-start", phase: 5, step: 2, title: "Create b.ts" });
+    expect(events[4].kind).toBe("step-fail");
+    expect(events[5]).toEqual({
       kind: "step-retry",
       phase: 5,
       step: 2,
@@ -381,7 +388,7 @@ describe("createVerifiedImplementStep", () => {
       max: 1,
       retry: "local",
     });
-    expect(events[5]).toEqual({ kind: "step-finish", phase: 5, step: 2 });
+    expect(events[6]).toEqual({ kind: "step-finish", phase: 5, step: 2 });
   });
 
   it("fails with a descriptive error when neither languageConfig nor palette is provided", async () => {
@@ -653,6 +660,114 @@ describe("createVerifiedImplementStep (structured whole-phase dual path)", () =>
     expect(dispatcher.textCalls).toBe(1);
     // The rolled-back create must be gone before the text loop's own create succeeds.
     expect(readFileSync(join(workspace, "src/index.ts"), "utf8")).toBe("export const value = 1;");
+  });
+
+  it("emits a structured-applied patch-path event on the verification-green path", async () => {
+    const dispatcher = dualPathDispatcher([
+      { kind: "create", filePath: "src/index.ts", contents: "export const value = 1;" },
+    ]);
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: { "claude-sonnet-5": dispatcher },
+    };
+    const events: ProgressEvent[] = [];
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(0)),
+      phaseNumber: 7,
+      onProgress: (e) => events.push(e),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(dispatcher.textCalls).toBe(0);
+    expect(events).toContainEqual({
+      kind: "patch-path",
+      phase: 7,
+      path: "structured-applied",
+      reason: "structured-applied",
+    });
+  });
+
+  it("emits a fell-back-to-text patch-path event with not-capable-text-mode when the model is not structured-capable", async () => {
+    const dispatcher = sequenceDispatcher([
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+    ]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const events: ProgressEvent[] = [];
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(0)),
+      phaseNumber: 9,
+      onProgress: (e) => events.push(e),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(workspace, "src/index.ts"), "utf8")).toBe("export const value = 1;");
+    expect(events).toContainEqual({
+      kind: "patch-path",
+      phase: 9,
+      path: "fell-back-to-text",
+      reason: "not-capable-text-mode",
+    });
+  });
+
+  it("emits a fell-back-to-text patch-path event with verification-red-after-structured when structured applies but verification fails", async () => {
+    const dispatcher: ModelDispatcher & { textCalls: number } = (() => {
+      const state = { textCalls: 0 };
+      return {
+        get textCalls() {
+          return state.textCalls;
+        },
+        dispatch: async (_req: DispatchRequest): Promise<Result<string>> => {
+          state.textCalls += 1;
+          return {
+            ok: true,
+            value:
+              "src/index.ts\n<<<<<<< SEARCH\nexport const value = 'bad';\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+          };
+        },
+        dispatchPatch: async (_req: DispatchRequest): Promise<Result<readonly PatchOp[]>> => ({
+          ok: true,
+          value: [
+            { kind: "create", filePath: "src/index.ts", contents: "export const value = 'bad';" },
+          ],
+        }),
+      };
+    })();
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: { "claude-sonnet-5": dispatcher },
+    };
+    const events: ProgressEvent[] = [];
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(1)),
+      retryConfig: { maxLocalRetries: 1, maxEscalationRetries: 0 },
+      phaseNumber: 11,
+      onProgress: (e) => events.push(e),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(true);
+    expect(dispatcher.textCalls).toBe(1);
+    expect(events).toContainEqual({
+      kind: "patch-path",
+      phase: 11,
+      path: "fell-back-to-text",
+      reason: "verification-red-after-structured",
+    });
   });
 });
 

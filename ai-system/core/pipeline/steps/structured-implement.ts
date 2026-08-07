@@ -1,12 +1,18 @@
 import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { AIRequestEvent, Result } from "@ai-coding/shared";
+import type { AIRequestEvent, Result, StructuredDeclineReason } from "@ai-coding/shared";
 
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { orchestratePatch } from "../../orchestrator/orchestrate";
 import { patchOpsToEdits } from "../../orchestrator/patch-contract";
 import { applyPatch } from "./apply-patch-step";
 import type { PatchEdit } from "./parse-patch";
+
+/** A typed reason (plus human-readable message) for a declined structured phase. */
+export interface StructuredDecline {
+  readonly reason: StructuredDeclineReason;
+  readonly message: string;
+}
 
 /**
  * Snapshot of a single touched path's pre-apply state, used to roll back a
@@ -110,10 +116,13 @@ function rollbackToSnapshot(snapshots: readonly PathSnapshot[]): void {
 async function applyEditsTransactionally(
   workspace: string,
   edits: readonly PatchEdit[],
-): Promise<Result<void>> {
+): Promise<Result<void, StructuredDecline>> {
   const snapshotResult = snapshotTouchedPaths(workspace, edits);
   if (!snapshotResult.ok) {
-    return snapshotResult;
+    return {
+      ok: false,
+      error: { reason: "directory-declined", message: snapshotResult.error.message },
+    };
   }
   const snapshots = snapshotResult.value;
 
@@ -122,9 +131,10 @@ async function applyEditsTransactionally(
     rollbackToSnapshot(snapshots);
     return {
       ok: false,
-      error: new Error(
-        `Failed to apply structured patch to "${applyResult.error.filePath}": ${applyResult.error.message}`,
-      ),
+      error: {
+        reason: "apply-failed",
+        message: `Failed to apply structured patch to "${applyResult.error.filePath}": ${applyResult.error.message}`,
+      },
     };
   }
 
@@ -142,9 +152,12 @@ async function applyEditsTransactionally(
  * (`orchestratePatch` returned `{ kind: "not-capable" }`), the dispatch
  * itself failed, the ops failed `patchOpsToEdits` conversion, or the
  * transactional apply failed (in which case the workspace has already been
- * rolled back to its pre-attempt state). In every error case the caller is
- * expected to fall back to the existing incremental aider-text loop for
- * this attempt -- this function never mutates pipeline/retry state itself.
+ * rolled back to its pre-attempt state). Every decline is attributed via a
+ * typed `StructuredDecline` (`reason` + `message`) rather than a bare
+ * `Error`, so callers can distinguish WHY the structured path declined. In
+ * every error case the caller is expected to fall back to the existing
+ * incremental aider-text loop for this attempt -- this function never
+ * mutates pipeline/retry state itself.
  *
  * Never touches `config.dispatchers` directly -- all model resolution and
  * capability feature-detection happens inside `orchestratePatch`, so this
@@ -161,20 +174,30 @@ export async function tryStructuredPhase(
   event: AIRequestEvent,
   config: OrchestratorConfig,
   workspace: string,
-): Promise<Result<"applied">> {
+): Promise<Result<"applied", StructuredDecline>> {
   try {
     const outcome = await orchestratePatch(event, config);
     if (!outcome.ok) {
-      return outcome;
+      return { ok: false, error: { reason: "dispatch-error", message: outcome.error.message } };
     }
 
     if (outcome.value.kind === "not-capable") {
-      return { ok: false, error: new Error("Model/attempt is not structured-patch capable") };
+      const reason =
+        outcome.value.reason === "text-mode"
+          ? "not-capable-text-mode"
+          : "not-capable-no-dispatch-patch";
+      return {
+        ok: false,
+        error: { reason, message: "Model/attempt is not structured-patch capable" },
+      };
     }
 
     const editsResult = patchOpsToEdits(outcome.value.ops);
     if (!editsResult.ok) {
-      return { ok: false, error: new Error(editsResult.error.message) };
+      return {
+        ok: false,
+        error: { reason: "conversion-failed", message: editsResult.error.message },
+      };
     }
 
     const applyResult = await applyEditsTransactionally(workspace, editsResult.value);
@@ -184,6 +207,9 @@ export async function tryStructuredPhase(
 
     return { ok: true, value: "applied" };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
+    return {
+      ok: false,
+      error: { reason: "threw", message: error instanceof Error ? error.message : String(error) },
+    };
   }
 }

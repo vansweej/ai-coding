@@ -384,6 +384,7 @@ sequenceDiagram
         FR->>OP: phase-start
         FR->>PR: runPhase(phase)
         PR->>VIS: execute()
+        VIS->>OP: patch-path (structured-applied | fell-back-to-text)
         loop attempts (local, then escalation)
             alt steps remaining
                 loop step i
@@ -406,6 +407,11 @@ sequenceDiagram
         FR->>OP: phase-finish
     end
 ```
+
+The `patch-path` event fires once per phase attempt, before the step loop, reporting whether
+the whole-phase structured `emit_patch` attempt applied (with verification green) or the run
+fell back to the incremental step loop (with a machine-readable reason) — see "Observable
+structured-patch fallback" below.
 
 ### Certainty ladder
 
@@ -746,6 +752,50 @@ second iteration, so every existing retry/escalation branch runs completely
 unchanged. On ANY structured failure (not-capable, dispatch error, conversion
 error, or apply failure), nothing is touched and the loop runs exactly as it
 does today.
+
+### Observable structured-patch fallback (`patch-path` progress event)
+
+Every non-error outcome of `tryStructuredPhase` (declined or applied) is now
+attributed with a machine-readable reason rather than an opaque `Error`, and
+surfaced through the `--verbose` progress feed, so the choice between the
+structured `emit_patch` path and the incremental aider-text loop is never
+silent:
+
+- `StructuredDeclineReason` and `StructuredPatchReason` live in
+  `ai-system/shared/event-types.ts` (the zero-import graph root) as bare
+  string-literal unions — `not-capable-text-mode`, `not-capable-no-dispatch-patch`,
+  `dispatch-error`, `conversion-failed`, `apply-failed`, `directory-declined`,
+  `threw`, and `verification-red-after-structured` (a decline), plus
+  `structured-applied` (the honest phase-succeeded-via-structured marker).
+  `tryStructuredPhase` returns `Result<"applied", StructuredDecline>`, where
+  `StructuredDecline` pairs a `StructuredDeclineReason` with a human-readable
+  `message`.
+- `orchestratePatch()`'s `not-capable` outcome carries its own two-value
+  `reason: "text-mode" | "no-dispatch-patch"`, discriminating a text-mode
+  model-ID from a structured-capable model whose resolved dispatcher lacks a
+  `dispatchPatch` channel — previously collapsed into a single
+  undifferentiated `{ kind: "not-capable" }`.
+- `ai-system/core/pipeline/progress.ts` defines a `patch-path` `ProgressEvent`
+  variant (`{ kind: "patch-path"; phase; step?; path: "structured-applied" |
+  "fell-back-to-text"; reason: StructuredPatchReason }`), rendered by
+  `formatProgressEvent` alongside the other event kinds.
+- `createVerifiedImplementStep` (`verified-implement-step.ts`) emits exactly
+  three honest `patch-path` events at the structured/text decision point:
+  1. `path: "structured-applied"`, `reason: "structured-applied"` — ONLY after
+     the structured patch applies AND verification goes green (the phase is
+     done; the text loop is never entered).
+  2. `path: "fell-back-to-text"`, `reason: "verification-red-after-structured"`
+     — the structured patch applied but verification failed, so the text loop
+     resumes from its second iteration (the ambiguous case this feature exists
+     to disambiguate: the model DID emit valid structured ops, but the result
+     didn't verify).
+  3. `path: "fell-back-to-text"`, `reason: structuredResult.error.reason` — the
+     structured attempt declined outright (any `StructuredDeclineReason`), and
+     the text loop runs from the start.
+
+This is **observability only** — none of these three emission points change
+which branch executes; they report a decision that was already being made
+silently.
 
 ### Per-backend implementations
 
