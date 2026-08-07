@@ -15,12 +15,12 @@ describe("patchModeForModel", () => {
     expect(patchModeForModel("gemma4:26b")).toBe("text");
   });
 
-  it("returns text for the Copilot-served Sonnet model (opts in only in Plan B)", () => {
-    expect(patchModeForModel("copilot/claude-sonnet-5")).toBe("text");
+  it("returns openai-tool-calls for the Copilot-served Sonnet model", () => {
+    expect(patchModeForModel("copilot/claude-sonnet-5")).toBe("openai-tool-calls");
   });
 
-  it("returns text for claude-sonnet-4.6 (Copilot-served, not the Anthropic-native id)", () => {
-    expect(patchModeForModel("claude-sonnet-4.6")).toBe("text");
+  it("returns openai-tool-calls for claude-sonnet-4.6 (Copilot-served, not the Anthropic-native id)", () => {
+    expect(patchModeForModel("claude-sonnet-4.6")).toBe("openai-tool-calls");
   });
 
   it("returns text for the opencode-free logical token", () => {

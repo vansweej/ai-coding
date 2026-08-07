@@ -13,20 +13,24 @@
  * Default is always "text": every model not explicitly registered here
  * keeps using the existing aider-text + parsePatch path, unchanged.
  */
-export type PatchMode = "text" | "anthropic-tool-use";
+export type PatchMode = "text" | "anthropic-tool-use" | "openai-tool-calls";
 
 /**
- * Registry of model-IDs opted into a structured PatchMode. Plan A seeds
- * only the Anthropic-native Sonnet model-ID ("claude-sonnet-5" -- confirmed
- * against model-profiles.ts to be the ONLY model-ID that routes to the
- * Anthropic dispatcher; "claude-sonnet-4.6" routes to Copilot and is NOT
- * seeded here). Copilot ("openai-tool-calls") and local/Zen
- * ("constrained-json") modes are added in later plans (B and C) -- do not
- * add them here; Plan A's tests only exercise "text" and
- * "anthropic-tool-use".
+ * Registry of model-IDs opted into a structured PatchMode.
+ *
+ * - "claude-sonnet-5" (Anthropic-native) -> "anthropic-tool-use" (Plan A).
+ * - "copilot/claude-sonnet-5" and "claude-sonnet-4.6" (both Copilot-served
+ *   per model-profiles.ts -- COPILOT_DEFAULT_PROFILE and HYBRID_PROFILE
+ *   respectively) -> "openai-tool-calls" (Plan B; empirically confirmed
+ *   against live Copilot, see docs/adr/0001-copilot-structured-patch.md).
+ *
+ * Local/Zen models ("constrained-json") are added in Plan C -- do not add
+ * them here.
  */
 const PATCH_MODE_BY_MODEL: Readonly<Record<string, PatchMode>> = {
   "claude-sonnet-5": "anthropic-tool-use",
+  "copilot/claude-sonnet-5": "openai-tool-calls",
+  "claude-sonnet-4.6": "openai-tool-calls",
 };
 
 /**
