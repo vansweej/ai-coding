@@ -570,8 +570,11 @@ The active profile is set in `OrchestratorConfig.profile`. The CLI resolves it v
 
 Provider selection is captured entirely in the profile: the `dispatchers` map
 built by `load-config.ts` is provider-agnostic, binding each model-ID string to
-its dispatcher (`claude-sonnet-5` → Anthropic, `claude-sonnet-4.6` → Copilot,
-`gemma4:26b` → Ollama). There is no separate model-override flag; adding a new
+its dispatcher (`claude-sonnet-5` → Anthropic native, `copilot/claude-sonnet-5`
+→ Copilot-served Sonnet 5 (namespaced to stay distinct from the Anthropic-native
+bare id; the CopilotDispatcher strips the `copilot/` prefix on the wire),
+`claude-sonnet-4.6` → Copilot, `gemma4:26b` → Ollama). There is no separate
+model-override flag; adding a new
 provider mix is pure data — define another `ModelProfile` and register it.
 
 ### Legacy fallback
