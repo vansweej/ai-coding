@@ -64,7 +64,31 @@ describe("loadConfig", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.profile?.name).toBe("copilot-default");
-      expect(result.value.dispatchers["claude-sonnet-4.6"]).toBeDefined();
+      expect(result.value.dispatchers["copilot/claude-sonnet-5"]).toBeDefined();
+    }
+  });
+
+  it("binds the copilot/claude-sonnet-5 dispatcher to the same Copilot dispatcher as claude-sonnet-4.6", async () => {
+    const env = process.env as Record<string, string>;
+    env.GITHUB_COPILOT_TOKEN = "test-token";
+    const result = await loadConfig("copilot-default");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const copilotBound = result.value.dispatchers["copilot/claude-sonnet-5"];
+      expect(copilotBound).toBeDefined();
+      expect(copilotBound?.constructor.name).toBe("CopilotDispatcher");
+    }
+  });
+
+  it("requires GITHUB_COPILOT_TOKEN (not ANTHROPIC_API_KEY) for copilot-default", async () => {
+    const env = process.env as Record<string, string>;
+    Reflect.deleteProperty(env, "GITHUB_COPILOT_TOKEN");
+    const result = await loadConfig("copilot-default");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("GITHUB_COPILOT_TOKEN");
+      expect(result.error.message).not.toContain("ANTHROPIC_API_KEY");
+      expect(result.error.message).not.toContain("Ollama");
     }
   });
 
