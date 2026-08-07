@@ -2,6 +2,24 @@ import type { DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared
 
 const COPILOT_CHAT_URL = "https://api.githubcopilot.com/chat/completions";
 
+/**
+ * Translate an internal model ID to the Copilot catalog name sent on the wire.
+ *
+ * Internal IDs may be namespaced with a leading `copilot/` prefix to keep them
+ * distinct from same-named models served by other providers (e.g. the internal
+ * `copilot/claude-sonnet-5` is Copilot-served, whereas the bare
+ * `claude-sonnet-5` is Anthropic-native). Copilot's `/chat/completions`
+ * catalog expects the bare name, so the prefix is stripped here. IDs without
+ * the prefix pass through unchanged.
+ *
+ * @param modelId - The internal model ID from the dispatch request.
+ * @returns The catalog model name to send as `body.model`.
+ */
+export function toCopilotWireModel(modelId: string): string {
+  const prefix = "copilot/";
+  return modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
+}
+
 interface CopilotChoice {
   readonly message: { readonly content: string };
 }
@@ -32,7 +50,7 @@ export class CopilotDispatcher implements ModelDispatcher {
       messages.push({ role: "user", content: request.prompt });
 
       const body: Record<string, unknown> = {
-        model: request.model,
+        model: toCopilotWireModel(request.model),
         messages,
         stream: false,
       };

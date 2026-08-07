@@ -5,8 +5,9 @@
 TypeScript monorepo for an AI coding OS that routes requests to LLM models via
 named **model profiles** and runs multi-step agent pipelines. Uses **Bun** as
 runtime and package manager. LLM calls route through one of five providers
-depending on the active profile: **GitHub Copilot** (`claude-sonnet-4.6`, via
-`copilot-default`), local **Ollama** (`gemma4:26b`, via `local`), native
+depending on the active profile: **GitHub Copilot** (`copilot/claude-sonnet-5`
+for `copilot-default`; `claude-sonnet-4.6` for `hybrid`), local **Ollama**
+(`gemma4:26b`, via `local`), native
 **Anthropic** (`claude-sonnet-5`, via `anthropic-sonnet`), **Claude on
 Amazon Bedrock** (via `bedrock-sonnet`, invoked through an application
 inference profile ARN using the AWS SDK credential chain), or **OpenCode

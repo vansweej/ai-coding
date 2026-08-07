@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import type { DispatchRequest } from "@ai-coding/shared";
-import { CopilotDispatcher } from "./copilot-dispatcher";
+import { CopilotDispatcher, toCopilotWireModel } from "./copilot-dispatcher";
 
 describe("CopilotDispatcher", () => {
   const originalFetch = global.fetch;
@@ -214,6 +214,41 @@ describe("CopilotDispatcher", () => {
       );
       expect((capturedHeaders as Record<string, unknown>)["x-initiator"]).toBe("user");
     }
+  });
+
+  it("sends bare catalog name when model is copilot/ namespaced", async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+
+    global.fetch = (async (_url: unknown, options: unknown) => {
+      const opts = options as RequestInit;
+      const parsed: unknown = JSON.parse(opts.body as string);
+      capturedBody = parsed as Record<string, unknown>;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: "Response" } }],
+        }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const dispatcher = new CopilotDispatcher("test-token");
+    const request: DispatchRequest = {
+      model: "copilot/claude-sonnet-5",
+      prompt: "Say hello",
+    };
+
+    await dispatcher.dispatch(request);
+
+    expect(capturedBody).toBeDefined();
+    if (capturedBody) {
+      expect((capturedBody as Record<string, unknown>).model).toBe("claude-sonnet-5");
+    }
+  });
+
+  it("passes a non-namespaced model id through unchanged", () => {
+    expect(toCopilotWireModel("claude-sonnet-4.6")).toBe("claude-sonnet-4.6");
+    expect(toCopilotWireModel("copilot/claude-sonnet-5")).toBe("claude-sonnet-5");
   });
 
   it("passes model ID to API", async () => {

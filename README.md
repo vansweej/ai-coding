@@ -7,7 +7,7 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
 
 - **Model profiles** -- named configurations mapping semantic roles (planner, implementer,
   debugger, fixer…) to model IDs. Default: `copilot-default` (all roles → GitHub Copilot's
-  `claude-sonnet-4.6`). Other built-in profiles: `local` (all roles → `gemma4:26b` via local
+  Claude Sonnet 5, internal id `copilot/claude-sonnet-5`). Other built-in profiles: `local` (all roles → `gemma4:26b` via local
   Ollama; no cloud dependencies or API tokens required), `hybrid` (mixes Copilot and Ollama per
   role), `anthropic-sonnet` (all roles → `claude-sonnet-5` via the native Anthropic Messages
   API; requires `ANTHROPIC_API_KEY`), `bedrock-sonnet` (all roles → Claude Sonnet on Amazon

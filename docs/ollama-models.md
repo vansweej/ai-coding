@@ -3,8 +3,9 @@
 > **This document is archived.** LLM routing is provider-agnostic and driven by
 > the active model profile (`ai-system/config/model-profiles.ts`): `local` (and
 > the `implementer`/`tester`/`debugger` roles of `hybrid`) route through local
-> Ollama; `copilot-default` and the remaining `hybrid` roles route through
-> GitHub Copilot (`claude-sonnet-4.6`); `anthropic-sonnet` routes through the
+> Ollama; `copilot-default` routes through GitHub Copilot (Claude Sonnet 5,
+> internal id `copilot/claude-sonnet-5`) and the remaining `hybrid` roles route
+> through GitHub Copilot (`claude-sonnet-4.6`); `anthropic-sonnet` routes through the
 > native Anthropic Messages API (`claude-sonnet-5`); `bedrock-sonnet` routes
 > through Amazon Bedrock's InvokeModel API (Claude Sonnet via an application
 > inference profile ARN). The `OllamaDispatcher` is actively wired by
