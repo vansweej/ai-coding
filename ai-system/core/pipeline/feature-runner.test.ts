@@ -124,10 +124,12 @@ describe("runFeature", () => {
     expect(result.ok).toBe(false);
     expect(events).toEqual([
       { kind: "phase-start", phase: 1, title: "One" },
+      { kind: "patch-path", phase: 1, path: "fell-back-to-text", reason: "not-capable-text-mode" },
       { kind: "step-start", phase: 1, step: 1, title: "Implement one" },
       { kind: "step-finish", phase: 1, step: 1 },
       { kind: "phase-finish", phase: 1, commitMessage: "feat: one" },
       { kind: "phase-start", phase: 2, title: "Two" },
+      { kind: "patch-path", phase: 2, path: "fell-back-to-text", reason: "not-capable-text-mode" },
       { kind: "step-start", phase: 2, step: 1, title: "Implement two" },
       { kind: "step-finish", phase: 2, step: 1 },
       { kind: "phase-fail", phase: 2, reason: "commit failed" },

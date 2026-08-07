@@ -551,6 +551,12 @@ export function createVerifiedImplementStep(
       if (structuredResult.ok) {
         const verificationResult = await runVerification(ctx, verificationSteps);
         if (verificationResult.ok) {
+          options.onProgress?.({
+            kind: "patch-path",
+            phase: options.phaseNumber ?? 0,
+            path: "structured-applied",
+            reason: "structured-applied",
+          });
           return {
             ok: true,
             value: {
@@ -566,6 +572,13 @@ export function createVerifiedImplementStep(
         stepCursor = phaseSteps?.length ?? 0;
         attemptNumber = 1;
 
+        options.onProgress?.({
+          kind: "patch-path",
+          phase: options.phaseNumber ?? 0,
+          path: "fell-back-to-text",
+          reason: "verification-red-after-structured",
+        });
+
         const currentFileContents = readCurrentFileContents(
           options.workspace,
           options.languageConfig,
@@ -576,6 +589,13 @@ export function createVerifiedImplementStep(
           lastError.message,
           currentFileContents,
         );
+      } else {
+        options.onProgress?.({
+          kind: "patch-path",
+          phase: options.phaseNumber ?? 0,
+          path: "fell-back-to-text",
+          reason: structuredResult.error.reason,
+        });
       }
 
       const totalImplementerAttempts = 1 + maxLocalRetries;
