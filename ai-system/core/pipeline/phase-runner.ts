@@ -144,6 +144,39 @@ export function hasNetWorkingTreeChange(workspace: string): boolean {
 }
 
 /**
+ * Restore the working tree to the pre-phase HEAD after a phase abort.
+ *
+ * Runs `git reset --hard HEAD` followed by `git clean -fd` (NO `-x` — must
+ * honor `.gitignore` so build artifacts / ignored files survive; only
+ * untracked non-ignored stray files are removed), both with `cwd: workspace`.
+ *
+ * NEVER THROWS: any failure (e.g. not a git repo, git unavailable) is caught
+ * and surfaced as a `restore-failed` progress event so the original phase
+ * failure is never masked. The tree may remain dirty after a failure, but the
+ * caller's error is still returned.
+ *
+ * @param workspace  - Absolute path to the workspace root.
+ * @param phase      - The phase number being aborted, for the progress event.
+ * @param onProgress - Optional progress reporter; silent when omitted.
+ */
+export function restoreWorkingTree(
+  workspace: string,
+  phase: number,
+  onProgress?: OnProgress,
+): void {
+  try {
+    execSync("git reset --hard HEAD", { cwd: workspace, encoding: "utf8" });
+    execSync("git clean -fd", { cwd: workspace, encoding: "utf8" });
+  } catch (err) {
+    onProgress?.({
+      kind: "restore-failed",
+      phase,
+      reason: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
  * Returns the deduplicated (by descriptor id) set of whole-repo-validator
  * toolchain descriptors implicated by the files currently touched in the
  * workspace (per `getTouchedFiles`), given the workspace's devShell palette.
@@ -294,10 +327,13 @@ export async function runPhase(
     results: new Map(),
   });
   if (!result.ok) {
-    return attributePhaseFailure(options.workspace, options.palette, result);
+    const attributed = await attributePhaseFailure(options.workspace, options.palette, result);
+    restoreWorkingTree(options.workspace, phase.number, options.onProgress);
+    return attributed;
   }
 
   if (!hasNetWorkingTreeChange(options.workspace)) {
+    restoreWorkingTree(options.workspace, phase.number, options.onProgress);
     return {
       ok: false,
       error: new Error(
@@ -308,6 +344,7 @@ export async function runPhase(
 
   const assertionResult = checkAssertions(options.workspace, phase.assertions ?? []);
   if (!assertionResult.ok) {
+    restoreWorkingTree(options.workspace, phase.number, options.onProgress);
     return {
       ok: false,
       error: new Error(

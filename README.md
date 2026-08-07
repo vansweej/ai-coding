@@ -194,7 +194,9 @@ workspace's devShell — there is no way to force a specific language.
   `shellcheck`) once on the untouched tree before any implementation attempt; a pre-existing
   failure is an environment error (exit 3), not a retryable phase failure
 - **Verbose progress feed**: `-v` / `--verbose` streams phase/step start, finish, retry, and
-  failure events to stderr as the run executes; silent by default
+  failure events to stderr as the run executes; silent by default. A phase abort restores the
+  working tree to the pre-phase HEAD; if that restore itself fails, a `restore-failed` event
+  is emitted to the feed rather than failing silently.
 
 ### Usage
 

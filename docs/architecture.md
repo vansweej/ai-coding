@@ -340,6 +340,17 @@ Author-declared `Assert:` directives are the primary mechanism for expressing a
 plan's structural intent as a machine-checked invariant; the aider-text fallback and
 structured-patch apply paths are otherwise unchanged by this hardening. Plans with
 no `Assert:` lines are unaffected (`phase.assertions ?? []` is checked trivially).
+
+`runPhase` also restores the working tree to the pre-phase HEAD
+(`restoreWorkingTree`: `git reset --hard HEAD` + `git clean -fd`, honoring
+`.gitignore`) on every non-commit abort return — the `attributePhaseFailure`
+path (including the `BaselineCheckError` case), the net working-tree change
+gate, and the structural assertion gate. The successful commit path is never
+restored, since a committed phase's HEAD is the new state. `restoreWorkingTree`
+never throws; a restore failure (e.g. a non-git workspace) emits a
+`restore-failed` progress event rather than masking the original phase
+failure, so a dirty tree after abort is observable instead of silent.
+
 A previously-proposed alternative fix — tightening the verified-implement step's
 recheck escape hatches in `verified-implement-step.ts` — was evaluated and rejected
 as provably inert: in phase mode, `implementation !== ""` already implies

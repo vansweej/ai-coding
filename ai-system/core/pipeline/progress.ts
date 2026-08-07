@@ -12,7 +12,7 @@
  * color is used.
  */
 
-import type { StructuredPatchReason } from "@ai-coding/shared";
+import type { RestoreFailedProgressEvent, StructuredPatchReason } from "@ai-coding/shared";
 
 /** A single phase or step lifecycle event emitted during a plan-cycle run. */
 export type ProgressEvent =
@@ -60,7 +60,8 @@ export type ProgressEvent =
        * progress line can surface it without re-appending it to the reason.
        */
       readonly detail?: string;
-    };
+    }
+  | RestoreFailedProgressEvent;
 
 /** Callback invoked with each `ProgressEvent` as a plan-cycle run progresses. */
 export type OnProgress = (event: ProgressEvent) => void;
@@ -84,6 +85,7 @@ const NERD_GLYPHS: Readonly<Record<ProgressEvent["kind"], string>> = {
   "step-fail": "✗",
   "step-retry": "↻",
   "patch-path": "⇄",
+  "restore-failed": "⚠",
 };
 
 /** ASCII fallback glyphs used when color/Unicode is not appropriate. */
@@ -97,6 +99,7 @@ const ASCII_GLYPHS: Readonly<Record<ProgressEvent["kind"], string>> = {
   "step-fail": "x",
   "step-retry": "~",
   "patch-path": "=",
+  "restore-failed": "!",
 };
 
 /** ANSI SGR codes used to color each event kind's glyph. */
@@ -110,6 +113,7 @@ const SGR: Readonly<Record<ProgressEvent["kind"], string>> = {
   "step-fail": "\x1b[31m", // red
   "step-retry": "\x1b[33m", // yellow
   "patch-path": "\x1b[35m", // magenta
+  "restore-failed": "\x1b[31m", // red
 };
 
 const SGR_RESET = "\x1b[0m";
@@ -150,6 +154,8 @@ function buildLabel(event: ProgressEvent): string {
       return `Step ${event.step}  failed: ${event.reason}`;
     case "step-retry":
       return `Step ${event.step}  ${event.retry} retry ${event.index}/${event.max}`;
+    case "restore-failed":
+      return `Phase ${event.phase}  working-tree restore FAILED: ${event.reason}`;
     case "patch-path": {
       const base =
         event.path === "structured-applied"
