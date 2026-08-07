@@ -210,8 +210,11 @@ export async function applyPatch(
           };
         }
 
-        // Replace the anchor with the replacement text
-        const newContent = currentContent.replace(edit.search, edit.replace);
+        // Replace the anchor with the replacement text. A replacer FUNCTION is used
+        // (rather than passing edit.replace as a string) because a string second
+        // argument makes String.prototype.replace interpret $&, $1, $$, $`, and $'
+        // as special patterns; a replacer function returns the replacement verbatim.
+        const newContent = currentContent.replace(edit.search, () => edit.replace);
         writeFileSync(absolutePath, newContent, "utf8");
         applied.push({ filePath: edit.filePath, created: false });
       }
