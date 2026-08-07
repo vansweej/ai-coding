@@ -595,6 +595,7 @@ export function createVerifiedImplementStep(
           phase: options.phaseNumber ?? 0,
           path: "fell-back-to-text",
           reason: structuredResult.error.reason,
+          detail: structuredResult.error.detail,
         });
       }
 

@@ -131,6 +131,19 @@ export type StructuredDeclineReason =
  */
 export type StructuredPatchReason = StructuredDeclineReason | "structured-applied";
 
+/**
+ * A `ProgressEvent` variant emitted when a post-abort working-tree restore
+ * fails (`git reset --hard HEAD` + `git clean -fd` in `restoreWorkingTree`),
+ * signalling a dirty tree that could not be rolled back rather than failing
+ * silently. This is the canonical source definition; `progress.ts` extends
+ * its local union from this shape so the zero-import root stays import-free.
+ */
+export interface RestoreFailedProgressEvent {
+  readonly kind: "restore-failed";
+  readonly phase: number;
+  readonly reason: string;
+}
+
 /** Name of the forced tool/function every structured-capable dispatcher exposes. */
 export const PATCH_TOOL_NAME = "emit_patch";
 

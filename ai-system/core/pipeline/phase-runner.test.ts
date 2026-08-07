@@ -163,11 +163,10 @@ describe("runPhase", () => {
     if (!result.ok) {
       expect(result.error).not.toBeInstanceOf(BaselineCheckError);
     }
-    // The dirty file must be untouched by attribution (rust is not a
-    // whole-repo validator, so no stash/pop was ever attempted).
-    expect(readFileSync(join(workspace, "a.rs"), "utf8")).toBe(
-      "// dirty (this phase's own change)\n",
-    );
+    // restoreWorkingTree resets the tree to the pre-phase committed HEAD
+    // after every non-commit abort return (rust is not a whole-repo
+    // validator, so no stash/pop was ever attempted, but restore still runs).
+    expect(readFileSync(join(workspace, "a.rs"), "utf8")).toBe("// baseline\n");
   });
 
   it("returns the original failure unchanged when nothing has been touched", async () => {
@@ -207,10 +206,10 @@ describe("runPhase", () => {
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(BaselineCheckError);
     }
-    // git stash / stash pop must have restored the dirty tree exactly.
-    expect(readFileSync(join(workspace, "flake.nix"), "utf8")).toBe(
-      "{ this-phase-broke-it = true; }\n",
-    );
+    // git stash / stash pop restores the dirty tree inside attributePhaseFailure,
+    // but restoreWorkingTree then runs afterward and resets to the pre-phase
+    // committed HEAD, so the final on-disk state is the baseline.
+    expect(readFileSync(join(workspace, "flake.nix"), "utf8")).toBe("{ }\n");
   });
 
   it("does not commit a phase that leaves no net working-tree change", async () => {

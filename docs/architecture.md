@@ -340,6 +340,17 @@ Author-declared `Assert:` directives are the primary mechanism for expressing a
 plan's structural intent as a machine-checked invariant; the aider-text fallback and
 structured-patch apply paths are otherwise unchanged by this hardening. Plans with
 no `Assert:` lines are unaffected (`phase.assertions ?? []` is checked trivially).
+
+`runPhase` also restores the working tree to the pre-phase HEAD
+(`restoreWorkingTree`: `git reset --hard HEAD` + `git clean -fd`, honoring
+`.gitignore`) on every non-commit abort return — the `attributePhaseFailure`
+path (including the `BaselineCheckError` case), the net working-tree change
+gate, and the structural assertion gate. The successful commit path is never
+restored, since a committed phase's HEAD is the new state. `restoreWorkingTree`
+never throws; a restore failure (e.g. a non-git workspace) emits a
+`restore-failed` progress event rather than masking the original phase
+failure, so a dirty tree after abort is observable instead of silent.
+
 A previously-proposed alternative fix — tightening the verified-implement step's
 recheck escape hatches in `verified-implement-step.ts` — was evaluated and rejected
 as provably inert: in phase mode, `implementation !== ""` already implies
@@ -792,6 +803,13 @@ silent:
   3. `path: "fell-back-to-text"`, `reason: structuredResult.error.reason` — the
      structured attempt declined outright (any `StructuredDeclineReason`), and
      the text loop runs from the start.
+
+When the fell-back-to-text reason is `dispatch-error`, the rendered progress
+line appends the underlying transport failure as a `: <detail>` suffix — for
+example `(dispatch-error): ECONNREFUSED`. The `detail` field on the event is
+optional and present only for that reason (carried from the dispatch error's
+cause), and every other patch-path line — including `structured-applied` —
+renders exactly as before, with no trailing detail.
 
 This is **observability only** — none of these three emission points change
 which branch executes; they report a decision that was already being made

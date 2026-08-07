@@ -135,6 +135,11 @@ export class CopilotDispatcher implements ModelDispatcher {
    * Anthropic's `input` (already a parsed object), Copilot's
    * `function.arguments` is a JSON-encoded STRING that must be
    * `JSON.parse`d before `parsePatchOps` can validate it.
+   *
+   * Dispatch failures are enriched for `--verbose` observability: the
+   * endpoint, the resolved wire model, and the underlying cause are embedded
+   * in the returned error's message exactly once, with the original error
+   * preserved as `error.cause` for downstream consumers.
    */
   async dispatchPatch(request: DispatchRequest): Promise<Result<readonly PatchOp[]>> {
     try {
@@ -221,10 +226,22 @@ export class CopilotDispatcher implements ModelDispatcher {
 
       return { ok: true, value: parsed.value };
     } catch (error) {
-      return {
-        ok: false,
-        error: error instanceof Error ? error : new Error(String(error)),
-      };
+      // Enrich dispatch failures for --verbose observability: the endpoint,
+      // the resolved wire model, and the underlying cause are embedded in
+      // the message exactly once, with the original error preserved as
+      // `.cause` for downstream consumers.
+      const baseError = error instanceof Error ? error : new Error(String(error));
+      const causeText =
+        baseError.cause instanceof Error
+          ? baseError.cause.message
+          : baseError.cause !== undefined
+            ? String(baseError.cause)
+            : "unknown";
+      const wireModel = toCopilotWireModel(request.model);
+      const msg =
+        `Copilot structured dispatch (emit_patch) to ${this.endpoint} for wire model "${wireModel}" failed: ` +
+        `${baseError.message} (cause: ${causeText})`;
+      return { ok: false, error: new Error(msg, { cause: baseError }) };
     }
   }
 }

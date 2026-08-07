@@ -12,6 +12,14 @@ import type { PatchEdit } from "./parse-patch";
 export interface StructuredDecline {
   readonly reason: StructuredDeclineReason;
   readonly message: string;
+  /**
+   * Optional human-readable diagnostic detail, present only for the
+   * `dispatch-error` reason. Derived from the underlying error's `cause` so
+   * downstream consumers (e.g. the `--verbose` progress feed) can surface the
+   * root transport failure without re-appending it to `message` (which already
+   * embeds `(cause: X)`).
+   */
+  readonly detail?: string;
 }
 
 /**
@@ -178,7 +186,17 @@ export async function tryStructuredPhase(
   try {
     const outcome = await orchestratePatch(event, config);
     if (!outcome.ok) {
-      return { ok: false, error: { reason: "dispatch-error", message: outcome.error.message } };
+      const cause = outcome.error.cause;
+      const detail =
+        cause instanceof Error
+          ? cause.message
+          : cause !== undefined
+            ? String(cause)
+            : outcome.error.message;
+      return {
+        ok: false,
+        error: { reason: "dispatch-error", message: outcome.error.message, detail },
+      };
     }
 
     if (outcome.value.kind === "not-capable") {

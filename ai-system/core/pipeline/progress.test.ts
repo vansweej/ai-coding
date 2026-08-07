@@ -26,6 +26,7 @@ const EVENTS: readonly ProgressEvent[] = [
     path: "fell-back-to-text",
     reason: "apply-failed",
   },
+  { kind: "restore-failed", phase: 1, reason: "git reset --hard HEAD failed" },
 ];
 
 describe("buildTheme", () => {
@@ -34,6 +35,7 @@ describe("buildTheme", () => {
     expect(theme.useColor).toBe(true);
     expect(theme.glyphs["phase-start"]).toBe("▶");
     expect(theme.glyphs["step-fail"]).toBe("✗");
+    expect(theme.glyphs["restore-failed"]).toBe("⚠");
   });
 
   it("returns a plain ASCII theme when useColor is false", () => {
@@ -41,6 +43,7 @@ describe("buildTheme", () => {
     expect(theme.useColor).toBe(false);
     expect(theme.glyphs["phase-start"]).toBe(">");
     expect(theme.glyphs["step-fail"]).toBe("x");
+    expect(theme.glyphs["restore-failed"]).toBe("!");
   });
 
   it("produces different glyph maps for color vs plain themes", () => {
@@ -103,6 +106,12 @@ describe("formatProgressEvent (plain theme)", () => {
     );
   });
 
+  it("formats restore-failed with the ASCII glyph and no step indentation", () => {
+    const line = formatProgressEvent(EVENTS[10], theme);
+    expect(line).toBe("! Phase 1  working-tree restore FAILED: git reset --hard HEAD failed");
+    expect(line.startsWith("  ")).toBe(false);
+  });
+
   it("never emits ANSI escape codes under the plain theme", () => {
     for (const event of EVENTS) {
       expect(formatProgressEvent(event, theme)).not.toContain("\x1b[");
@@ -134,6 +143,14 @@ describe("formatProgressEvent (color theme)", () => {
   it("formats patch-path with the magenta glyph, unindented", () => {
     const line = formatProgressEvent(EVENTS[8], theme);
     expect(line).toBe("\x1b[35m⇄\x1b[0m Phase 1  structured patch applied (structured-applied)");
+  });
+
+  it("formats restore-failed with the red warning glyph and no step indentation", () => {
+    const line = formatProgressEvent(EVENTS[10], theme);
+    expect(line).toBe(
+      "\x1b[31m⚠\x1b[0m Phase 1  working-tree restore FAILED: git reset --hard HEAD failed",
+    );
+    expect(line.startsWith("  ")).toBe(false);
   });
 });
 
