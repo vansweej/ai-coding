@@ -35,9 +35,9 @@ ai-coding/
     core/
       model-router/        - action → ModelRole; role + profile → model ID
       mode-router/         - source → AIMode ("editor" | "agentic")
-      orchestrator/        - Single LLM call lifecycle; CopilotDispatcher (sends the durable GITHUB_COPILOT_TOKEN OAuth token DIRECTLY as the chat Bearer credential — NO copilot_internal/v2/token exchange, which is WAF-blocked for opencode-minted tokens — with an honest User-Agent and X-GitHub-Api-Version: 2026-06-01 mirroring opencode), OllamaDispatcher, AnthropicDispatcher, OpenCodeZenDispatcher
+      orchestrator/        - Single LLM call lifecycle; CopilotDispatcher (sends the durable GITHUB_COPILOT_TOKEN OAuth token DIRECTLY as the chat Bearer credential — NO copilot_internal/v2/token exchange, which is WAF-blocked for opencode-minted tokens — with an honest User-Agent and X-GitHub-Api-Version: 2026-06-01 mirroring opencode), OllamaDispatcher, AnthropicDispatcher, OpenCodeZenDispatcher; orchestratePatch() (structured-patch facade, see below); patch-contract.ts, patch-capability.ts
       pipeline/
-        steps/             - OrchestratorStep, SkillResolverStep, VerifiedImplementStep
+        steps/             - OrchestratorStep, SkillResolverStep, VerifiedImplementStep, structured-implement.ts (tryStructuredPhase: whole-phase structured patch attempt with transactional apply/rollback, tried ahead of the aider-text retry loop)
         definitions/       - dev-cycle language configs (interactive), PLAN_CONFIG_FACTORIES
                              toolchain registry for plan-cycle (rust, typescript, python, cpp,
                              haskell, julia, nix, shell), scaffold-*
@@ -49,10 +49,19 @@ ai-coding/
       load-config.ts       - Builds OrchestratorConfig with selected profile
       select-pipeline.ts   - Instantiates pipeline by name
     shared/
-      event-types.ts       - Shared type definitions (AIRequestEvent, AIAction, etc.)
+      event-types.ts       - Shared type definitions (AIRequestEvent, AIAction, etc.); also the
+                             HARD RULE zero-import root of the dependency graph (@ai-coding/shared
+                             alias target) — hosts PatchOp, PATCH_TOOL_NAME, PATCH_OPS_JSON_SCHEMA,
+                             and the optional ModelDispatcher.dispatchPatch? channel. This file must
+                             NEVER import from patch-contract.ts or parse-patch.ts (would create a
+                             cycle); patch-contract.ts depends on both, never the reverse.
   opencode/
     mappings/              - OpenCode provider/model configs (symlinked by Home Manager)
   docs/                    - Project documentation
+  scripts/
+    probe-copilot-toolcalls.ts - One-shot diagnostic (v8-ignore excluded from coverage) probing
+                             whether a backend's proxy honors forced tool_calls for the structured
+                             patch schema. See docs/adr/ for probe results per backend.
 ```
 
 ---
