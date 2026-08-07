@@ -733,22 +733,46 @@ retry/escalation loop in `createVerifiedImplementStep`:
 1. Calls `orchestratePatch()` for the whole phase at once — a single forced
    tool call returning **all** ops for the phase, not one call per step.
 2. Converts ops via `patchOpsToEdits`.
-3. Applies them **transactionally**: snapshots every touched path (source and
-   destination for moves) before calling `applyPatch`, and on any failure
-   (including a partial apply, e.g. op 3 of 5) **rolls back every touched
-   path** to its pre-attempt state — restoring edited/moved files, deleting
-   newly-created ones, reversing partial moves — before returning an error.
-   This is deliberately different from the applier's idempotent no-op
-   semantics (byte-identical create / already-satisfied move), which exist to
-   make the *text* loop's re-issued edits safe to retry; the whole-phase
-   structured attempt is transactional instead, since a caller falling back
-   to the text loop must always start from a clean tree.
-4. Declines cleanly without mutating when a touched path is an existing
-   directory (e.g. a directory move): directory moves cannot be faithfully
-   snapshotted or rolled back (`writeFileSync`-based rollback assumes files),
-   and per operating rule are not valid pipeline-plan operations anyway. The
-   decline returns an error `Result` that triggers the aider-text fallback,
-   never a crash.
+3. Applies them via `applyEditsTransactionally`, which branches on whether any
+   touched path (source or destination for moves) resolves to an EXISTING
+   DIRECTORY:
+   - **File-only edits** (no touched path is a directory): applies the
+     original IN-PROCESS content-snapshot path — snapshots every touched path
+     before calling `applyPatch`, and on any failure (including a partial
+     apply, e.g. op 3 of 5) **rolls back every touched path** to its
+     pre-attempt state — restoring edited/moved files, deleting newly-created
+     ones, reversing partial moves — before returning an error. This works
+     without a git repository and is deliberately different from the
+     applier's idempotent no-op semantics (byte-identical create /
+     already-satisfied move), which exist to make the *text* loop's re-issued
+     edits safe to retry.
+   - **Directory-touching edits** (e.g. a whole-directory move): applies via a
+     GIT-TRANSACTIONAL path instead, since the file-content snapshot model
+     cannot represent or restore a directory. If `workspace` is not a git
+     repository, declines gracefully with `directory-declined` (no mutation).
+     Otherwise calls `applyPatch` (whose `renameSync`-based move verb natively
+     supports directories) and, on failure, restores the tree via
+     `git reset --hard HEAD` + `git clean -fd` (omitting `-x`, so
+     `.gitignore`d build artifacts survive) before returning an `apply-failed`
+     error. This relies on a verified invariant: `tryStructuredPhase` runs
+     exactly once per phase, before any step edits are applied and before the
+     text loop starts, and `runPhase` commits at each phase boundary — so the
+     working tree is provably a clean committed HEAD at structured-apply
+     time, meaning `git reset --hard HEAD` can never destroy earlier-step
+     uncommitted work. `assertInsideWorkspace` still gates every op on both
+     paths, including move destinations. The git-restore helper deliberately
+     duplicates `phase-runner.ts`'s `restoreWorkingTree` locally rather than
+     importing it, to avoid an import cycle
+     (`phase-runner` → `verified-implement-step` → `structured-implement` →
+     `phase-runner`).
+4. Directory-touching edits in a non-git workspace decline cleanly without
+   mutating rather than crashing: the original file-content
+   `snapshotTouchedPaths` guard remains as a defensive backstop on the
+   file-only path (it should never see a directory path in practice, since
+   `applyEditsTransactionally` routes those to the git-transactional branch
+   above), preventing any future caller from reintroducing an `EISDIR` crash.
+   The decline returns an error `Result` that triggers the aider-text
+   fallback, never a crash.
 5. Never throws. Any thrown error — including a rejected `dispatchPatch`
    propagating up through `orchestratePatch` (which does not itself guard
    against a rejecting dispatcher) — is converted into an error `Result`, so

@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AIRequestEvent, Result, StructuredDeclineReason } from "@ai-coding/shared";
@@ -46,6 +47,12 @@ interface PathSnapshot {
  * assumes a file); attempting to `readFileSync` a directory would otherwise
  * throw `EISDIR`. Declining here lets the caller fall back cleanly to the
  * incremental aider-text loop instead of crashing.
+ *
+ * This is now a DEFENSIVE BACKSTOP only: `applyEditsTransactionally` routes
+ * directory-touching edits to the git-transactional path (via
+ * `touchesDirectory`) before this function is ever called, so in practice a
+ * directory path should never reach here. The guard remains so a future
+ * caller cannot reintroduce the `EISDIR` crash.
  */
 function snapshotTouchedPaths(
   workspace: string,
@@ -78,6 +85,79 @@ function snapshotTouchedPaths(
     });
   }
   return { ok: true, value: snapshots };
+}
+
+/**
+ * Cheap, never-throwing probe for whether `workspace` is inside a git work
+ * tree. Gates whether directory-touching structured edits may use the
+ * git-transactional apply path (see `applyEditsTransactionally`); a `false`
+ * result routes directory-touching edits to a graceful `directory-declined`
+ * instead, so this must never throw regardless of git's availability.
+ */
+function isGitRepo(workspace: string): boolean {
+  try {
+    const stdout = execSync("git rev-parse --is-inside-work-tree", {
+      cwd: workspace,
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    return stdout.trim() === "true";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Restore `workspace` to its clean, committed HEAD state via `git reset
+ * --hard HEAD` followed by `git clean -fd`. This deliberately duplicates
+ * `phase-runner.ts`'s `restoreWorkingTree` rather than importing it, because
+ * importing from `phase-runner.ts` would create an import cycle
+ * (`phase-runner` -> `verified-implement-step` -> `structured-implement` ->
+ * `phase-runner`). `git clean -fd` omits `-x`, so `.gitignore`d build
+ * artifacts survive. This is only ever called after an `applyPatch` failure
+ * on a tree that is provably equal to a clean committed HEAD (see the
+ * phase-boundary invariant documented on `applyEditsTransactionally`), so
+ * `git reset --hard HEAD` cannot destroy earlier uncommitted work -- there
+ * is none. Best-effort: the empty catch mirrors `restoreWorkingTree`'s
+ * never-throws contract, preserving the original apply error as the primary
+ * failure even if the restore itself fails.
+ */
+function gitRestoreWorkingTree(workspace: string): void {
+  try {
+    execSync("git reset --hard HEAD", { cwd: workspace, encoding: "utf8" });
+    execSync("git clean -fd", { cwd: workspace, encoding: "utf8" });
+  } catch {
+    // Best-effort restore; the original applyPatch error is still returned
+    // to the caller, which falls back to the text loop.
+  }
+}
+
+/**
+ * Returns `true` iff any path touched by `edits` (`filePath`, plus `toPath`
+ * for move edits) resolves to an EXISTING directory. Deliberately keys off
+ * existing-directory endpoints and NOT off `edit.isMove`/move-kind: a plain
+ * FILE move must keep using the in-process content snapshot path below and
+ * must keep working in non-git workspaces (see the "rolls back a partial
+ * move when a later op fails" test, which moves a plain file in a non-git
+ * temp workspace and must remain green). Directory-touching edits are routed
+ * to the git-transactional path instead, since the file-content
+ * snapshot/rollback model cannot represent or restore a directory.
+ */
+function touchesDirectory(workspace: string, edits: readonly PatchEdit[]): boolean {
+  const paths = new Set<string>();
+  for (const edit of edits) {
+    paths.add(edit.filePath);
+    if (edit.toPath !== undefined) {
+      paths.add(edit.toPath);
+    }
+  }
+  for (const relPath of paths) {
+    const absPath = resolve(workspace, relPath);
+    if (existsSync(absPath) && lstatSync(absPath).isDirectory()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -116,15 +196,60 @@ function rollbackToSnapshot(snapshots: readonly PathSnapshot[]): void {
  * Does NOT rely on the applier's idempotent no-op semantics (byte-identical
  * create / already-satisfied move) -- those exist to make the TEXT loop's
  * re-issued edits safe to retry; this whole-phase attempt is transactional
- * instead, via snapshot + rollback.
+ * instead.
  *
- * Returns early with an error `Result` -- with NO mutation and NO rollback
- * needed -- when `snapshotTouchedPaths` refuses a directory-touching path.
+ * Branches on `touchesDirectory(workspace, edits)`:
+ *
+ * - DIRECTORY-TOUCHING edits (any touched path resolves to an existing
+ *   directory): applied via a GIT-TRANSACTIONAL path. If `workspace` is not
+ *   a git repository, declines gracefully with `directory-declined` (no
+ *   mutation) -- directory moves cannot be safely rolled back without git.
+ *   Otherwise applies via `applyPatch` (whose `renameSync`-based move verb
+ *   natively supports directories) and, on failure, restores the tree via
+ *   `gitRestoreWorkingTree` (`git reset --hard HEAD` + `git clean -fd`)
+ *   before returning an `apply-failed` error. This is SAFE because
+ *   `tryStructuredPhase` is invoked exactly once per phase, at the top of
+ *   `createVerifiedImplementStep.execute` (`verified-implement-step.ts:546`),
+ *   BEFORE any step edits are applied and before the text loop runs; and
+ *   `runPhase` commits at each phase boundary. So at structured-apply time
+ *   the working tree is provably equal to a clean committed HEAD, and
+ *   `git reset --hard HEAD` cannot destroy earlier-step uncommitted work --
+ *   there is none.
+ * - FILE-ONLY edits (no touched path is an existing directory): applied via
+ *   the original in-process content snapshot + rollback (`snapshotTouchedPaths`
+ *   / `rollbackToSnapshot`), which works without a git repository and covers
+ *   plain file creates/edits/moves.
  */
 async function applyEditsTransactionally(
   workspace: string,
   edits: readonly PatchEdit[],
 ): Promise<Result<void, StructuredDecline>> {
+  if (touchesDirectory(workspace, edits)) {
+    if (!isGitRepo(workspace)) {
+      return {
+        ok: false,
+        error: {
+          reason: "directory-declined",
+          message:
+            "Refusing structured patch: directory-touching edits require a git workspace for transactional rollback; declining to the aider-text fallback",
+        },
+      };
+    }
+
+    const applyResult = await applyPatch(workspace, edits);
+    if (!applyResult.ok) {
+      gitRestoreWorkingTree(workspace);
+      return {
+        ok: false,
+        error: {
+          reason: "apply-failed",
+          message: `Failed to apply structured patch to "${applyResult.error.filePath}": ${applyResult.error.message}`,
+        },
+      };
+    }
+    return { ok: true, value: undefined };
+  }
+
   const snapshotResult = snapshotTouchedPaths(workspace, edits);
   if (!snapshotResult.ok) {
     return {

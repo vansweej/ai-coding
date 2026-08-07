@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -94,6 +95,25 @@ function throwingStructuredDispatcher(): ModelDispatcher {
       throw new Error("boom");
     },
   };
+}
+
+/**
+ * Initialize `workspace` as a git repository with a single seed commit
+ * covering everything currently on disk. A freshly `git init`'d repo with
+ * NO commits still passes `isGitRepo` (`git rev-parse --is-inside-work-tree`
+ * only checks for a `.git` work tree, not a HEAD), but `git reset --hard
+ * HEAD` THROWS when there is no HEAD to reset to. Every directory-git test
+ * fixture MUST call this after seeding its files so HEAD exists and the
+ * git-transactional restore path in `applyEditsTransactionally` behaves as
+ * it does in real plan-cycle runs, where the pre-phase tree is always
+ * committed.
+ */
+function initGitRepo(workspace: string): void {
+  execSync("git init", { cwd: workspace, encoding: "utf8" });
+  execSync('git config user.email "test@example.com"', { cwd: workspace, encoding: "utf8" });
+  execSync('git config user.name "Test"', { cwd: workspace, encoding: "utf8" });
+  execSync("git add -A", { cwd: workspace, encoding: "utf8" });
+  execSync('git commit -m "seed"', { cwd: workspace, encoding: "utf8" });
 }
 
 let workspace: string;
@@ -255,6 +275,11 @@ describe("tryStructuredPhase", () => {
     // plan-cycle pipeline. This test is the regression guard for the
     // directory-decline fix. Post-fix, this must resolve (not reject) with a
     // clean error Result and leave the workspace untouched.
+    //
+    // This workspace is NOT a git repo, so it also documents the non-git
+    // branch of the git-transactional directory routing added later:
+    // directory-touching edits in a non-git workspace decline gracefully
+    // with `directory-declined` rather than attempting a git-based apply.
     mkdirSync(join(workspace, "somedir"), { recursive: true });
 
     const config: OrchestratorConfig = {
@@ -275,6 +300,159 @@ describe("tryStructuredPhase", () => {
     expect(existsSync(join(workspace, "somedir"))).toBe(true);
     expect(lstatSync(join(workspace, "somedir")).isDirectory()).toBe(true);
     expect(existsSync(join(workspace, "dest"))).toBe(false);
+  });
+
+  it("declines (err) without mutating when a directory move touches a non-git workspace", async () => {
+    // Same non-git-decline outcome as the test above, but expressed as a
+    // dedicated positive test for the graceful `directory-declined` branch
+    // (rather than only the EISDIR-regression framing above), with an
+    // explicit assertion on the decline message.
+    mkdirSync(join(workspace, "plaindir"), { recursive: true });
+    writeFileSync(join(workspace, "plaindir", "a.txt"), "hello");
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          { kind: "move", filePath: "plaindir", toPath: "moved" },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.reason).toBe("directory-declined");
+      expect(result.error.message).toContain("git");
+    }
+
+    expect(existsSync(join(workspace, "plaindir"))).toBe(true);
+    expect(existsSync(join(workspace, "moved"))).toBe(false);
+  });
+
+  it("applies the full multi-directory move batch via the git-transactional path (parlang Phase-0 shape)", async () => {
+    // Seeds the exact shape of the real parlang Phase-0 Step 1: whole
+    // directories (src, tests, examples) plus a root Cargo.toml, all moved
+    // under crates/parlang/. This is the apply-SUCCESS criterion, not merely
+    // clean-restore-on-failure -- proves the structured path can carry a
+    // real directory-reorg batch end to end.
+    mkdirSync(join(workspace, "src"), { recursive: true });
+    writeFileSync(join(workspace, "src", "lib.rs"), "pub fn lib() {}");
+    mkdirSync(join(workspace, "tests"), { recursive: true });
+    writeFileSync(join(workspace, "tests", "it.rs"), "// integration test");
+    mkdirSync(join(workspace, "examples"), { recursive: true });
+    writeFileSync(join(workspace, "examples", "demo.rs"), "fn main() {}");
+    writeFileSync(join(workspace, "Cargo.toml"), '[package]\nname = "parlang"\n');
+
+    initGitRepo(workspace);
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          { kind: "move", filePath: "src", toPath: "crates/parlang/src" },
+          { kind: "move", filePath: "tests", toPath: "crates/parlang/tests" },
+          { kind: "move", filePath: "examples", toPath: "crates/parlang/examples" },
+          { kind: "move", filePath: "Cargo.toml", toPath: "crates/parlang/Cargo.toml" },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(true);
+
+    expect(readFileSync(join(workspace, "crates/parlang/src/lib.rs"), "utf8")).toBe(
+      "pub fn lib() {}",
+    );
+    expect(readFileSync(join(workspace, "crates/parlang/tests/it.rs"), "utf8")).toBe(
+      "// integration test",
+    );
+    expect(readFileSync(join(workspace, "crates/parlang/examples/demo.rs"), "utf8")).toBe(
+      "fn main() {}",
+    );
+    expect(readFileSync(join(workspace, "crates/parlang/Cargo.toml"), "utf8")).toBe(
+      '[package]\nname = "parlang"\n',
+    );
+
+    expect(existsSync(join(workspace, "src"))).toBe(false);
+    expect(existsSync(join(workspace, "tests"))).toBe(false);
+    expect(existsSync(join(workspace, "examples"))).toBe(false);
+    expect(existsSync(join(workspace, "Cargo.toml"))).toBe(false);
+  });
+
+  it("applies a mixed batch: directory move followed by a create under the new destination tree", async () => {
+    // Proves mkdirSync(dirname) + renameSync handle nested directory moves,
+    // and that op ORDER matters: applyPatch fails an `exists` check if a
+    // move destination already exists, so the directory move must precede
+    // any create/edit under it -- this is the order a model would emit.
+    mkdirSync(join(workspace, "src"), { recursive: true });
+    writeFileSync(join(workspace, "src", "lib.rs"), "pub fn lib() {}");
+
+    initGitRepo(workspace);
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          { kind: "move", filePath: "src", toPath: "crates/parlang/src" },
+          {
+            kind: "create",
+            filePath: "crates/parlang/src/new_module.rs",
+            contents: "pub fn new_module() {}",
+          },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(true);
+
+    expect(readFileSync(join(workspace, "crates/parlang/src/lib.rs"), "utf8")).toBe(
+      "pub fn lib() {}",
+    );
+    expect(readFileSync(join(workspace, "crates/parlang/src/new_module.rs"), "utf8")).toBe(
+      "pub fn new_module() {}",
+    );
+    expect(existsSync(join(workspace, "src"))).toBe(false);
+  });
+
+  it("restores the working tree via git when a directory-touching batch fails mid-apply", async () => {
+    // First op is a valid directory move; second op fails (edit against a
+    // non-existent anchor). Asserts the git-transactional restore
+    // (gitRestoreWorkingTree) reverted the tree: the moved directory is back
+    // at its original path with original contents, and the destination tree
+    // is gone -- proving the text-loop fallback would start from a pristine
+    // tree, not a half-applied one. The seed commit (via initGitRepo) is
+    // mandatory here: without it, `git reset --hard HEAD` would throw
+    // (no-HEAD hazard) instead of restoring cleanly.
+    mkdirSync(join(workspace, "src"), { recursive: true });
+    writeFileSync(join(workspace, "src", "lib.rs"), "pub fn lib() {}");
+
+    initGitRepo(workspace);
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          { kind: "move", filePath: "src", toPath: "crates/parlang/src" },
+          { kind: "edit", filePath: "does-not-exist.rs", search: "x", replace: "y" },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.reason).toBe("apply-failed");
+    }
+
+    // Tree restored to the clean pre-apply committed state.
+    expect(existsSync(join(workspace, "src"))).toBe(true);
+    expect(readFileSync(join(workspace, "src", "lib.rs"), "utf8")).toBe("pub fn lib() {}");
+    expect(existsSync(join(workspace, "crates"))).toBe(false);
+
+    const status = execSync("git status --porcelain", { cwd: workspace, encoding: "utf8" });
+    expect(status.trim()).toBe("");
   });
 
   it("attributes apply-failed when an edit anchor does not match", async () => {
