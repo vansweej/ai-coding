@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -73,6 +81,18 @@ function failingStructuredDispatcher(message: string): ModelDispatcher {
       ok: false,
       error: new Error(message),
     }),
+  };
+}
+
+function throwingStructuredDispatcher(): ModelDispatcher {
+  return {
+    dispatch: async (_req: DispatchRequest): Promise<Result<string>> => ({
+      ok: true,
+      value: "unused",
+    }),
+    dispatchPatch: async (_req: DispatchRequest): Promise<Result<readonly PatchOp[]>> => {
+      throw new Error("boom");
+    },
   };
 }
 
@@ -213,5 +233,51 @@ describe("tryStructuredPhase", () => {
     expect(existsSync(join(workspace, "old.ts"))).toBe(true);
     expect(readFileSync(join(workspace, "old.ts"), "utf8")).toBe("export const x = 1;");
     expect(existsSync(join(workspace, "new.ts"))).toBe(false);
+  });
+
+  it("declines (err) without throwing or mutating when a move touches a directory", async () => {
+    // Regression guard: against the UNPATCHED code, snapshotTouchedPaths did
+    // an unconditional `readFileSync` on every touched path, which throws
+    // `EISDIR: illegal operation on a directory, read` when the path is an
+    // existing directory (legitimate for a move op, since the applier moves
+    // via `renameSync`, which supports directories). That throw escaped
+    // `tryStructuredPhase`'s never-throws contract and crashed the whole
+    // plan-cycle pipeline. This test is the regression guard for the
+    // directory-decline fix. Post-fix, this must resolve (not reject) with a
+    // clean error Result and leave the workspace untouched.
+    mkdirSync(join(workspace, "somedir"), { recursive: true });
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          { kind: "move", filePath: "somedir", toPath: "dest" },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(false);
+
+    expect(existsSync(join(workspace, "somedir"))).toBe(true);
+    expect(lstatSync(join(workspace, "somedir")).isDirectory()).toBe(true);
+    expect(existsSync(join(workspace, "dest"))).toBe(false);
+  });
+
+  it("never throws when the dispatcher rejects (honors the never-throws contract)", async () => {
+    // The only test that reaches tryStructuredPhase's top-level catch: a
+    // rejecting dispatchPatch is a real, reachable production path -- it
+    // propagates through orchestratePatch (which does not itself guard
+    // against a throwing dispatcher) and must be converted into an error
+    // Result rather than crashing the pipeline.
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": throwingStructuredDispatcher(),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(false);
   });
 });
