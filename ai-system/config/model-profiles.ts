@@ -43,19 +43,19 @@ export const LOCAL_PROFILE: ModelProfile = {
   },
 };
 
-/** All roles route to GitHub Copilot Claude Sonnet 4.6. */
+/** All roles route to GitHub Copilot Claude Sonnet 5 (namespaced id copilot/claude-sonnet-5). */
 export const COPILOT_DEFAULT_PROFILE: ModelProfile = {
   name: "copilot-default",
   roles: {
-    planner: "claude-sonnet-4.6",
-    implementer: "claude-sonnet-4.6",
-    debugger: "claude-sonnet-4.6",
-    fixer: "claude-sonnet-4.6",
-    reviewer: "claude-sonnet-4.6",
-    tester: "claude-sonnet-4.6",
-    scaffolder: "claude-sonnet-4.6",
-    explorer: "claude-sonnet-4.6",
-    default: "claude-sonnet-4.6",
+    planner: "copilot/claude-sonnet-5",
+    implementer: "copilot/claude-sonnet-5",
+    debugger: "copilot/claude-sonnet-5",
+    fixer: "copilot/claude-sonnet-5",
+    reviewer: "copilot/claude-sonnet-5",
+    tester: "copilot/claude-sonnet-5",
+    scaffolder: "copilot/claude-sonnet-5",
+    explorer: "copilot/claude-sonnet-5",
+    default: "copilot/claude-sonnet-5",
   },
 };
 
@@ -84,7 +84,9 @@ export const HYBRID_PROFILE: ModelProfile = {
  * provider-agnostic (built in load-config.ts by binding each model-ID string
  * to its dispatcher), any role in any current or future profile selects its
  * provider purely by which model-ID string it maps to (e.g. "claude-sonnet-5"
- * -> Anthropic, "claude-sonnet-4.6" -> Copilot, "gemma4:26b" -> Ollama).
+ * -> Anthropic native, "copilot/claude-sonnet-5" -> Copilot-served Sonnet 5
+ * (distinct from the Anthropic-native bare id), "claude-sonnet-4.6" -> Copilot,
+ * "gemma4:26b" -> Ollama).
  * Adding a new provider mix later is pure data: define another ModelProfile
  * constant and register it below -- no routing, CLI, or wiring changes required.
  */

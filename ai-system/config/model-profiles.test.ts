@@ -48,10 +48,10 @@ describe("COPILOT_DEFAULT_PROFILE", () => {
     expect(COPILOT_DEFAULT_PROFILE.name).toBe("copilot-default");
   });
 
-  it("maps all roles to claude-sonnet-4.6", () => {
+  it("maps all roles to copilot/claude-sonnet-5", () => {
     const roles = Object.values(COPILOT_DEFAULT_PROFILE.roles);
     for (const model of roles) {
-      expect(model).toBe("claude-sonnet-4.6");
+      expect(model).toBe("copilot/claude-sonnet-5");
     }
   });
 
