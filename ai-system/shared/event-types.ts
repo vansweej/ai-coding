@@ -104,6 +104,33 @@ export type PatchOp =
       readonly replace: string;
     };
 
+/**
+ * Why a whole-phase structured-patch attempt declined and the caller must fall
+ * back to the incremental aider-text loop. Distinguishes the two not-capable
+ * feature-detection outcomes, a dispatch-time failure, a conversion failure,
+ * the two transactional-apply refusal sites (directory-declined vs
+ * apply-failed), a thrown/rejected dispatcher, and the applied-then-verification
+ * -red fall-through (the structured patch DID apply, but verification failed
+ * and the phase resumes via the text loop).
+ */
+export type StructuredDeclineReason =
+  | "not-capable-text-mode"
+  | "not-capable-no-dispatch-patch"
+  | "dispatch-error"
+  | "conversion-failed"
+  | "apply-failed"
+  | "directory-declined"
+  | "threw"
+  | "verification-red-after-structured";
+
+/**
+ * The `reason` carried on a `patch-path` progress event: every decline reason,
+ * plus `"structured-applied"` — the honest marker that the phase SUCCEEDED via
+ * the whole-phase structured patch (verification went green) rather than the
+ * text loop.
+ */
+export type StructuredPatchReason = StructuredDeclineReason | "structured-applied";
+
 /** Name of the forced tool/function every structured-capable dispatcher exposes. */
 export const PATCH_TOOL_NAME = "emit_patch";
 

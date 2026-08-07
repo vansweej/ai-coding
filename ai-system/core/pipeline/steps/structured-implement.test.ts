@@ -114,6 +114,9 @@ describe("tryStructuredPhase", () => {
 
     const result = await tryStructuredPhase(makeEvent(), config, workspace);
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.reason).toBe("not-capable-text-mode");
+    }
   });
 
   it("falls back (err) when the dispatcher lacks dispatchPatch", async () => {
@@ -124,6 +127,9 @@ describe("tryStructuredPhase", () => {
 
     const result = await tryStructuredPhase(makeEvent(), config, workspace);
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.reason).toBe("not-capable-no-dispatch-patch");
+    }
   });
 
   it("falls back (err) when dispatchPatch itself fails", async () => {
@@ -135,6 +141,7 @@ describe("tryStructuredPhase", () => {
     const result = await tryStructuredPhase(makeEvent(), config, workspace);
     expect(result.ok).toBe(false);
     if (!result.ok) {
+      expect(result.error.reason).toBe("dispatch-error");
       expect(result.error.message).toContain("truncated tool call");
     }
   });
@@ -151,6 +158,9 @@ describe("tryStructuredPhase", () => {
 
     const result = await tryStructuredPhase(makeEvent(), config, workspace);
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.reason).toBe("conversion-failed");
+    }
   });
 
   it("applies a valid whole-phase create op to the workspace", async () => {
@@ -258,10 +268,32 @@ describe("tryStructuredPhase", () => {
 
     const result = await tryStructuredPhase(makeEvent(), config, workspace);
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.reason).toBe("directory-declined");
+    }
 
     expect(existsSync(join(workspace, "somedir"))).toBe(true);
     expect(lstatSync(join(workspace, "somedir")).isDirectory()).toBe(true);
     expect(existsSync(join(workspace, "dest"))).toBe(false);
+  });
+
+  it("attributes apply-failed when an edit anchor does not match", async () => {
+    writeFileSync(join(workspace, "existing.ts"), "export const a = 1;");
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          { kind: "edit", filePath: "existing.ts", search: "a = 999", replace: "a = 2" },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.reason).toBe("apply-failed");
+    }
   });
 
   it("never throws when the dispatcher rejects (honors the never-throws contract)", async () => {
@@ -279,5 +311,8 @@ describe("tryStructuredPhase", () => {
 
     const result = await tryStructuredPhase(makeEvent(), config, workspace);
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.reason).toBe("threw");
+    }
   });
 });
