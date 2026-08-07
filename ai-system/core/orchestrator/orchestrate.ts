@@ -3,6 +3,7 @@ import type {
   AIResponse,
   DispatchRequest,
   ModelDispatcher,
+  PatchOp,
   Result,
 } from "@ai-coding/shared";
 
@@ -12,6 +13,7 @@ import { resolveMode } from "../mode-router/resolve-mode";
 import { actionToRole } from "../model-router/action-to-role";
 import { selectModel } from "../model-router/select-model";
 import type { CerebrumMemory } from "./cerebrum-memory";
+import { patchModeForModel } from "./patch-capability";
 
 /** Configuration for the orchestrator, mapping model names to dispatchers. */
 export interface OrchestratorConfig {
@@ -40,6 +42,55 @@ export interface LLMOptions {
 }
 
 /**
+ * Resolve the model-ID for an event exactly as `orchestrate()` does, and
+ * look up its dispatcher. Shared by both `orchestrate()` and
+ * `orchestratePatch()` so model resolution is never forked between the two
+ * facades.
+ */
+function resolveDispatcher(
+  event: AIRequestEvent,
+  config: OrchestratorConfig,
+): { model: string; dispatcher: ModelDispatcher | undefined } {
+  const model = config.profile
+    ? resolveModelForRole(actionToRole(event.action), config.profile)
+    : selectModel(event, resolveMode(event.source));
+
+  return { model, dispatcher: config.dispatchers[model] };
+}
+
+/**
+ * Write the same memory record `orchestrate()` writes, shared by both
+ * facades so the side-effect is never silently forked or dropped on the
+ * structured path.
+ */
+async function writeMemory(
+  config: OrchestratorConfig,
+  params: {
+    action: AIRequestEvent["action"];
+    model: string;
+    mode: string;
+    prompt: string;
+    response: string;
+    startedAt: number;
+  },
+): Promise<void> {
+  if (!config.memory) {
+    return;
+  }
+
+  const memoryContent = JSON.stringify({
+    action: params.action,
+    model: params.model,
+    mode: params.mode,
+    prompt: params.prompt,
+    response: params.response,
+    timestamp: params.startedAt,
+  });
+
+  await config.memory.remember(memoryContent, 0.6);
+}
+
+/**
  * Orchestrate the full request lifecycle:
  * 1. Resolve operating mode from event source
  * 2. Select the appropriate model
@@ -55,11 +106,8 @@ export async function orchestrate(
   const startedAt = Date.now();
 
   const mode = resolveMode(event.source);
-  const model = config.profile
-    ? resolveModelForRole(actionToRole(event.action), config.profile)
-    : selectModel(event, mode);
+  const { model, dispatcher } = resolveDispatcher(event, config);
 
-  const dispatcher = config.dispatchers[model];
   if (!dispatcher) {
     return {
       ok: false,
@@ -92,22 +140,92 @@ export async function orchestrate(
     timing: { startedAt, durationMs },
   };
 
-  // Store the response in memory if memory client is available
-  if (config.memory) {
-    const memoryContent = JSON.stringify({
-      action: event.action,
-      model,
-      mode,
-      prompt,
-      response: result.value,
-      timestamp: startedAt,
-    });
-
-    await config.memory.remember(memoryContent, 0.6);
-  }
+  await writeMemory(config, {
+    action: event.action,
+    model,
+    mode,
+    prompt,
+    response: result.value,
+    startedAt,
+  });
 
   return {
     ok: true,
     value: response,
   };
+}
+
+/**
+ * Outcome of a structured-patch dispatch attempt via `orchestratePatch()`.
+ * `"not-capable"` signals the caller to fall back to the string
+ * `orchestrate()` path + the existing aider-text/parsePatch loop -- it is
+ * NOT an error, just "this model/attempt doesn't support structured output".
+ */
+export type PatchStructuredOutcome =
+  | { readonly kind: "structured"; readonly ops: readonly PatchOp[] }
+  | { readonly kind: "not-capable" };
+
+/**
+ * Structured-output counterpart to `orchestrate()`. Resolves the model and
+ * its dispatcher IDENTICALLY to `orchestrate()` (never forked -- see
+ * `resolveDispatcher`), feature-detects `dispatchPatch` on the resolved
+ * dispatcher, and either returns the model's structured `PatchOp[]` or
+ * signals `{ kind: "not-capable" }` so the caller falls back to the string
+ * path.
+ *
+ * Capability is recomputed on EVERY call from the action-resolved model-ID
+ * (never cached/resolved once up front), so a profile whose per-role model
+ * mix flips backends mid-run (e.g. HYBRID_PROFILE's implementer vs. fixer)
+ * is handled correctly without any extra plumbing in callers.
+ *
+ * This is the ONLY seam that reaches `config.dispatchers` for the
+ * structured path; pipeline steps must call this facade rather than
+ * indexing `config.dispatchers` themselves, so model resolution and the
+ * memory side-effect below are never duplicated/forked from `orchestrate()`.
+ */
+export async function orchestratePatch(
+  event: AIRequestEvent,
+  config: OrchestratorConfig,
+  llmOptions?: LLMOptions,
+): Promise<Result<PatchStructuredOutcome>> {
+  const startedAt = Date.now();
+  const mode = resolveMode(event.source);
+  const { model, dispatcher } = resolveDispatcher(event, config);
+
+  if (!dispatcher) {
+    return {
+      ok: false,
+      error: new Error(`No dispatcher configured for model "${model}"`),
+    };
+  }
+
+  if (patchModeForModel(model) === "text" || dispatcher.dispatchPatch === undefined) {
+    return { ok: true, value: { kind: "not-capable" } };
+  }
+
+  const prompt = event.payload.input ?? "";
+  const dispatchRequest: DispatchRequest = {
+    model,
+    prompt,
+    system: llmOptions?.system,
+    temperature: llmOptions?.temperature,
+    maxTokens: llmOptions?.maxTokens,
+    context: event.context,
+  };
+
+  const result = await dispatcher.dispatchPatch(dispatchRequest);
+  if (!result.ok) {
+    return result;
+  }
+
+  await writeMemory(config, {
+    action: event.action,
+    model,
+    mode,
+    prompt,
+    response: JSON.stringify(result.value),
+    startedAt,
+  });
+
+  return { ok: true, value: { kind: "structured", ops: result.value } };
 }
