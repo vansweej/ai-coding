@@ -35,6 +35,13 @@ export interface Phase {
    * Author-declared structural assertions checked by the runner AFTER
    * verification and BEFORE commit. Optional and backward compatible: plans
    * without any `Assert:` lines parse to an omitted field.
+   *
+   * Supported directives (see `phase-assertions.ts` for full grammar):
+   * `Assert: contains <path> :: <needle>`, `Assert: not-contains <path> :: <needle>`,
+   * `Assert: exists <path>`, `Assert: not-exists <path>`, and
+   * `Assert: matches <path> :: <regex>` -- an anchored-capable regex check
+   * against the file's content (compiled with `new RegExp`); an unreadable
+   * file or an invalid regex is a failure.
    */
   readonly assertions?: readonly PhaseAssertion[];
 }

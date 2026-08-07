@@ -254,18 +254,32 @@ Each phase is committed separately with a `Phase: N` trailer for resume tracking
 
 A phase may optionally declare `Assert:` directives (alongside `Commit message:`
 and `Coverage:`) to encode machine-checked, author-declared invariants about
-the final state of the workspace. Four grammars are supported:
+the final state of the workspace. Five grammars are supported:
 
 ```
 Assert: contains <path> :: <needle>
 Assert: not-contains <path> :: <needle>
 Assert: exists <path>
 Assert: not-exists <path>
+Assert: matches <path> :: <regex>
 ```
 
-The ` :: ` separator splits the path from the needle for the two
-content-checking verbs; the needle may itself contain spaces (only the
+The ` :: ` separator splits the path from the needle (or regex) for the
+content-checking verbs; the needle/regex may itself contain spaces (only the
 *first* ` :: ` is treated as the separator).
+
+`contains`/`not-contains` are plain substring checks. `matches` instead
+checks the file's content against an anchored-capable regular expression
+(compiled with `new RegExp`), so a plan author can express exact structural
+invariants that a substring `contains` cannot — e.g. "this table has
+*exactly* this one key" — closing the false-green loophole where unrelated
+surrounding content still happens to satisfy a plain substring needle. A
+missing/unreadable file, or an invalid regex, is a FAILURE for `matches`,
+never a silent pass.
+
+A missing/unreadable file is also a FAILURE for `not-contains` (as well as
+`contains`) — absence of a needle cannot be proven for a file that cannot be
+read.
 
 Assertions are **runner-enforced**: they are checked by the pipeline itself
 after the phase's verification (build/test/lint) succeeds and *before* the

@@ -492,4 +492,97 @@ describe("applyPatch", () => {
     // Source is untouched since the destination guard fails first.
     expect(existsSync(oldPath)).toBe(true);
   });
+
+  // Guards against a regression of the literal-replacement fix: `applyPatch` must
+  // use a replacer FUNCTION (not a string) as the second argument to
+  // String.prototype.replace, so that $-substitution patterns in the model-supplied
+  // replacement text (`$&`, `$1`, `$$`, `` $` ``, `$'`) land verbatim instead of being
+  // interpreted specially (which would silently re-insert the matched anchor text).
+  describe("literal $-pattern replacement", () => {
+    it("preserves a literal $& in the replacement without re-inserting the matched anchor", async () => {
+      const filePath = join(tempDir, "test.ts");
+      writeFileSync(filePath, "const anchor = 1;", "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "test.ts",
+          search: "const anchor = 1;",
+          replace: "const anchor = '$&';",
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits);
+      expect(result.ok).toBe(true);
+
+      const content = readFileSync(filePath, "utf8");
+      expect(content).toBe("const anchor = '$&';");
+      // The original matched anchor text must not have been re-inserted anywhere.
+      expect(content).not.toContain("const anchor = 1;");
+    });
+
+    it("preserves a literal $1 in the replacement", async () => {
+      const filePath = join(tempDir, "test.ts");
+      writeFileSync(filePath, "const anchor = 1;", "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "test.ts",
+          search: "const anchor = 1;",
+          replace: "const anchor = '$1';",
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits);
+      expect(result.ok).toBe(true);
+
+      const content = readFileSync(filePath, "utf8");
+      expect(content).toBe("const anchor = '$1';");
+    });
+
+    it("preserves a literal $$ in the replacement without collapsing it to a single $", async () => {
+      const filePath = join(tempDir, "test.ts");
+      writeFileSync(filePath, "const anchor = 1;", "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "test.ts",
+          search: "const anchor = 1;",
+          replace: "const price = '$$5';",
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits);
+      expect(result.ok).toBe(true);
+
+      const content = readFileSync(filePath, "utf8");
+      expect(content).toBe("const price = '$$5';");
+    });
+
+    it("still performs a normal replacement with no $-sequences", async () => {
+      const filePath = join(tempDir, "test.ts");
+      writeFileSync(filePath, "const anchor = 1;", "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "test.ts",
+          search: "const anchor = 1;",
+          replace: "const anchor = 2;",
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits);
+      expect(result.ok).toBe(true);
+
+      const content = readFileSync(filePath, "utf8");
+      expect(content).toBe("const anchor = 2;");
+    });
+  });
 });

@@ -341,6 +341,17 @@ plan's structural intent as a machine-checked invariant; the aider-text fallback
 structured-patch apply paths are otherwise unchanged by this hardening. Plans with
 no `Assert:` lines are unaffected (`phase.assertions ?? []` is checked trivially).
 
+The assertion vocabulary includes a `matches <path> :: <regex>` verb alongside
+`contains`/`not-contains`/`exists`/`not-exists`: it checks a file's content against
+an anchored-capable regular expression (compiled with `new RegExp`), rather than a
+plain substring, so a plan author can express exact structural invariants a
+substring `contains` cannot (e.g. "this table has exactly this one key") — closing
+the false-green loophole where unrelated surrounding content still satisfies a
+substring needle. An unreadable file, an invalid regex, or a non-match are each a
+FAILURE for `matches`, never a silent pass. `not-contains` likewise now treats a
+missing/unreadable file as a FAILURE (previously satisfied trivially) — absence of a
+needle cannot be proven for a file that cannot be read.
+
 `runPhase` also restores the working tree to the pre-phase HEAD
 (`restoreWorkingTree`: `git reset --hard HEAD` + `git clean -fd`, honoring
 `.gitignore`) on every non-commit abort return — the `attributePhaseFailure`

@@ -71,7 +71,36 @@ describe("parseAssertion", () => {
   });
 
   it("fails on an unknown verb", () => {
-    const result = parseAssertion("matches src/x.ts :: foo");
+    const result = parseAssertion("bogus src/x.ts :: foo");
+    expect(result.ok).toBe(false);
+  });
+
+  it("parses a valid matches directive", () => {
+    const result = parseAssertion("matches src/foo.ts :: ^export");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual({ kind: "matches", path: "src/foo.ts", pattern: "^export" });
+    }
+  });
+
+  it("fails when the :: separator is missing on a matches spec", () => {
+    const result = parseAssertion("matches src/foo.ts ^export");
+    expect(result.ok).toBe(false);
+  });
+
+  it("fails on an empty path for a matches spec", () => {
+    const result = parseAssertion("matches  :: ^export");
+    expect(result.ok).toBe(false);
+  });
+
+  it("fails on an empty pattern for a matches spec", () => {
+    const result = parseAssertion("matches src/foo.ts :: ");
+    expect(result.ok).toBe(false);
+  });
+
+  it("fails on an invalid regex for a matches spec, without throwing", () => {
+    expect(() => parseAssertion("matches src/foo.ts :: (")).not.toThrow();
+    const result = parseAssertion("matches src/foo.ts :: (");
     expect(result.ok).toBe(false);
   });
 });
@@ -143,11 +172,11 @@ describe("checkAssertions", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("not-contains passes when the file is missing", () => {
+  it("not-contains fails when the file is missing (absence cannot be proven for an unreadable file)", () => {
     const result = checkAssertions(workspace, [
       { kind: "not-contains", path: "missing.txt", needle: "x" },
     ]);
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
   });
 
   it("not-contains fails when the needle is present", () => {
@@ -182,5 +211,37 @@ describe("checkAssertions", () => {
     if (!result.ok) {
       expect(result.error.message).toContain("a.txt");
     }
+  });
+
+  it("matches passes when content matches the pattern", () => {
+    writeFileSync(join(workspace, "a.txt"), "export const value = 1;");
+    const result = checkAssertions(workspace, [
+      { kind: "matches", path: "a.txt", pattern: "^export const value" },
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("matches fails when content does not match the pattern", () => {
+    writeFileSync(join(workspace, "a.txt"), "const value = 1;");
+    const result = checkAssertions(workspace, [
+      { kind: "matches", path: "a.txt", pattern: "^export" },
+    ]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("matches fails on a missing/unreadable file", () => {
+    const result = checkAssertions(workspace, [
+      { kind: "matches", path: "missing.txt", pattern: "^export" },
+    ]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("matches fails on an invalid regex without throwing", () => {
+    writeFileSync(join(workspace, "a.txt"), "content");
+    expect(() =>
+      checkAssertions(workspace, [{ kind: "matches", path: "a.txt", pattern: "(" }]),
+    ).not.toThrow();
+    const result = checkAssertions(workspace, [{ kind: "matches", path: "a.txt", pattern: "(" }]);
+    expect(result.ok).toBe(false);
   });
 });
