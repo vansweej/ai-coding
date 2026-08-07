@@ -247,3 +247,76 @@ body
     }
   });
 });
+
+describe("Assert directive", () => {
+  it("parses two Assert lines onto a phase", () => {
+    const content = `# Feature: With assertions
+
+## Phase 1: Phase
+
+Commit message: feat: thing
+Assert: contains src/x.ts :: value
+Assert: exists docs/x.md
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.phases[0].assertions).toEqual([
+        { kind: "contains", path: "src/x.ts", needle: "value" },
+        { kind: "exists", path: "docs/x.md" },
+      ]);
+    }
+  });
+
+  it("yields an empty assertions array when no Assert lines are present (backward compatible)", () => {
+    const result = parsePlanFile(MINIMAL_PLAN);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.phases[0].assertions ?? []).toHaveLength(0);
+    }
+  });
+
+  it("returns an error naming the phase for an invalid Assert directive", () => {
+    const content = `# Feature: Bad assertion
+
+## Phase 1: Phase
+
+Commit message: feat: thing
+Assert: contains src/x.ts
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("Phase 1");
+      expect(result.error.message).toContain("invalid Assert directive");
+    }
+  });
+
+  it("ignores an Assert line appearing before any Phase heading", () => {
+    const content = `# Feature: Assert before phase
+
+Assert: contains src/x.ts :: value
+
+## Phase 1: Phase
+
+Commit message: feat: thing
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.phases[0].assertions ?? []).toHaveLength(0);
+    }
+  });
+});

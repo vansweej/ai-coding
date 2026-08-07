@@ -1,5 +1,8 @@
 import type { Result } from "@ai-coding/pipeline";
 
+import type { PhaseAssertion } from "./phase-assertions";
+import { parseAssertion } from "./phase-assertions";
+
 /** A single implementation step within a phase. */
 export interface Step {
   /** Step number (1-indexed). */
@@ -28,6 +31,12 @@ export interface Phase {
   readonly steps: readonly Step[];
   /** Coverage directive: skip, N%, or default (90%). */
   readonly coverage: CoverageDirective;
+  /**
+   * Author-declared structural assertions checked by the runner AFTER
+   * verification and BEFORE commit. Optional and backward compatible: plans
+   * without any `Assert:` lines parse to an omitted field.
+   */
+  readonly assertions?: readonly PhaseAssertion[];
 }
 
 /** A fully parsed plan file. */
@@ -42,6 +51,7 @@ const FEATURE_RE = /^#\s+Feature:\s*(.+)$/;
 const PHASE_RE = /^##\s+Phase\s+(\d+):\s*(.+)$/;
 const COMMIT_RE = /^Commit message:\s*(.+)$/;
 const COVERAGE_RE = /^Coverage:\s*(.+)$/;
+const ASSERT_RE = /^Assert:\s*(.+)$/;
 const STEP_RE = /^###\s+Step\s+(\d+):\s*(.+)$/;
 
 /**
@@ -89,6 +99,7 @@ export function parsePlanFile(content: string): Result<PlanFile> {
   let currentCommitMessage: string | undefined;
   let currentCoverage: CoverageDirective = { mode: "default" };
   const currentSteps: Step[] = [];
+  const currentAssertions: PhaseAssertion[] = [];
 
   let currentStepNumber: number | undefined;
   let currentStepTitle: string | undefined;
@@ -129,12 +140,14 @@ export function parsePlanFile(content: string): Result<PlanFile> {
       commitMessage: currentCommitMessage,
       steps: [...currentSteps],
       coverage: currentCoverage,
+      assertions: [...currentAssertions],
     });
     currentPhaseNumber = undefined;
     currentPhaseTitle = undefined;
     currentCommitMessage = undefined;
     currentCoverage = { mode: "default" };
     currentSteps.length = 0;
+    currentAssertions.length = 0;
     return { ok: true, value: undefined };
   }
 
@@ -185,6 +198,21 @@ export function parsePlanFile(content: string): Result<PlanFile> {
           ),
         };
       }
+      continue;
+    }
+
+    const assertMatch = ASSERT_RE.exec(line);
+    if (assertMatch && currentPhaseNumber !== undefined) {
+      const parsed = parseAssertion(assertMatch[1].trim());
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          error: new Error(
+            `Phase ${currentPhaseNumber} has an invalid Assert directive: ${parsed.error.message}`,
+          ),
+        };
+      }
+      currentAssertions.push(parsed.value);
       continue;
     }
 
