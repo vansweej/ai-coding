@@ -141,6 +141,35 @@ describe("applyPatch", () => {
     expect(readFileSync(filePath, "utf8")).toBe("export const value = 1;");
   });
 
+  it("overwrites an existing EMPTY file when creating (no content to conflict with)", async () => {
+    // Simulates a create op targeting a file that already exists as a
+    // zero-byte placeholder (e.g. left behind by an earlier move/touch).
+    // An empty file has no content to conflict with, so create is allowed
+    // to overwrite it deterministically instead of declining "exists".
+    const filePath = join(tempDir, "empty.ts");
+    writeFileSync(filePath, "", "utf8");
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "empty.ts",
+        search: "",
+        replace: "export const value = 1;",
+        isCreate: true,
+        isMove: false,
+      },
+    ];
+
+    const result = await applyPatch(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected ok result");
+
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0]?.filePath).toBe("empty.ts");
+    expect(result.value[0]?.created).toBe(false);
+
+    expect(readFileSync(filePath, "utf8")).toBe("export const value = 1;");
+  });
+
   it("returns not-found when anchor is not in the file", async () => {
     // Setup: create a file
     const filePath = join(tempDir, "test.ts");
