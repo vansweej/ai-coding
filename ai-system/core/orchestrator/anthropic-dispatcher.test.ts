@@ -420,3 +420,216 @@ describe("AnthropicDispatcher", () => {
     }
   });
 });
+
+describe("AnthropicDispatcher.dispatchPatch", () => {
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    global.fetch = (async () => {
+      throw new Error("fetch not mocked");
+    }) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("sends a forced tool_choice with the emit_patch tool and schema", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    global.fetch = (async (_url: string, options?: RequestInit) => {
+      capturedBody = JSON.parse(options?.body as string);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_1",
+              name: "emit_patch",
+              input: { ops: [] },
+            },
+          ],
+        }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const dispatcher = new AnthropicDispatcher("test-key");
+    await dispatcher.dispatchPatch({ model: "claude-sonnet-5", prompt: "implement it" });
+
+    expect(capturedBody?.tool_choice).toEqual({ type: "tool", name: "emit_patch" });
+    const tools = capturedBody?.tools as Array<{ name: string; input_schema: unknown }>;
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.name).toBe("emit_patch");
+    expect(tools[0]?.input_schema).toBeDefined();
+  });
+
+  it("returns ok(ops) for a valid tool_use block", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_1",
+              name: "emit_patch",
+              input: {
+                ops: [{ kind: "create", filePath: "a.ts", contents: "x" }],
+              },
+            },
+          ],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new AnthropicDispatcher("test-key");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-5",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual([{ kind: "create", filePath: "a.ts", contents: "x" }]);
+    }
+  });
+
+  it("picks the tool_use block even when a text block is present first", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [
+            { type: "text", text: "Here is the patch:" },
+            {
+              type: "tool_use",
+              id: "toolu_1",
+              name: "emit_patch",
+              input: { ops: [{ kind: "move", filePath: "a.ts", toPath: "b.ts" }] },
+            },
+          ],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new AnthropicDispatcher("test-key");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-5",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual([{ kind: "move", filePath: "a.ts", toPath: "b.ts" }]);
+    }
+  });
+
+  it("returns error when stop_reason is max_tokens (truncated mid tool-call)", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          stop_reason: "max_tokens",
+          content: [{ type: "tool_use", id: "toolu_1", name: "emit_patch", input: {} }],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new AnthropicDispatcher("test-key");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-5",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("max_tokens");
+    }
+  });
+
+  it("returns error when no tool_use block is present", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [{ type: "text", text: "I decided not to call the tool." }],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new AnthropicDispatcher("test-key");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-5",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("emit_patch");
+    }
+  });
+
+  it("returns error when the tool_use input fails schema validation", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_1",
+              name: "emit_patch",
+              input: { ops: [{ kind: "unknown-kind" }] },
+            },
+          ],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new AnthropicDispatcher("test-key");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-5",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("returns error on non-2xx response", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        text: async () => "Internal Server Error",
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new AnthropicDispatcher("test-key");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-5",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("500");
+    }
+  });
+
+  it("returns error when fetch throws", async () => {
+    global.fetch = (async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+
+    const dispatcher = new AnthropicDispatcher("test-key");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-5",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("network down");
+    }
+  });
+});

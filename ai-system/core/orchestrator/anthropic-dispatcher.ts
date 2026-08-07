@@ -1,16 +1,29 @@
-import type { DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
+import { PATCH_OPS_JSON_SCHEMA, PATCH_TOOL_NAME } from "@ai-coding/shared";
+import type { DispatchRequest, ModelDispatcher, PatchOp, Result } from "@ai-coding/shared";
+
+import { parsePatchOps } from "./patch-contract";
 
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const DEFAULT_MAX_TOKENS = 8192;
 
 interface AnthropicTextBlock {
-  readonly type: string;
+  readonly type: "text";
   readonly text: string;
 }
 
+interface AnthropicToolUseBlock {
+  readonly type: "tool_use";
+  readonly id: string;
+  readonly name: string;
+  readonly input: unknown;
+}
+
+type AnthropicContentBlock = AnthropicTextBlock | AnthropicToolUseBlock;
+
 interface AnthropicMessageResponse {
-  readonly content: readonly AnthropicTextBlock[];
+  readonly content: readonly AnthropicContentBlock[];
+  readonly stop_reason?: string;
 }
 
 /**
@@ -67,13 +80,103 @@ export class AnthropicDispatcher implements ModelDispatcher {
       }
 
       const data = (await response.json()) as AnthropicMessageResponse;
-      const content = data.content[0]?.text;
+      const textBlock = data.content.find(
+        (block): block is AnthropicTextBlock => block.type === "text",
+      );
+      const content = textBlock?.text;
 
       if (content === undefined) {
         return { ok: false, error: new Error("Anthropic returned no content") };
       }
 
       return { ok: true, value: content };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+    }
+  }
+
+  /**
+   * Dispatch a prompt to the Anthropic Messages API, forcing a single
+   * `emit_patch` tool call that returns the WHOLE phase's structured patch
+   * ops at once (see PATCH_OPS_JSON_SCHEMA). Callers must treat any error
+   * Result as a signal to fall back to `dispatch()` + the aider-text parser.
+   *
+   * @param request - The model, prompt, and optional system/temperature/maxTokens.
+   */
+  async dispatchPatch(request: DispatchRequest): Promise<Result<readonly PatchOp[]>> {
+    try {
+      const body: Record<string, unknown> = {
+        model: request.model,
+        messages: [{ role: "user", content: request.prompt }],
+        max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
+        stream: false,
+        tools: [
+          {
+            name: PATCH_TOOL_NAME,
+            description:
+              "Emit the complete set of file create/edit/move operations for this phase as structured data.",
+            input_schema: PATCH_OPS_JSON_SCHEMA,
+          },
+        ],
+        tool_choice: { type: "tool", name: PATCH_TOOL_NAME },
+      };
+
+      if (request.system !== undefined) body.system = request.system;
+      if (request.temperature !== undefined) body.temperature = request.temperature;
+
+      const response = await fetch(this.endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": this.apiKey,
+          "anthropic-version": ANTHROPIC_VERSION,
+          "User-Agent": "ai-coding-os/1.0.0",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          error: new Error(`Anthropic returned ${response.status}: ${await response.text()}`),
+        };
+      }
+
+      const data = (await response.json()) as AnthropicMessageResponse;
+
+      // A truncated tool call (cut off mid-JSON) can never parse correctly --
+      // fail fast rather than attempt to parse partial input.
+      if (data.stop_reason === "max_tokens") {
+        return {
+          ok: false,
+          error: new Error("Anthropic response truncated at max_tokens mid tool-call"),
+        };
+      }
+
+      // The model may return both a text block (e.g. commentary) and a
+      // tool_use block; select the tool_use block by name explicitly rather
+      // than assuming position.
+      const toolUseBlock = data.content.find(
+        (block): block is AnthropicToolUseBlock =>
+          block.type === "tool_use" && block.name === PATCH_TOOL_NAME,
+      );
+
+      if (toolUseBlock === undefined) {
+        return {
+          ok: false,
+          error: new Error(`Anthropic response contained no "${PATCH_TOOL_NAME}" tool_use block`),
+        };
+      }
+
+      const parsed = parsePatchOps(toolUseBlock.input);
+      if (!parsed.ok) {
+        return { ok: false, error: new Error(parsed.error.message) };
+      }
+
+      return { ok: true, value: parsed.value };
     } catch (error) {
       return {
         ok: false,
