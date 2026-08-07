@@ -129,7 +129,9 @@ export async function loadConfig(
     }
   }
 
-  // Check for Copilot token if using Copilot models
+  // Check for the durable Copilot OAuth token if using Copilot models. This
+  // GITHUB_COPILOT_TOKEN is sent directly as the chat Bearer credential by the
+  // dispatcher (no copilot_internal exchange — that is WAF-blocked).
   if (copilotModelIds.length > 0) {
     const token = process.env.GITHUB_COPILOT_TOKEN;
     if (!token) {
