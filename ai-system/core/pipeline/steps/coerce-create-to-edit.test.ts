@@ -187,3 +187,133 @@ describe("coerceCreatesToEdits", () => {
     expect(result).not.toBe(edits);
   });
 });
+
+/**
+ * Batch-aware in-order coercion regression tests (finding 151af9e0).
+ *
+ * `coerceCreatesToEdits` must simulate the predicted post-op filesystem
+ * state of touched paths as it walks a whole-phase batch in order, so a
+ * `create` whose target is produced (non-empty) by a preceding in-batch
+ * `move`/`create` is deterministically coerced to a clean whole-file-replace
+ * edit instead of passing through and hitting "already exists; cannot
+ * create" at apply time.
+ */
+describe("coerceCreatesToEdits (in-batch predictions, finding 151af9e0)", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join("/tmp", "coerce-batch-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("coerces an in-batch move→create over a produced NON-EMPTY file into a whole-file-replace edit", () => {
+    writeFileSync(join(tempDir, "a.txt"), "OLD", "utf8");
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "a.txt",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+        toPath: "b.txt",
+      },
+      { filePath: "b.txt", search: "", replace: "NEW", isCreate: true, isMove: false },
+    ];
+
+    const result = coerceCreatesToEdits(tempDir, edits);
+
+    expect(result).toHaveLength(2);
+    // The move is passed through unchanged.
+    expect(result[0]).toEqual(edits[0]);
+    // The create is coerced using the predicted content "OLD" left behind by the move.
+    expect(result[1]).toEqual({
+      filePath: "b.txt",
+      search: "OLD",
+      replace: "NEW",
+      isCreate: false,
+      isMove: false,
+    });
+  });
+
+  it("passes an in-batch move→create over a produced EMPTY file through as a create", () => {
+    writeFileSync(join(tempDir, "a.txt"), "", "utf8");
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "a.txt",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+        toPath: "b.txt",
+      },
+      { filePath: "b.txt", search: "", replace: "NEW", isCreate: true, isMove: false },
+    ];
+
+    const result = coerceCreatesToEdits(tempDir, edits);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual(edits[0]);
+    // The applier's empty-file relaxation handles the 0-byte existing target.
+    expect(result[1]?.isCreate).toBe(true);
+    expect(result[1]?.search).toBe("");
+    expect(result[1]?.replace).toBe("NEW");
+  });
+
+  it("still coerces a create over an already-on-disk NON-EMPTY file (no move)", () => {
+    writeFileSync(join(tempDir, "c.txt"), "OLD", "utf8");
+
+    const edits: PatchEdit[] = [
+      { filePath: "c.txt", search: "", replace: "NEW", isCreate: true, isMove: false },
+    ];
+
+    const result = coerceCreatesToEdits(tempDir, edits);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      filePath: "c.txt",
+      search: "OLD",
+      replace: "NEW",
+      isCreate: false,
+      isMove: false,
+    });
+  });
+
+  it("passes a genuine new-file create through unchanged", () => {
+    const edits: PatchEdit[] = [
+      { filePath: "new.txt", search: "", replace: "FRESH", isCreate: true, isMove: false },
+    ];
+
+    const result = coerceCreatesToEdits(tempDir, edits);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(edits[0]);
+  });
+
+  it("passes a byte-identical in-batch produced create through unchanged (apply would be a no-op)", () => {
+    writeFileSync(join(tempDir, "a.txt"), "SAME", "utf8");
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "a.txt",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+        toPath: "b.txt",
+      },
+      { filePath: "b.txt", search: "", replace: "SAME", isCreate: true, isMove: false },
+    ];
+
+    const result = coerceCreatesToEdits(tempDir, edits);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual(edits[0]);
+    expect(result[1]).toEqual(edits[1]);
+    expect(result[1]?.isCreate).toBe(true);
+  });
+});

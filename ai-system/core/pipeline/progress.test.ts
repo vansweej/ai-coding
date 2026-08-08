@@ -200,4 +200,44 @@ describe("formatProgressEvent (patch-path)", () => {
     };
     expect(formatProgressEvent(event, theme).startsWith("  ")).toBe(false);
   });
+
+  it("renders the detail on the fell-back-to-text line, ending with the detail text", () => {
+    const event: ProgressEvent = {
+      kind: "patch-path",
+      phase: 1,
+      path: "fell-back-to-text",
+      reason: "apply-failed",
+      detail:
+        'Failed to apply structured patch to "crates/parlang/Cargo.toml": File "crates/parlang/Cargo.toml" already exists; cannot create',
+    };
+    const line = formatProgressEvent(event, theme);
+    expect(line).toContain("apply-failed");
+    expect(line).toContain("already exists; cannot create");
+    expect(line.endsWith(event.detail ?? "")).toBe(true);
+  });
+
+  it("renders no trailing ': ' when detail is omitted", () => {
+    const event: ProgressEvent = {
+      kind: "patch-path",
+      phase: 1,
+      path: "fell-back-to-text",
+      reason: "apply-failed",
+    };
+    const line = formatProgressEvent(event, theme);
+    expect(line).toBe("= Phase 1  fell back to text loop (apply-failed)");
+    expect(line.endsWith(": ")).toBe(false);
+  });
+
+  it("renders no trailing ': ' when detail is an empty string", () => {
+    const event: ProgressEvent = {
+      kind: "patch-path",
+      phase: 1,
+      path: "fell-back-to-text",
+      reason: "apply-failed",
+      detail: "",
+    };
+    const line = formatProgressEvent(event, theme);
+    expect(line).toBe("= Phase 1  fell back to text loop (apply-failed)");
+    expect(line.endsWith(": ")).toBe(false);
+  });
 });

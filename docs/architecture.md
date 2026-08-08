@@ -825,14 +825,19 @@ content — a malformed-but-cargo-tolerated result in the observed case).
 1. **`coerceCreatesToEdits`** (`ai-system/core/pipeline/steps/coerce-create-to-edit.ts`)
    is a new, deliberately filesystem-aware normalization pass that runs
    between `patchOpsToEdits` (which is filesystem-blind by design) and
-   `applyEditsTransactionally` inside `tryStructuredPhase`. For each edit: a
-   `create` op whose target already exists on disk with NON-empty, DIFFERENT
-   contents is coerced into a whole-file-replace `edit` (`search` = the
-   entire current file contents, `replace` = the create's contents) — a
-   string cannot contain two non-overlapping copies of its own entirety, so
-   this `search` is guaranteed to match exactly once and the applier's edit
-   branch applies it cleanly instead of declining. A `create` targeting an
-   EXISTING EMPTY (0-byte) file is left unchanged and instead relies on a
+   `applyEditsTransactionally` inside `tryStructuredPhase`. It is
+   **batch-aware**: rather than checking each edit independently against
+   current disk state, it walks the whole-phase batch in order and
+   simulates the predicted post-op content of every touched in-workspace
+   path, so a `create` op whose target already exists on disk — OR is
+   produced (non-empty) by a preceding in-batch `move`/`create` op — is
+   deterministically coerced into a whole-file-replace `edit` (`search` =
+   the entire predicted file content, `replace` = the create's contents) —
+   a string cannot contain two non-overlapping copies of its own entirety,
+   so this `search` is guaranteed to match exactly once and the applier's
+   edit branch applies it cleanly instead of declining. A `create`
+   targeting an EXISTING EMPTY (0-byte) file is left unchanged and instead
+   relies on a
    companion relaxation in the applier (`apply-patch-step.ts`): the CREATE
    branch now overwrites an empty existing target instead of declining,
    since an empty file has no content to conflict with. A `create` whose
@@ -912,12 +917,17 @@ silent:
      structured attempt declined outright (any `StructuredDeclineReason`), and
      the text loop runs from the start.
 
-When the fell-back-to-text reason is `dispatch-error`, the rendered progress
-line appends the underlying transport failure as a `: <detail>` suffix — for
-example `(dispatch-error): ECONNREFUSED`. The `detail` field on the event is
-optional and present only for that reason (carried from the dispatch error's
-cause), and every other patch-path line — including `structured-applied` —
-renders exactly as before, with no trailing detail.
+Every structured decline now surfaces a diagnostic detail in the verbose
+feed: the `fell-back-to-text` progress line forwards
+`structuredResult.error.detail ?? structuredResult.error.message`, so an
+`apply-failed` (or `conversion-failed`, `threw`, `directory-declined`)
+fallback appends its underlying error message as a `: <detail>` suffix after
+the reason — e.g. `(apply-failed): Failed to apply structured patch to
+"crates/parlang/Cargo.toml": File "crates/parlang/Cargo.toml" already
+exists; cannot create`. The `dispatch-error` reason keeps its dedicated
+transport-failure detail (derived from the dispatch error's cause, e.g.
+`ECONNREFUSED`); every other `patch-path` line — including
+`structured-applied` — renders exactly as before, with no trailing detail.
 
 This is **observability only** — none of these three emission points change
 which branch executes; they report a decision that was already being made

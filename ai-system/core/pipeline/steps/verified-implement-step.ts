@@ -595,7 +595,10 @@ export function createVerifiedImplementStep(
           phase: options.phaseNumber ?? 0,
           path: "fell-back-to-text",
           reason: structuredResult.error.reason,
-          detail: structuredResult.error.detail,
+          // Fall back to the decline message when no dedicated detail was
+          // populated (only the dispatch-error reason carries its own detail),
+          // so every decline reason renders a non-empty diagnostic.
+          detail: structuredResult.error.detail ?? structuredResult.error.message,
         });
       }
 
