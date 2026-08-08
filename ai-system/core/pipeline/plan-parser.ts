@@ -38,10 +38,16 @@ export interface Phase {
    *
    * Supported directives (see `phase-assertions.ts` for full grammar):
    * `Assert: contains <path> :: <needle>`, `Assert: not-contains <path> :: <needle>`,
-   * `Assert: exists <path>`, `Assert: not-exists <path>`, and
+   * `Assert: exists <path>`, `Assert: not-exists <path>`,
    * `Assert: matches <path> :: <regex>` -- an anchored-capable regex check
    * against the file's content (compiled with `new RegExp`); an unreadable
-   * file or an invalid regex is a failure.
+   * file or an invalid regex is a failure -- and
+   * `Assert: toml-keys <path> :: <dotted.table> :: key1,key2,key3` -- a
+   * structural TOML table set-equality check parsed in-process via
+   * `smol-toml`. All directive text after `Assert:` is captured greedily by
+   * `ASSERT_RE` and routed, unmodified, to `parseAssertion`; the ` :: `
+   * separators and comma-separated key list pass through intact, so no
+   * `ASSERT_RE` change is needed to support new assertion grammars.
    */
   readonly assertions?: readonly PhaseAssertion[];
 }

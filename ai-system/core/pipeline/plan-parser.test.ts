@@ -402,4 +402,71 @@ body
       ]);
     }
   });
+
+  it("round-trips a toml-keys Assert directive onto a phase", () => {
+    const content = `# Feature: With a toml-keys assertion
+
+## Phase 1: Phase
+
+Commit message: feat: thing
+Assert: toml-keys Cargo.toml :: lints :: workspace
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.phases[0].assertions).toEqual([
+        { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
+      ]);
+    }
+  });
+
+  it("returns a phase-scoped error for a malformed toml-keys directive, without throwing", () => {
+    const content = `# Feature: Bad toml-keys assertion
+
+## Phase 1: Phase
+
+Commit message: feat: thing
+Assert: toml-keys Cargo.toml :: lints
+
+### Step 1: Do
+
+body
+`;
+    expect(() => parsePlanFile(content)).not.toThrow();
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("Phase 1");
+      expect(result.error.message).toContain("invalid Assert directive");
+    }
+  });
+
+  it("collects toml-keys alongside contains and exists directives in order", () => {
+    const content = `# Feature: Mixed toml-keys assertions
+
+## Phase 1: Phase
+
+Commit message: feat: thing
+Assert: toml-keys Cargo.toml :: lints :: workspace
+Assert: contains src/x.ts :: value
+Assert: exists docs/x.md
+
+### Step 1: Do
+
+body
+`;
+    const result = parsePlanFile(content);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.phases[0].assertions).toEqual([
+        { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
+        { kind: "contains", path: "src/x.ts", needle: "value" },
+        { kind: "exists", path: "docs/x.md" },
+      ]);
+    }
+  });
 });
