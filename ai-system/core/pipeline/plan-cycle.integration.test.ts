@@ -1,13 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { $ } from "bun";
 
-import type { DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
+import type { DispatchRequest, ModelDispatcher, PatchOp, Result } from "@ai-coding/shared";
 
-import { LOCAL_PROFILE } from "../../config/model-profiles";
+import { ANTHROPIC_SONNET_PROFILE, LOCAL_PROFILE } from "../../config/model-profiles";
 import { CerebrumMemory } from "../orchestrator/cerebrum-memory";
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import { runFeature } from "./feature-runner";
@@ -35,6 +35,23 @@ function createMockDispatcher(responses: string[]): ModelDispatcher {
   };
 }
 
+// Mock dispatcher that returns a structured whole-phase patch (dispatchPatch),
+// exercising the STRUCTURED path (tryStructuredPhase) rather than the
+// aider-text loop. Used to prove create->edit coercion fires within the full
+// plan-cycle integration harness, not only via the unit-level tests.
+function createStructuredDispatcher(ops: readonly PatchOp[]): ModelDispatcher {
+  return {
+    dispatch: async (_request: DispatchRequest): Promise<Result<string>> => ({
+      ok: true,
+      value: "unused",
+    }),
+    dispatchPatch: async (_request: DispatchRequest): Promise<Result<readonly PatchOp[]>> => ({
+      ok: true,
+      value: ops,
+    }),
+  };
+}
+
 // Create a mock orchestrator config
 function createMockConfig(
   dispatcher: ModelDispatcher,
@@ -44,6 +61,17 @@ function createMockConfig(
     profile: LOCAL_PROFILE,
     dispatchers: { "gemma4:26b": dispatcher },
     memory,
+  };
+}
+
+// Structured-capable config: routes through ANTHROPIC_SONNET_PROFILE, whose
+// "claude-sonnet-5" model is registered as "anthropic-tool-use" in
+// patch-capability.ts, so tryStructuredPhase attempts the structured path
+// ahead of the aider-text loop.
+function createStructuredConfig(dispatcher: ModelDispatcher): OrchestratorConfig {
+  return {
+    profile: ANTHROPIC_SONNET_PROFILE,
+    dispatchers: { "claude-sonnet-5": dispatcher },
   };
 }
 
@@ -130,6 +158,22 @@ legacy/support
 =======
 crates/parlang/legacy/support
 >>>>>>> MOVE`;
+
+// A single-phase plan whose only step touches a manifest file that already
+// exists in the workspace, mirroring the parlang Phase-0 shape where a
+// Step-1 MOVE relocates a member Cargo.toml so it EXISTS before Step 2 must
+// edit it. Used with a structured dispatcher that emits a `create` op for
+// that already-existing path.
+const CREATE_OVER_EXISTING_PLAN = `# Feature: Update relocated member manifest
+
+## Phase 1: Update the member manifest in place
+
+Commit message: feat: update relocated member manifest
+
+### Step 1: Update crates/parlang/Cargo.toml
+
+Update crates/parlang/Cargo.toml to inherit workspace dependencies.
+`;
 
 let workspace: string;
 
@@ -487,5 +531,42 @@ pub mod utils {
       .split("\n")
       .filter((line) => line.trim().length > 0 && line.startsWith("R"));
     expect(renameLines.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("applies a structured create op over an already-existing tracked file via create->edit coercion (no fallback)", async () => {
+    // Seed the already-existing member manifest (as if a prior MOVE step had
+    // relocated it here), then have the structured dispatcher emit a
+    // `create` op for that same path. Without coerceCreatesToEdits, this
+    // would decline with "already exists; cannot create" and fall back to
+    // the aider-text loop; with it, the phase applies GREEN via a clean
+    // whole-file-replace edit.
+    const manifestPath = join(workspace, "crates/parlang/Cargo.toml");
+    mkdirSync(join(workspace, "crates/parlang"), { recursive: true });
+    writeFileSync(manifestPath, '[package]\nname = "parlang"\n', "utf8");
+
+    await $`git add -A`.cwd(workspace).quiet();
+    await $`git commit -m "seed relocated manifest"`.cwd(workspace).quiet();
+
+    const dispatcher = createStructuredDispatcher([
+      {
+        kind: "create",
+        filePath: "crates/parlang/Cargo.toml",
+        contents: '[package]\nname = "parlang"\n\n[dependencies]\ncombine = { workspace = true }\n',
+      },
+    ]);
+    const config = createStructuredConfig(dispatcher);
+
+    const result = await runFeature(CREATE_OVER_EXISTING_PLAN, {
+      config,
+      workspace,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.phases).toHaveLength(1);
+    expect(readFileSync(manifestPath, "utf8")).toBe(
+      '[package]\nname = "parlang"\n\n[dependencies]\ncombine = { workspace = true }\n',
+    );
   });
 });

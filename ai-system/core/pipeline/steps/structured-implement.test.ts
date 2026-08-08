@@ -198,6 +198,51 @@ describe("tryStructuredPhase", () => {
     expect(readFileSync(join(workspace, "src/new.ts"), "utf8")).toBe("export const x = 1;");
   });
 
+  it("applies GREEN via create->edit coercion when the model emits a create op for an already-existing, non-empty file (Symptom B replay)", async () => {
+    // Regression/replay test for the unified bug: a `create` op targeting a
+    // file that already exists (e.g. relocated there by an earlier `move`)
+    // used to decline with "already exists; cannot create" and fall back to
+    // the flaky text loop. This canned ops payload -- not a live dispatch --
+    // reproduces exactly that shape through the FULL tryStructuredPhase path,
+    // proving coerceCreatesToEdits fires end to end (not only via hand-built
+    // PatchEdits in coerce-create-to-edit.test.ts).
+    writeFileSync(join(workspace, "crates_parlang_Cargo.toml"), "old manifest content");
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          {
+            kind: "create",
+            filePath: "crates_parlang_Cargo.toml",
+            contents: "new manifest content",
+          },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(workspace, "crates_parlang_Cargo.toml"), "utf8")).toBe(
+      "new manifest content",
+    );
+  });
+
+  it("still creates a genuinely new file when the model emits a create op for a non-existent path", async () => {
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          { kind: "create", filePath: "brand-new.ts", contents: "export const z = 1;" },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(workspace, "brand-new.ts"), "utf8")).toBe("export const z = 1;");
+  });
+
   it("applies a multi-op whole-phase patch atomically", async () => {
     writeFileSync(join(workspace, "existing.ts"), "export const a = 1;");
 
@@ -263,6 +308,67 @@ describe("tryStructuredPhase", () => {
     expect(existsSync(join(workspace, "old.ts"))).toBe(true);
     expect(readFileSync(join(workspace, "old.ts"), "utf8")).toBe("export const x = 1;");
     expect(existsSync(join(workspace, "new.ts"))).toBe(false);
+  });
+
+  it("rolls back a coerced create (file-only classification) to its pre-apply content when a later op fails", async () => {
+    // The coerced edit here is the ONLY touched path with no directory
+    // involved, so this exercises the FILE-ONLY (non-directory-touching)
+    // branch of applyEditsTransactionally -- snapshotTouchedPaths /
+    // rollbackToSnapshot -- proving rollback covers a create->edit coercion
+    // in isolation, not just alongside a co-present move.
+    writeFileSync(join(workspace, "manifest.toml"), "original manifest");
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          // Coerced to a whole-file-replace edit (manifest.toml already exists).
+          { kind: "create", filePath: "manifest.toml", contents: "new manifest" },
+          // Fails: anchor does not exist.
+          { kind: "edit", filePath: "does-not-exist.ts", search: "y", replace: "z" },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(false);
+
+    expect(readFileSync(join(workspace, "manifest.toml"), "utf8")).toBe("original manifest");
+  });
+
+  it("rolls back a coerced create co-present with a directory move (git-transactional classification)", async () => {
+    // The batch also contains a directory move, so touchesDirectory routes
+    // the WHOLE batch (including the coerced create) through the
+    // GIT-TRANSACTIONAL path (gitRestoreWorkingTree), not the file-only
+    // snapshot path -- proving rollback covers a coerced create under BOTH
+    // classifications.
+    mkdirSync(join(workspace, "src"), { recursive: true });
+    writeFileSync(join(workspace, "src", "lib.rs"), "pub fn lib() {}");
+    writeFileSync(join(workspace, "manifest.toml"), "original manifest");
+
+    initGitRepo(workspace);
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          { kind: "move", filePath: "src", toPath: "crates/parlang/src" },
+          // Coerced to a whole-file-replace edit (manifest.toml already exists).
+          { kind: "create", filePath: "manifest.toml", contents: "new manifest" },
+          // Fails: anchor does not exist.
+          { kind: "edit", filePath: "does-not-exist.rs", search: "x", replace: "y" },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(false);
+
+    // Both the move and the coerced create must be reverted.
+    expect(existsSync(join(workspace, "src"))).toBe(true);
+    expect(readFileSync(join(workspace, "src", "lib.rs"), "utf8")).toBe("pub fn lib() {}");
+    expect(existsSync(join(workspace, "crates"))).toBe(false);
+    expect(readFileSync(join(workspace, "manifest.toml"), "utf8")).toBe("original manifest");
   });
 
   it("declines (err) without throwing or mutating when a move touches a directory", async () => {

@@ -7,6 +7,7 @@ import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { orchestratePatch } from "../../orchestrator/orchestrate";
 import { patchOpsToEdits } from "../../orchestrator/patch-contract";
 import { applyPatch } from "./apply-patch-step";
+import { coerceCreatesToEdits } from "./coerce-create-to-edit";
 import type { PatchEdit } from "./parse-patch";
 
 /** A typed reason (plus human-readable message) for a declined structured phase. */
@@ -277,7 +278,10 @@ async function applyEditsTransactionally(
 /**
  * Attempt the WHOLE-PHASE structured patch path: ask the resolved model for
  * one forced structured-op response covering the entire phase at once (via
- * `orchestratePatch`), convert it to `PatchEdit[]`, and apply it
+ * `orchestratePatch`), convert it to `PatchEdit[]`, pass the result through
+ * `coerceCreatesToEdits` (the filesystem-aware normalization that turns a
+ * `create` op targeting an already-existing, non-empty file into a clean
+ * whole-file-replace edit -- see coerce-create-to-edit.ts), and apply it
  * transactionally.
  *
  * This function NEVER THROWS. Returns an error `Result` for every
@@ -343,7 +347,10 @@ export async function tryStructuredPhase(
       };
     }
 
-    const applyResult = await applyEditsTransactionally(workspace, editsResult.value);
+    const applyResult = await applyEditsTransactionally(
+      workspace,
+      coerceCreatesToEdits(workspace, editsResult.value),
+    );
     if (!applyResult.ok) {
       return applyResult;
     }
