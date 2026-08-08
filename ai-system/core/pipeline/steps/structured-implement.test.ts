@@ -23,6 +23,7 @@ import type {
 
 import type { ModelProfile } from "../../../config/model-profiles";
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
+import { STRUCTURED_PATCH_SYSTEM } from "../../orchestrator/patch-guidance";
 import { tryStructuredPhase } from "./structured-implement";
 
 function makeEvent(action: AIRequestEvent["action"] = "edit"): AIRequestEvent {
@@ -69,6 +70,33 @@ function structuredDispatcher(ops: readonly PatchOp[]): ModelDispatcher {
       ok: true,
       value: ops,
     }),
+  };
+}
+
+/**
+ * Structured dispatcher that records the last `DispatchRequest` it received,
+ * so a test can assert on what `tryStructuredPhase` forwarded to
+ * `orchestratePatch` (in particular the `system` field) -- proving the
+ * `STRUCTURED_PATCH_SYSTEM` guidance reaches the dispatch layer. This proves
+ * WIRING ONLY, not live tool adherence.
+ */
+function recordingStructuredDispatcher(ops: readonly PatchOp[]): {
+  dispatcher: ModelDispatcher;
+  requests: DispatchRequest[];
+} {
+  const requests: DispatchRequest[] = [];
+  return {
+    requests,
+    dispatcher: {
+      dispatch: async (_req: DispatchRequest): Promise<Result<string>> => ({
+        ok: true,
+        value: "unused",
+      }),
+      dispatchPatch: async (req: DispatchRequest): Promise<Result<readonly PatchOp[]>> => {
+        requests.push(req);
+        return { ok: true, value: ops };
+      },
+    },
   };
 }
 
@@ -241,6 +269,22 @@ describe("tryStructuredPhase", () => {
     const result = await tryStructuredPhase(makeEvent(), config, workspace);
     expect(result.ok).toBe(true);
     expect(readFileSync(join(workspace, "brand-new.ts"), "utf8")).toBe("export const z = 1;");
+  });
+
+  it("forwards STRUCTURED_PATCH_SYSTEM as the dispatched system prompt (proves wiring only, not live tool adherence)", async () => {
+    const { dispatcher, requests } = recordingStructuredDispatcher([
+      { kind: "create", filePath: "src/new.ts", contents: "export const x = 1;" },
+    ]);
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: { "claude-sonnet-5": dispatcher },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(true);
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.system).toBe(STRUCTURED_PATCH_SYSTEM);
   });
 
   it("applies a multi-op whole-phase patch atomically", async () => {

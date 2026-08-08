@@ -5,7 +5,9 @@ import type { AIRequestEvent, Result, StructuredDeclineReason } from "@ai-coding
 
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { orchestratePatch } from "../../orchestrator/orchestrate";
+import type { LLMOptions } from "../../orchestrator/orchestrate";
 import { patchOpsToEdits } from "../../orchestrator/patch-contract";
+import { STRUCTURED_PATCH_SYSTEM } from "../../orchestrator/patch-guidance";
 import { applyPatch } from "./apply-patch-step";
 import { coerceCreatesToEdits } from "./coerce-create-to-edit";
 import type { PatchEdit } from "./parse-patch";
@@ -313,7 +315,8 @@ export async function tryStructuredPhase(
   workspace: string,
 ): Promise<Result<"applied", StructuredDecline>> {
   try {
-    const outcome = await orchestratePatch(event, config);
+    const llmOptions: LLMOptions = { system: STRUCTURED_PATCH_SYSTEM };
+    const outcome = await orchestratePatch(event, config, llmOptions);
     if (!outcome.ok) {
       const cause = outcome.error.cause;
       const detail =
