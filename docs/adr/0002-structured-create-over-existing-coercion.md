@@ -54,6 +54,24 @@ runtime-behavior change without its safety net):
    through unchanged; `assertInsideWorkspace` remains the sole path-safety
    gate, and the coercion never itself performs path-safety checks or reads
    outside the workspace.
+
+   The coercion is now **batch-aware**: since the whole-phase batch applies
+   transactionally IN ORDER, `coerceCreatesToEdits` simulates the in-order
+   predicted filesystem state of every touched path as it walks the batch,
+   rather than evaluating each edit independently against current disk
+   state. This closes the gap where a preceding `move`/`create` in the SAME
+   batch produces the target of a later `create` — that target does not yet
+   exist on disk at coerce time, so an independent per-edit check let it
+   pass through as a create, which then apply-failed with `"already exists;
+   cannot create"` once the move had run (finding `151af9e0`). The guarantee
+   covers BOTH predicted-empty targets (left as a create; the applier's
+   empty-file relaxation handles the 0-byte target at apply time) and
+   predicted-non-empty, differing targets (coerced to a clean whole-file-replace
+   edit); a genuine new-file create (no prediction, absent on disk) still
+   applies unchanged. Known limitation, not a regression: a `create`
+   targeting a path under a moved *directory* is not modeled by the flat
+   content-keyed fold — today's independent per-edit map fails this
+   identically, so it is an existing gap, not one this change introduces.
 3. **`STRUCTURED_PATCH_SYSTEM`** (`patch-guidance.ts`): a provider-agnostic
    system prompt now forwarded from `tryStructuredPhase` to
    `orchestratePatch` via `LLMOptions.system`, applied to ALL
@@ -81,7 +99,15 @@ explicitly assigned there, not here.
 - **Symptom B (create-over-existing) is deterministically resolved.** No
   run-to-run flip between "additive edit" and "create-over-existing"
   remains possible for this failure mode — the coercion always converts it
-  to a clean edit.
+  to a clean edit. This now also covers the in-batch case where a
+  preceding `move`/`create` in the same whole-phase batch produces the
+  later create's target (finding `151af9e0`), not just targets that were
+  already on disk before the phase began.
+- **Structured-decline diagnostics are now surfaced for EVERY decline
+  reason.** The `--verbose` progress feed's `fell-back-to-text` line now
+  forwards `detail ?? message`, so an `apply-failed` (or
+  `conversion-failed`, `threw`) fallback is no longer blind — previously
+  only `dispatch-error` populated a non-empty `detail`.
 - **Symptom A (additive/malformed edit) has NO deterministic guard here.**
   `STRUCTURED_PATCH_SYSTEM` mitigates it via prompt guidance only; a model
   that ignores the guidance can still produce a malformed-but-tolerated
@@ -96,6 +122,12 @@ explicitly assigned there, not here.
   path-safety gate; the aider-text fallback is unchanged; `PatchMode`
   defaults are unchanged; the transactional apply/rollback path fully
   covers coerced edits (coercion runs before `applyEditsTransactionally`).
+- **Scope confined to the structured-only seam.** The batch-aware fix lives
+  entirely inside `coerce-create-to-edit.ts`. The aider-text fallback
+  (`writeImplementation`) and `applyPatch`'s shared create branch were
+  intentionally NOT hardened further — doing so risks the documented
+  partial-content-overwrite false-green class, since that path lacks this
+  seam's all-or-nothing transactional guarantee.
 
 ## Verification gate
 
@@ -119,8 +151,14 @@ on the Copilot path specifically.
 
 ## Cross-references
 
-- `plan:false-green-gate-assert-v1` — owns the deferred Symptom-A
-  (manifest/structural validity) fix.
+- `plan:false-green-gate-assert-v1` (id `1e5b172a`) — owns the deferred
+  Symptom-A (manifest/structural validity) fix AND the additive-insert edit
+  drift (BUG 2) and structural assert vocabulary (TOML-exact-keys / `cargo
+  metadata`) work. NOT this ADR. The honest end-state after the batch-aware
+  coercion fix: a structured run now either applies cleanly OR aborts
+  loudly (and visibly, per the decline-detail surfacing above), while
+  additive-edit drift may still occur and is caught by the
+  separately-hardened asserts owned by that plan, not here.
 - Cerebrum findings `151af9e0` (create-over-existing apply-failed run),
   `c6f0e184`/`3c247d88` (malformed-`[lints]` false-green run + diagnosis),
   `a9bcc163` (the create-vs-edit expressibility gotcha), `afa940e7`
