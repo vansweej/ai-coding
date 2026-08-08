@@ -352,6 +352,18 @@ FAILURE for `matches`, never a silent pass. `not-contains` likewise now treats a
 missing/unreadable file as a FAILURE (previously satisfied trivially) — absence of a
 needle cannot be proven for a file that cannot be read.
 
+A further `toml-keys <path> :: <dotted.table> :: key1,key2,...` verb targets TOML
+files specifically: it parses the file in-process via `smol-toml`, walks the dotted
+table path, and requires the table's keys to be set-equal to the given
+comma-separated list — a superset, a subset, or a missing table are all a FAILURE,
+closing the loophole where a malformed `Cargo.toml` `[lints]` table with an
+unexpected extra key would still satisfy a substring/regex-based check. A table
+segment that resolves to an array (e.g. a TOML array-of-tables), a primitive, or a
+TOML datetime (parsed by `smol-toml` as a JS `Date`) fails descriptively rather than
+throwing. The accepted limitation: a table that exists but has zero keys is
+unexpressible by this grammar (an empty key list is rejected at parse time) — that
+check is explicitly out of scope.
+
 `runPhase` also restores the working tree to the pre-phase HEAD
 (`restoreWorkingTree`: `git reset --hard HEAD` + `git clean -fd`, honoring
 `.gitignore`) on every non-commit abort return — the `attributePhaseFailure`
