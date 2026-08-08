@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import type { Result } from "@ai-coding/pipeline";
+import { parse as parseToml } from "smol-toml";
 
 /**
  * Author-declared, runner-enforced structural invariants for a plan phase.
@@ -28,15 +29,66 @@ import type { Result } from "@ai-coding/pipeline";
  * `contains` needle cannot -- e.g. "this table has EXACTLY this one key" --
  * closing the false-green loophole where unrelated surrounding content
  * still satisfies a substring check.
+ *
+ * The `toml-keys` kind checks that a TOML table (addressed by a dotted
+ * path, e.g. `lints.workspace`) has EXACTLY the given set of keys -- no
+ * more, no fewer. It is parsed in-process via `smol-toml` and closes the
+ * loophole where a `contains`/`matches` substring check on raw TOML text
+ * cannot distinguish "this table has exactly these keys" from "this table
+ * has these keys plus others" (a superset would still satisfy a substring
+ * check). Grammar: `toml-keys <path> :: <dotted.table> :: key1,key2,key3`.
+ * Set-equality semantics: superset, subset, and missing-table all FAIL;
+ * only an exact key-set match passes. A zero-key table (table exists but
+ * is empty) is out of scope -- expressing "this table exists and has no
+ * keys" is not supported by this grammar.
  */
 export type PhaseAssertion =
   | { readonly kind: "contains"; readonly path: string; readonly needle: string }
   | { readonly kind: "not-contains"; readonly path: string; readonly needle: string }
   | { readonly kind: "exists"; readonly path: string }
   | { readonly kind: "not-exists"; readonly path: string }
-  | { readonly kind: "matches"; readonly path: string; readonly pattern: string };
+  | { readonly kind: "matches"; readonly path: string; readonly pattern: string }
+  | {
+      readonly kind: "toml-keys";
+      readonly path: string;
+      readonly table: string;
+      readonly keys: readonly string[];
+    };
 
 const SEPARATOR = " :: ";
+
+/**
+ * Type guard for a "plain" TOML table object -- true only for a genuine
+ * key-value table, never for `null`, an array (TOML array-of-tables), or a
+ * `Date` (TOML datetime values are parsed as JS `Date` instances by
+ * `smol-toml`). Used to walk a dotted table path segment-by-segment and
+ * fail descriptively when a segment resolves to something other than a
+ * table.
+ */
+function isPlainTable(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    !(value instanceof Date) &&
+    Object.prototype.toString.call(value) === "[object Object]"
+  );
+}
+
+/**
+ * Never-throw `Result` wrapper around `smol-toml`'s `parse`. Invalid TOML
+ * source is reported as a `Result` error rather than a thrown exception.
+ */
+function parseTomlSource(source: string): Result<Record<string, unknown>> {
+  try {
+    return { ok: true, value: parseToml(source) };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
+}
 
 /**
  * Parses the text following an `Assert:` directive into a `PhaseAssertion`.
@@ -139,6 +191,57 @@ export function parseAssertion(spec: string): Result<PhaseAssertion> {
       };
     }
     return { ok: true, value: { kind: "matches", path, pattern } };
+  }
+
+  if (verb === "toml-keys") {
+    const firstSeparatorIndex = rest.indexOf(SEPARATOR);
+    if (firstSeparatorIndex === -1) {
+      return {
+        ok: false,
+        error: new Error(
+          `invalid "toml-keys" assertion (missing " :: " separator between path and table): "${spec}"`,
+        ),
+      };
+    }
+    const path = rest.slice(0, firstSeparatorIndex).trim();
+    const afterPath = rest.slice(firstSeparatorIndex + SEPARATOR.length);
+
+    const secondSeparatorIndex = afterPath.indexOf(SEPARATOR);
+    if (secondSeparatorIndex === -1) {
+      return {
+        ok: false,
+        error: new Error(
+          `invalid "toml-keys" assertion (missing " :: " separator between table and keys): "${spec}"`,
+        ),
+      };
+    }
+    const table = afterPath.slice(0, secondSeparatorIndex).trim();
+    const rawKeys = afterPath.slice(secondSeparatorIndex + SEPARATOR.length);
+
+    const keys = rawKeys
+      .split(",")
+      .map((key) => key.trim())
+      .filter((key) => key !== "");
+
+    if (path === "") {
+      return {
+        ok: false,
+        error: new Error(`invalid "toml-keys" assertion (empty path): "${spec}"`),
+      };
+    }
+    if (table === "") {
+      return {
+        ok: false,
+        error: new Error(`invalid "toml-keys" assertion (empty table): "${spec}"`),
+      };
+    }
+    if (keys.length === 0) {
+      return {
+        ok: false,
+        error: new Error(`invalid "toml-keys" assertion (empty keys): "${spec}"`),
+      };
+    }
+    return { ok: true, value: { kind: "toml-keys", path, table, keys } };
   }
 
   return {
@@ -259,6 +362,73 @@ export function checkAssertions(
             ok: false,
             error: new Error(
               `Structural assertion failed: file "${assertion.path}" must match /${assertion.pattern}/`,
+            ),
+          };
+        }
+        break;
+      }
+      case "toml-keys": {
+        let content: string;
+        try {
+          content = readFileSync(resolvedPath, "utf8");
+        } catch {
+          return {
+            ok: false,
+            error: new Error(
+              `Structural assertion failed: file "${assertion.path}" could not be read for toml-keys check on table "${assertion.table}"`,
+            ),
+          };
+        }
+
+        const parsedToml = parseTomlSource(content);
+        if (!parsedToml.ok) {
+          return {
+            ok: false,
+            error: new Error(
+              `Structural assertion failed: file "${assertion.path}" is not valid TOML (${parsedToml.error.message})`,
+            ),
+          };
+        }
+
+        const segments = assertion.table.split(".");
+        let current: Record<string, unknown> = parsedToml.value;
+        let walkedPath = "";
+        for (const segment of segments) {
+          walkedPath = walkedPath === "" ? segment : `${walkedPath}.${segment}`;
+          const next = current[segment];
+          if (!isPlainTable(next)) {
+            const actualDescription =
+              next === undefined
+                ? "is missing"
+                : next === null
+                  ? "is null"
+                  : Array.isArray(next)
+                    ? "is an array"
+                    : next instanceof Date
+                      ? "is a datetime"
+                      : `is a ${typeof next}`;
+            return {
+              ok: false,
+              error: new Error(
+                `Structural assertion failed: file "${assertion.path}" table "${assertion.table}" ${walkedPath} ${actualDescription}, not a table`,
+              ),
+            };
+          }
+          current = next;
+        }
+
+        const expectedKeys = [...assertion.keys].sort();
+        const actualKeys = Object.keys(current).sort();
+        const expectedSet = new Set(expectedKeys);
+        const actualSet = new Set(actualKeys);
+        const extraKeys = actualKeys.filter((key) => !expectedSet.has(key));
+        const missingKeys = expectedKeys.filter((key) => !actualSet.has(key));
+
+        if (extraKeys.length > 0 || missingKeys.length > 0) {
+          return {
+            ok: false,
+            error: new Error(
+              `Structural assertion failed: file "${assertion.path}" table "${assertion.table}" expected keys [${expectedKeys.join(", ")}] but found [${actualKeys.join(", ")}] (extra: [${extraKeys.join(", ")}], missing: [${missingKeys.join(", ")}])`,
             ),
           };
         }
