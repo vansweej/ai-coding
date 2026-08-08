@@ -103,6 +103,65 @@ describe("parseAssertion", () => {
     const result = parseAssertion("matches src/foo.ts :: (");
     expect(result.ok).toBe(false);
   });
+
+  it("parses a valid single-key toml-keys directive", () => {
+    const result = parseAssertion("toml-keys Cargo.toml :: lints :: workspace");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual({
+        kind: "toml-keys",
+        path: "Cargo.toml",
+        table: "lints",
+        keys: ["workspace"],
+      });
+    }
+  });
+
+  it("parses a valid multi-key toml-keys directive with whitespace trimmed", () => {
+    const result = parseAssertion("toml-keys Cargo.toml :: package :: name , version ,  edition");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual({
+        kind: "toml-keys",
+        path: "Cargo.toml",
+        table: "package",
+        keys: ["name", "version", "edition"],
+      });
+    }
+  });
+
+  it("drops a trailing/stray comma in the keys list", () => {
+    const result = parseAssertion("toml-keys Cargo.toml :: package :: name,version,");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual({
+        kind: "toml-keys",
+        path: "Cargo.toml",
+        table: "package",
+        keys: ["name", "version"],
+      });
+    }
+  });
+
+  it("fails when the second :: separator is missing", () => {
+    const result = parseAssertion("toml-keys Cargo.toml :: lints");
+    expect(result.ok).toBe(false);
+  });
+
+  it("fails on an empty path for a toml-keys spec", () => {
+    const result = parseAssertion("toml-keys  :: lints :: workspace");
+    expect(result.ok).toBe(false);
+  });
+
+  it("fails on an empty table for a toml-keys spec", () => {
+    const result = parseAssertion("toml-keys Cargo.toml ::  :: workspace");
+    expect(result.ok).toBe(false);
+  });
+
+  it("fails on empty keys for a toml-keys spec", () => {
+    const result = parseAssertion("toml-keys Cargo.toml :: lints :: ");
+    expect(result.ok).toBe(false);
+  });
 });
 
 describe("checkAssertions", () => {
@@ -242,6 +301,112 @@ describe("checkAssertions", () => {
       checkAssertions(workspace, [{ kind: "matches", path: "a.txt", pattern: "(" }]),
     ).not.toThrow();
     const result = checkAssertions(workspace, [{ kind: "matches", path: "a.txt", pattern: "(" }]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("toml-keys passes on an exact key-set match", () => {
+    writeFileSync(join(workspace, "Cargo.toml"), "[lints]\nworkspace = true\n");
+    const result = checkAssertions(workspace, [
+      { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("toml-keys fails on a superset of keys, naming the extra key", () => {
+    writeFileSync(join(workspace, "Cargo.toml"), '[lints]\nworkspace = true\nextra = "oops"\n');
+    const result = checkAssertions(workspace, [
+      { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("extra");
+    }
+  });
+
+  it("toml-keys fails on a subset of keys", () => {
+    writeFileSync(join(workspace, "Cargo.toml"), '[package]\nname = "x"\nversion = "1.0"\n');
+    const result = checkAssertions(workspace, [
+      {
+        kind: "toml-keys",
+        path: "Cargo.toml",
+        table: "package",
+        keys: ["name", "version", "edition"],
+      },
+    ]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("toml-keys fails when the table is missing", () => {
+    writeFileSync(join(workspace, "Cargo.toml"), '[package]\nname = "x"\n');
+    const result = checkAssertions(workspace, [
+      { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
+    ]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("toml-keys passes for a nested dotted-table path", () => {
+    writeFileSync(join(workspace, "Cargo.toml"), "[lints.workspace]\nfoo = true\n");
+    const result = checkAssertions(workspace, [
+      { kind: "toml-keys", path: "Cargo.toml", table: "lints.workspace", keys: ["foo"] },
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("toml-keys fails when a segment resolves to a primitive", () => {
+    writeFileSync(join(workspace, "Cargo.toml"), "[lints]\nworkspace = true\n");
+    const result = checkAssertions(workspace, [
+      { kind: "toml-keys", path: "Cargo.toml", table: "lints.workspace", keys: ["foo"] },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("boolean");
+    }
+  });
+
+  it("toml-keys fails when a segment resolves to an array", () => {
+    writeFileSync(join(workspace, "Cargo.toml"), '[[bin]]\nname = "x"\n');
+    const result = checkAssertions(workspace, [
+      { kind: "toml-keys", path: "Cargo.toml", table: "bin", keys: ["name"] },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("array");
+    }
+  });
+
+  it("toml-keys fails when a segment resolves to a datetime", () => {
+    writeFileSync(join(workspace, "Cargo.toml"), "key = 1979-05-27T07:32:00Z\n");
+    const result = checkAssertions(workspace, [
+      { kind: "toml-keys", path: "Cargo.toml", table: "key", keys: ["foo"] },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("datetime");
+    }
+  });
+
+  it("toml-keys fails on an unreadable/missing file, without throwing", () => {
+    expect(() =>
+      checkAssertions(workspace, [
+        { kind: "toml-keys", path: "missing.toml", table: "lints", keys: ["workspace"] },
+      ]),
+    ).not.toThrow();
+    const result = checkAssertions(workspace, [
+      { kind: "toml-keys", path: "missing.toml", table: "lints", keys: ["workspace"] },
+    ]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("toml-keys fails on invalid TOML source, without throwing", () => {
+    writeFileSync(join(workspace, "Cargo.toml"), "this is not = = valid toml [[[");
+    expect(() =>
+      checkAssertions(workspace, [
+        { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
+      ]),
+    ).not.toThrow();
+    const result = checkAssertions(workspace, [
+      { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
+    ]);
     expect(result.ok).toBe(false);
   });
 });
