@@ -5,8 +5,11 @@ import type { AIRequestEvent, Result, StructuredDeclineReason } from "@ai-coding
 
 import type { OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { orchestratePatch } from "../../orchestrator/orchestrate";
+import type { LLMOptions } from "../../orchestrator/orchestrate";
 import { patchOpsToEdits } from "../../orchestrator/patch-contract";
+import { STRUCTURED_PATCH_SYSTEM } from "../../orchestrator/patch-guidance";
 import { applyPatch } from "./apply-patch-step";
+import { coerceCreatesToEdits } from "./coerce-create-to-edit";
 import type { PatchEdit } from "./parse-patch";
 
 /** A typed reason (plus human-readable message) for a declined structured phase. */
@@ -277,7 +280,10 @@ async function applyEditsTransactionally(
 /**
  * Attempt the WHOLE-PHASE structured patch path: ask the resolved model for
  * one forced structured-op response covering the entire phase at once (via
- * `orchestratePatch`), convert it to `PatchEdit[]`, and apply it
+ * `orchestratePatch`), convert it to `PatchEdit[]`, pass the result through
+ * `coerceCreatesToEdits` (the filesystem-aware normalization that turns a
+ * `create` op targeting an already-existing, non-empty file into a clean
+ * whole-file-replace edit -- see coerce-create-to-edit.ts), and apply it
  * transactionally.
  *
  * This function NEVER THROWS. Returns an error `Result` for every
@@ -309,7 +315,8 @@ export async function tryStructuredPhase(
   workspace: string,
 ): Promise<Result<"applied", StructuredDecline>> {
   try {
-    const outcome = await orchestratePatch(event, config);
+    const llmOptions: LLMOptions = { system: STRUCTURED_PATCH_SYSTEM };
+    const outcome = await orchestratePatch(event, config, llmOptions);
     if (!outcome.ok) {
       const cause = outcome.error.cause;
       const detail =
@@ -343,7 +350,10 @@ export async function tryStructuredPhase(
       };
     }
 
-    const applyResult = await applyEditsTransactionally(workspace, editsResult.value);
+    const applyResult = await applyEditsTransactionally(
+      workspace,
+      coerceCreatesToEdits(workspace, editsResult.value),
+    );
     if (!applyResult.ok) {
       return applyResult;
     }

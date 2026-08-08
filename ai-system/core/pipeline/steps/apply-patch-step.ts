@@ -153,6 +153,16 @@ export async function applyPatch(
             applied.push({ filePath: edit.filePath, created: false });
             continue;
           }
+          // An EMPTY existing file has no content to conflict with, so a
+          // create op is allowed to overwrite it deterministically instead
+          // of declining. This mirrors the byte-identical no-op case above
+          // but for the (common, post-move) case where the target is a
+          // zero-byte placeholder rather than an exact content match.
+          if (currentContent === "") {
+            writeFileSync(absolutePath, edit.replace, "utf8");
+            applied.push({ filePath: edit.filePath, created: false });
+            continue;
+          }
           return {
             ok: false,
             error: {

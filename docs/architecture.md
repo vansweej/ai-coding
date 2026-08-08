@@ -799,6 +799,67 @@ unchanged. On ANY structured failure (not-capable, dispatch error, conversion
 error, or apply failure), nothing is touched and the loop runs exactly as it
 does today.
 
+### Deterministic create→edit coercion and structured-patch prompt guidance
+
+Two defense-in-depth mitigations close a run-to-run instability observed when
+the structured path's whole-phase attempt touches a file that ALREADY EXISTS
+on disk (e.g. relocated there by an earlier `move` op in the same phase): the
+model sometimes emitted a `create` op for that path (declined by the applier
+with `"already exists; cannot create"`, forcing a fallback to the flaky
+aider-text loop), and sometimes emitted an `edit` op whose `search` anchor was
+too narrow (an additive edit that left stale content dangling alongside new
+content — a malformed-but-cargo-tolerated result in the observed case).
+
+1. **`coerceCreatesToEdits`** (`ai-system/core/pipeline/steps/coerce-create-to-edit.ts`)
+   is a new, deliberately filesystem-aware normalization pass that runs
+   between `patchOpsToEdits` (which is filesystem-blind by design) and
+   `applyEditsTransactionally` inside `tryStructuredPhase`. For each edit: a
+   `create` op whose target already exists on disk with NON-empty, DIFFERENT
+   contents is coerced into a whole-file-replace `edit` (`search` = the
+   entire current file contents, `replace` = the create's contents) — a
+   string cannot contain two non-overlapping copies of its own entirety, so
+   this `search` is guaranteed to match exactly once and the applier's edit
+   branch applies it cleanly instead of declining. A `create` targeting an
+   EXISTING EMPTY (0-byte) file is left unchanged and instead relies on a
+   companion relaxation in the applier (`apply-patch-step.ts`): the CREATE
+   branch now overwrites an empty existing target instead of declining,
+   since an empty file has no content to conflict with. A `create` whose
+   target is byte-identical to its contents, or whose path resolves outside
+   the workspace, is passed through unchanged in both cases —
+   `assertInsideWorkspace` (inside `applyPatch`) remains the SOLE
+   path-safety gate; `coerceCreatesToEdits` never performs path-safety
+   checks itself, and skips reading the filesystem entirely for any path
+   that resolves outside the workspace. The coercion runs BEFORE
+   `applyEditsTransactionally`, so the existing transactional apply/rollback
+   semantics still fully cover the coerced edits.
+
+2. **`STRUCTURED_PATCH_SYSTEM`** (`ai-system/core/orchestrator/patch-guidance.ts`)
+   is a provider-agnostic system prompt now forwarded from
+   `tryStructuredPhase` to `orchestratePatch` via `LLMOptions.system` — the
+   structured path previously sent NO system prompt at all (unlike the
+   aider-text path, which passes `implementSystem`/`buildPatchSystem`). It
+   instructs the model to use `edit` for existing files, `create` only for
+   genuinely new files, and to make an `edit`'s `search` cover the entire
+   region being replaced. This applies to ALL structured-capable providers
+   (Anthropic, Copilot).
+
+**Scope note:** only mitigation (2) addresses the additive/malformed-edit
+failure mode, and it is non-deterministic (a prompt nudge, not an applier
+guard) — a generic deterministic guard here would false-positive on
+legitimate edits that intentionally retain part of their `search` text
+inside `replace`. Manifest/structural output validity (e.g. a malformed
+Cargo `[lints]` table that cargo silently tolerates) is explicitly OUT OF
+SCOPE for this normalization layer and is owned by the separate
+structural-assertion-vocabulary plan (`plan:false-green-gate-assert-v1`).
+See `docs/adr/0002-structured-create-over-existing-coercion.md` for the full
+decision record, including the residual risk and the
+**live-reverification** gate: because the runner's green unit tests prove
+wiring only (not live tool adherence), this change must be treated as
+PROVISIONAL until a human/coordinator re-runs the live Copilot forced-tool
+structured path (parlang plan-cycle, profile `copilot-default`) and confirms
+`emit_patch` still fires and applies correctly WITH the new system prompt
+present.
+
 ### Observable structured-patch fallback (`patch-path` progress event)
 
 Every non-error outcome of `tryStructuredPhase` (declined or applied) is now
