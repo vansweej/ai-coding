@@ -254,7 +254,7 @@ Each phase is committed separately with a `Phase: N` trailer for resume tracking
 
 A phase may optionally declare `Assert:` directives (alongside `Commit message:`
 and `Coverage:`) to encode machine-checked, author-declared invariants about
-the final state of the workspace. Five grammars are supported:
+the final state of the workspace. Six grammars are supported:
 
 ```
 Assert: contains <path> :: <needle>
@@ -262,6 +262,7 @@ Assert: not-contains <path> :: <needle>
 Assert: exists <path>
 Assert: not-exists <path>
 Assert: matches <path> :: <regex>
+Assert: toml-keys <path> :: <dotted.table> :: key1,key2,key3
 ```
 
 The ` :: ` separator splits the path from the needle (or regex) for the
@@ -276,6 +277,19 @@ invariants that a substring `contains` cannot — e.g. "this table has
 surrounding content still happens to satisfy a plain substring needle. A
 missing/unreadable file, or an invalid regex, is a FAILURE for `matches`,
 never a silent pass.
+
+`toml-keys` goes further for TOML files specifically: it parses the file
+in-process via `smol-toml`, walks the dotted table path (e.g.
+`lints.workspace`), and checks that the table's keys are set-equal to the
+comma-separated key list — a superset, a subset, or a missing table all
+FAIL; only an exact key-set match passes. This closes the loophole a plain
+substring or regex check on raw TOML text cannot: distinguishing "this table
+has exactly these keys" from "this table has these keys plus others" (a
+superset would still satisfy a substring/regex check). A table segment that
+resolves to an array, a primitive, or a TOML datetime (parsed as a JS `Date`)
+is a descriptive FAILURE, never a throw. Note the accepted limitation: a
+table that exists but has zero keys cannot be expressed by this grammar
+(empty-keys is rejected at parse time) — that check is out of scope.
 
 A missing/unreadable file is also a FAILURE for `not-contains` (as well as
 `contains`) — absence of a needle cannot be proven for a file that cannot be
