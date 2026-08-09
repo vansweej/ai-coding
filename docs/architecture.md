@@ -848,7 +848,13 @@ content — a malformed-but-cargo-tolerated result in the observed case).
    checks itself, and skips reading the filesystem entirely for any path
    that resolves outside the workspace. The coercion runs BEFORE
    `applyEditsTransactionally`, so the existing transactional apply/rollback
-   semantics still fully cover the coerced edits.
+   semantics still fully cover the coerced edits. The in-order predicted-content
+   fold that walks the batch now lives in a shared module,
+   `ai-system/core/pipeline/steps/predict-batch-state.ts` (exporting
+   `resolveInWorkspace`, `createBatchStatePredictor`, and
+   `predictBatchStates`), and coerced whole-file-replace edits are tagged
+   `wholeFileReplace: true` so that shared fold can seed their predicted
+   content deterministically instead of re-detecting the shape heuristically.
 
 2. **`STRUCTURED_PATCH_SYSTEM`** (`ai-system/core/orchestrator/patch-guidance.ts`)
    is a provider-agnostic system prompt now forwarded from
@@ -890,15 +896,23 @@ content — a malformed-but-cargo-tolerated result in the observed case).
    create/move, the anchor doesn't full-match the bare-header shape on
    either side, the header doesn't appear as a standalone line exactly once
    in the file, the path is absolute or resolves outside the workspace, or
-   the file is missing/unreadable. KNOWN LIMITATION: unlike
-   `coerceCreatesToEdits`, which models in-batch predicted content via a
-   map, this function reads the raw file from disk for each eligible edit —
-   two edits to the same file in one batch (or a create-then-edit coercion
-   left as a create) could cause a later expansion to read stale content.
-   This is considered uncommon and out of scope to fully model; the
-   downstream applier's own not-found/ambiguous handling degrades safely
-   (rolling back to the aider-text loop) if a stale anchor fails to match, so
-   no code threads predicted state across edits here.
+   the file is missing/unreadable. This pass now consumes the same shared
+   `predict-batch-state.ts` fold that `coerceCreatesToEdits` uses (see
+   mitigation 1) — it NO LONGER reads raw disk per edit, so a preceding
+   in-batch `move` or coerced whole-file-replace is reflected in the
+   PREDICTED content it expands against. Both passes now share ONE source
+   of truth for the per-op prediction update rules (move / create /
+   coerced-replace / plain-partial edit), so the two passes are correct by
+   construction rather than by parallel piecemeal fixes. KNOWN LIMITATION:
+   the sole remaining limitation is the edit-before-move / preceding
+   partial-edit case: a partial edit's post-edit content is not simulated,
+   so a later table edit whose target content was mutated by an earlier
+   partial edit in the same batch (including edit-before-move) may expand
+   against pre-edit bytes — the same inherited limitation
+   `coerceCreatesToEdits` documents, and out of scope by design. The
+   downstream applier's own not-found/ambiguous handling still degrades
+   safely (rolling back to the aider-text loop) if a stale anchor fails to
+   match.
 
 **Scope note:** mitigation (2) addresses the additive/malformed-edit failure
 mode non-deterministically (a prompt nudge, not an applier guard) for the
