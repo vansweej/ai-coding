@@ -34,6 +34,21 @@ export interface PatchEdit {
   readonly isCreate: boolean;
   readonly isMove: boolean;
   readonly toPath?: string;
+  /**
+   * `true` ONLY on an edit that `coerceCreatesToEdits` synthesizes when it
+   * coerces a `create` over predicted-existing non-empty content into a
+   * whole-file-replace edit (`isCreate: false`, `isMove: false`, `search` =
+   * the entire predicted current file content, `replace` = the create's
+   * contents).
+   *
+   * It is a deterministic provenance marker so the shared batch-state fold
+   * (`predict-batch-state.ts`) can seed `predicted[path] = replace` for that
+   * path without re-detecting whole-file-replace shape heuristically.
+   *
+   * It is absent (`undefined`) on parsed edits and on genuine
+   * creates/moves/plain partial edits.
+   */
+  readonly wholeFileReplace?: boolean;
 }
 
 /**
