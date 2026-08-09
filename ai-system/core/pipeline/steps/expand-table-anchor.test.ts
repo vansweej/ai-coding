@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { coerceCreatesToEdits } from "./coerce-create-to-edit";
 import { expandTableHeaderAnchors } from "./expand-table-anchor";
 import type { PatchEdit } from "./parse-patch";
 
@@ -399,5 +400,150 @@ describe("expandTableHeaderAnchors", () => {
     const result = expandTableHeaderAnchors(tempDir, edits);
 
     expect(result[0]).toEqual(edits[0]);
+  });
+});
+
+describe("expandTableHeaderAnchors (batch-aware predicted-state fold)", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join("/tmp", "expand-table-anchor-batch-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("expands a narrow [lints.clippy] anchor against MOVED content when a preceding in-batch move produces the target", () => {
+    writeFileSync(
+      join(tempDir, "Cargo.toml"),
+      '[package]\nname = "parlang"\n\n[lints.clippy]\npedantic = "warn"\nmodule_name_repetitions = "allow"\nmust_use_candidate = "allow"\n',
+      "utf8",
+    );
+    const edits: PatchEdit[] = [
+      {
+        filePath: "Cargo.toml",
+        toPath: "crates/parlang/Cargo.toml",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+      },
+      {
+        filePath: "crates/parlang/Cargo.toml",
+        search: "[lints.clippy]",
+        replace: "[lints]\nworkspace = true",
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+
+    const result = expandTableHeaderAnchors(tempDir, edits);
+
+    expect(result).toHaveLength(2);
+    expect(result[1]?.search).toContain("pedantic");
+    expect(result[1]?.search).toContain("module_name_repetitions");
+    expect(result[1]?.search).toContain("must_use_candidate");
+    expect(result[1]?.search).not.toBe("[lints.clippy]");
+  });
+
+  it("passes a table-header edit through unchanged when its target is absent and no in-batch op produces it", () => {
+    const edits: PatchEdit[] = [
+      {
+        filePath: "nonexistent/Cargo.toml",
+        search: "[lints.clippy]",
+        replace: "[lints]\nworkspace = true",
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+
+    const result = expandTableHeaderAnchors(tempDir, edits);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(edits[0]);
+  });
+
+  it("uses created content, not move-source content, for a coerced-create-then-edit on the same dest", () => {
+    writeFileSync(join(tempDir, "old-source.toml"), '[lints.clippy]\nstale = "yes"\n', "utf8");
+
+    const rawEdits: PatchEdit[] = [
+      {
+        filePath: "old-source.toml",
+        toPath: "crates/parlang/Cargo.toml",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+      },
+      {
+        filePath: "crates/parlang/Cargo.toml",
+        search: "",
+        replace:
+          '[package]\nname = "parlang"\n\n[lints.clippy]\npedantic = "warn"\nfresh = "yes"\n',
+        isCreate: true,
+        isMove: false,
+      },
+      {
+        filePath: "crates/parlang/Cargo.toml",
+        search: "[lints.clippy]",
+        replace: "[lints]\nworkspace = true",
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+
+    const coerced = coerceCreatesToEdits(tempDir, rawEdits);
+    const result = expandTableHeaderAnchors(tempDir, coerced);
+
+    const lastEdit = result[result.length - 1];
+    expect(lastEdit?.search).toContain("pedantic");
+    expect(lastEdit?.search).toContain("fresh");
+    expect(lastEdit?.search).not.toContain("stale");
+  });
+
+  it("continue-discipline: a second file's edit later in the batch still applies", () => {
+    writeFileSync(
+      join(tempDir, "a.toml"),
+      '[package]\nname = "a"\n\n[lints.clippy]\npedantic = "warn"\n',
+      "utf8",
+    );
+    mkdirSync(join(tempDir, "sub"), { recursive: true });
+    writeFileSync(
+      join(tempDir, "sub", "c.toml"),
+      '[package]\nname = "c"\n\n[lints.clippy]\nunused = "allow"\n',
+      "utf8",
+    );
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "a.toml",
+        toPath: "b.toml",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+      },
+      {
+        filePath: "b.toml",
+        search: "[lints.clippy]",
+        replace: "[lints]\nworkspace = true",
+        isCreate: false,
+        isMove: false,
+      },
+      {
+        filePath: "sub/c.toml",
+        search: "[lints.clippy]",
+        replace: "[lints]\nworkspace = true",
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+
+    const result = expandTableHeaderAnchors(tempDir, edits);
+
+    expect(result).toHaveLength(3);
+    expect(result[1]?.search).toContain("pedantic");
+    expect(result[2]?.search).toContain("unused");
   });
 });

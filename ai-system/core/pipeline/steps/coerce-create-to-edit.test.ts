@@ -47,6 +47,7 @@ describe("coerceCreatesToEdits", () => {
       replace: "new content",
       isCreate: false,
       isMove: false,
+      wholeFileReplace: true,
     });
   });
 
@@ -177,6 +178,25 @@ describe("coerceCreatesToEdits", () => {
     expect(result[0]?.replace).toBe("cdcd");
   });
 
+  it("tags a coerced edit with wholeFileReplace: true and leaves a genuine create untagged", () => {
+    writeFileSync(join(tempDir, "tagged.ts"), "old content", "utf8");
+    const edits: PatchEdit[] = [
+      {
+        filePath: "tagged.ts",
+        search: "",
+        replace: "new content",
+        isCreate: true,
+        isMove: false,
+      },
+      { filePath: "fresh.ts", search: "", replace: "FRESH", isCreate: true, isMove: false },
+    ];
+
+    const result = coerceCreatesToEdits(tempDir, edits);
+
+    expect(result[0]?.wholeFileReplace).toBe(true);
+    expect(result[1]?.wholeFileReplace).toBeUndefined();
+  });
+
   it("never throws and returns a new array instance", () => {
     const edits: PatchEdit[] = [
       { filePath: "a.ts", search: "", replace: "x", isCreate: true, isMove: false },
@@ -236,6 +256,7 @@ describe("coerceCreatesToEdits (in-batch predictions, finding 151af9e0)", () => 
       replace: "NEW",
       isCreate: false,
       isMove: false,
+      wholeFileReplace: true,
     });
   });
 
@@ -280,6 +301,7 @@ describe("coerceCreatesToEdits (in-batch predictions, finding 151af9e0)", () => 
       replace: "NEW",
       isCreate: false,
       isMove: false,
+      wholeFileReplace: true,
     });
   });
 

@@ -1,7 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, normalize } from "node:path";
-
 import type { PatchEdit } from "./parse-patch";
+import { predictBatchStates } from "./predict-batch-state";
 
 /**
  * Deterministic anchor-expansion normalization pass for structured-patch
@@ -33,18 +31,21 @@ import type { PatchEdit } from "./parse-patch";
  * input `edits` array or any individual edit object, and always returns a
  * NEW array.
  *
- * KNOWN LIMITATION: unlike `coerceCreatesToEdits` (which models in-batch
- * predicted content via a `Map<path, content>` fold across the whole batch),
- * this function reads the RAW file from disk for each eligible edit. It does
- * not thread any predicted post-op state between edits in the same batch.
- * Two edits touching the same file in one batch, or a create-then-edit
- * sequence where the create was left uncoerced, could therefore cause a
- * later expansion to read stale (pre-batch) file content. This is considered
- * uncommon and out of scope to fully model here: the downstream applier's
- * own not-found/ambiguous-match handling degrades safely (the whole
- * structured attempt rolls back and falls back to the aider-text loop) if a
- * stale anchor fails to match cleanly, so no correctness guarantee is lost --
- * only the deterministic-expansion optimization is skipped for that edit.
+ * KNOWN LIMITATION: this pass now consumes the shared
+ * `predict-batch-state.ts` fold (the same one `coerceCreatesToEdits` uses),
+ * so it reads PREDICTED in-batch content instead of raw disk — a preceding
+ * in-batch move or coerced whole-file-replace is reflected in the content it
+ * expands against. The SOLE remaining limitation is the edit-before-move /
+ * preceding partial-edit case: a partial edit's post-edit content is NOT
+ * simulated, so a table edit whose target content was mutated by an earlier
+ * partial edit in the same batch (including edit-before-move) may expand
+ * against pre-edit bytes — identical to the inherited limitation in
+ * `coerceCreatesToEdits`. This is considered uncommon and out of scope to
+ * fully model here: the downstream applier's own not-found/ambiguous-match
+ * handling degrades safely (the whole structured attempt rolls back and
+ * falls back to the aider-text loop) if a stale anchor fails to match
+ * cleanly, so no correctness guarantee is lost -- only the
+ * deterministic-expansion optimization is skipped for that edit.
  *
  * @param workspace - The workspace root the phase is running against.
  * @param edits - The edits produced by `coerceCreatesToEdits`.
@@ -55,18 +56,8 @@ export function expandTableHeaderAnchors(
   workspace: string,
   edits: readonly PatchEdit[],
 ): readonly PatchEdit[] {
-  const normalizedRoot = normalize(workspace);
-
   const bareHeaderGate = /^\[\[?[^\]\n]+\]\]?$/;
   const boundaryHeaderRegex = /^\[\[?[^\]\n]+\]\]?\s*(#.*)?$/;
-
-  const resolveInWorkspace = (filePath: string): string | undefined => {
-    if (isAbsolute(filePath)) return undefined;
-    const resolved = normalize(join(workspace, filePath));
-    const isInsideWorkspace =
-      resolved === normalizedRoot || resolved.startsWith(`${normalizedRoot}/`);
-    return isInsideWorkspace ? resolved : undefined;
-  };
 
   const stripHeaderBrackets = (trimmedHeader: string): string => {
     // Tolerate both `[table]` and `[[array]]` forms.
@@ -75,7 +66,7 @@ export function expandTableHeaderAnchors(
 
   const result: PatchEdit[] = [];
 
-  for (const edit of edits) {
+  for (const { edit, predictedContentForFilePath } of predictBatchStates(workspace, edits)) {
     if (edit.isCreate || edit.isMove) {
       result.push(edit);
       continue;
@@ -103,23 +94,12 @@ export function expandTableHeaderAnchors(
       continue;
     }
 
-    const resolvedAbs = resolveInWorkspace(edit.filePath);
-    if (resolvedAbs === undefined) {
+    if (predictedContentForFilePath === null) {
       result.push(edit);
       continue;
     }
 
-    let fileContent: string;
-    try {
-      if (!existsSync(resolvedAbs)) {
-        result.push(edit);
-        continue;
-      }
-      fileContent = readFileSync(resolvedAbs, "utf8");
-    } catch {
-      result.push(edit);
-      continue;
-    }
+    const fileContent = predictedContentForFilePath;
 
     const lines = fileContent.split("\n");
 
