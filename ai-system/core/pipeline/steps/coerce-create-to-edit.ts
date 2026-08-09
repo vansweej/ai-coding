@@ -1,7 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, normalize } from "node:path";
-
 import type { PatchEdit } from "./parse-patch";
+import { createBatchStatePredictor, resolveInWorkspace } from "./predict-batch-state";
 
 /**
  * Filesystem-aware, batch-aware normalization pass for structured patch
@@ -18,15 +16,18 @@ import type { PatchEdit } from "./parse-patch";
  * `coerceCreatesToEdits` is the sole filesystem-aware seam between that
  * blind conversion and the transactional apply step. Because the whole-phase
  * batch is applied transactionally IN ORDER, this function walks `edits` in
- * order and maintains a `Map<absPath, string | null>` of each touched path's
- * PREDICTED content (`null` meaning predicted absent/deleted), so a `create`
- * whose target is produced by a preceding in-batch `move`/`create` is
- * evaluated against the state the batch will actually produce, not just
- * current disk state (finding `151af9e0`). A path with no prediction entry
- * has its state resolved lazily from disk on demand, and once an op has
- * written a prediction for a path, that prediction is always trusted from
- * then on — disk is never re-read for a path mid-fold, since re-reading
- * would reintroduce the independent-per-edit bug this closes.
+ * order and consumes the shared in-order predicted-state fold in
+ * `predict-batch-state.ts` (single source of truth), so a `create` whose
+ * target is produced by a preceding in-batch `move`/`create` is evaluated
+ * against the state the batch will actually produce, not just current disk
+ * state (finding `151af9e0`). A path with no prediction entry has its state
+ * resolved lazily from disk on demand, and once an op has written a
+ * prediction for a path, that prediction is always trusted from then on —
+ * disk is never re-read for a path mid-fold, since re-reading would
+ * reintroduce the independent-per-edit bug this closes. Coerced
+ * whole-file-replace edits are tagged `wholeFileReplace: true` so the shared
+ * fold can seed their predicted content without re-detecting the shape
+ * heuristically.
  *
  * For each edit, in order:
  *   - A plain edit (not create, not move) passes through unchanged. Its
@@ -84,62 +85,35 @@ export function coerceCreatesToEdits(
   workspace: string,
   edits: readonly PatchEdit[],
 ): readonly PatchEdit[] {
-  const normalizedRoot = normalize(workspace);
-  const predicted = new Map<string, string | null>();
-
-  const resolveInWorkspace = (filePath: string): string | undefined => {
-    if (isAbsolute(filePath)) return undefined;
-    const resolved = normalize(join(workspace, filePath));
-    const isInsideWorkspace =
-      resolved === normalizedRoot || resolved.startsWith(`${normalizedRoot}/`);
-    return isInsideWorkspace ? resolved : undefined;
-  };
-
-  const predictedContentOf = (absPath: string): string | null => {
-    if (predicted.has(absPath)) {
-      // biome-ignore lint/style/noNonNullAssertion: guarded by has() above
-      return predicted.get(absPath)!;
-    }
-    try {
-      if (!existsSync(absPath)) return null;
-      return readFileSync(absPath, "utf8");
-    } catch {
-      // Defensive: any read failure is treated as "absent/unknown".
-      return null;
-    }
-  };
+  const predictor = createBatchStatePredictor(workspace);
 
   const result: PatchEdit[] = [];
 
   for (const edit of edits) {
     if (edit.isMove) {
       result.push(edit);
-      const sourceAbs = resolveInWorkspace(edit.filePath);
-      const destAbs = edit.toPath !== undefined ? resolveInWorkspace(edit.toPath) : undefined;
-      if (sourceAbs !== undefined && destAbs !== undefined) {
-        predicted.set(destAbs, predictedContentOf(sourceAbs));
-        predicted.set(sourceAbs, null);
-      }
+      predictor.record(edit);
       continue;
     }
 
     if (!edit.isCreate) {
       result.push(edit);
+      predictor.record(edit);
       continue;
     }
 
-    const resolvedAbs = resolveInWorkspace(edit.filePath);
+    const resolvedAbs = resolveInWorkspace(workspace, edit.filePath);
     if (resolvedAbs === undefined) {
       result.push(edit);
       continue;
     }
 
-    const current = predictedContentOf(resolvedAbs);
+    const current = predictor.predictedContentOf(resolvedAbs);
 
     if (current === null) {
       // Predicted absent: a genuinely new file.
       result.push(edit);
-      predicted.set(resolvedAbs, edit.replace);
+      predictor.record(edit);
       continue;
     }
 
@@ -148,26 +122,28 @@ export function coerceCreatesToEdits(
       // a create; the applier's empty-file relaxation handles it at apply
       // time since the target only exists (as empty) then.
       result.push(edit);
-      predicted.set(resolvedAbs, edit.replace);
+      predictor.record(edit);
       continue;
     }
 
     if (current === edit.replace) {
       // Byte-identical: the applier already treats this as a no-op success.
       result.push(edit);
-      predicted.set(resolvedAbs, edit.replace);
+      predictor.record(edit);
       continue;
     }
 
     // Predicted non-empty and differing: coerce to a whole-file-replace edit.
-    result.push({
+    const coercedEdit: PatchEdit = {
       filePath: edit.filePath,
       search: current,
       replace: edit.replace,
       isCreate: false,
       isMove: false,
-    });
-    predicted.set(resolvedAbs, edit.replace);
+      wholeFileReplace: true,
+    };
+    result.push(coercedEdit);
+    predictor.record(coercedEdit);
   }
 
   return result;
