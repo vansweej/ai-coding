@@ -860,13 +860,56 @@ content — a malformed-but-cargo-tolerated result in the observed case).
    region being replaced. This applies to ALL structured-capable providers
    (Anthropic, Copilot).
 
-**Scope note:** only mitigation (2) addresses the additive/malformed-edit
-failure mode, and it is non-deterministic (a prompt nudge, not an applier
-guard) — a generic deterministic guard here would false-positive on
+3. **`expandTableHeaderAnchors`** (`ai-system/core/pipeline/steps/expand-table-anchor.ts`)
+   is a deterministic normalization pass that runs in `tryStructuredPhase`
+   AFTER `coerceCreatesToEdits` and BEFORE `applyEditsTransactionally`,
+   directly targeting the narrow-anchor defect that mitigation (2) can only
+   nudge against non-deterministically. When a model emits an `edit` whose
+   `search` is just a bare TOML table-header line (e.g. `[lints.clippy]`)
+   while `replace` is a DIFFERENT table header restructuring it (e.g.
+   `[lints]\nworkspace = true`), a naive substitution only replaces the
+   header line and leaves the old table's body (its key/value lines)
+   dangling in the file, orphaned under whatever header follows — the exact
+   malformed-but-cargo-tolerated `[lints]` shape mitigation (2) was written
+   to discourage. `expandTableHeaderAnchors` detects this shape and
+   deterministically EXPANDS `search` to cover the anchor's full table body:
+   it locates the single exact-match header line in the file, then scans
+   forward for a FULL-LINE table-header boundary (a genuine next header, not
+   a multi-line array element like `[1, 2],` which fails the anchored
+   full-line boundary regex) whose stripped table path is NEITHER equal to
+   nor a descendant of the anchor's table path — descendant sub-tables (e.g.
+   `[lints.clippy]` under a `[lints]` anchor) are INCLUDED in the expansion,
+   and the scan runs to EOF (preserving the file's final trailing newline)
+   if no such boundary exists. A REPLACE-VS-APPEND DISCRIMINATOR guards
+   against over-expansion: when the trimmed leading header line of `replace`
+   is EQUAL to the trimmed `search` header (an append-a-key-to-the-same-table
+   edit), the edit is passed through UNCHANGED, since expanding would delete
+   the table body the model intended to preserve and append to. The function
+   is pure — it never throws, never mutates its input, and always returns a
+   new array — passing an edit through unchanged whenever it is a
+   create/move, the anchor doesn't full-match the bare-header shape on
+   either side, the header doesn't appear as a standalone line exactly once
+   in the file, the path is absolute or resolves outside the workspace, or
+   the file is missing/unreadable. KNOWN LIMITATION: unlike
+   `coerceCreatesToEdits`, which models in-batch predicted content via a
+   map, this function reads the raw file from disk for each eligible edit —
+   two edits to the same file in one batch (or a create-then-edit coercion
+   left as a create) could cause a later expansion to read stale content.
+   This is considered uncommon and out of scope to fully model; the
+   downstream applier's own not-found/ambiguous handling degrades safely
+   (rolling back to the aider-text loop) if a stale anchor fails to match, so
+   no code threads predicted state across edits here.
+
+**Scope note:** mitigation (2) addresses the additive/malformed-edit failure
+mode non-deterministically (a prompt nudge, not an applier guard) for the
+general case — a generic deterministic guard there would false-positive on
 legitimate edits that intentionally retain part of their `search` text
-inside `replace`. Manifest/structural output validity (e.g. a malformed
-Cargo `[lints]` table that cargo silently tolerates) is explicitly OUT OF
-SCOPE for this normalization layer and is owned by the separate
+inside `replace`. Mitigation (3) closes the narrow, common, and
+deterministically-detectable TOML-table-header-anchor sub-case of that
+failure mode outright, so it is NO LONGER out of scope for this
+normalization layer. Broader manifest/structural output validity beyond
+table-header anchors (e.g. other malformed-but-silently-tolerated shapes)
+remains OUT OF SCOPE here and is owned by the separate
 structural-assertion-vocabulary plan (`plan:false-green-gate-assert-v1`).
 See `docs/adr/0002-structured-create-over-existing-coercion.md` for the full
 decision record, including the residual risk and the

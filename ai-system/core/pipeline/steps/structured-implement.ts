@@ -10,6 +10,7 @@ import { patchOpsToEdits } from "../../orchestrator/patch-contract";
 import { STRUCTURED_PATCH_SYSTEM } from "../../orchestrator/patch-guidance";
 import { applyPatch } from "./apply-patch-step";
 import { coerceCreatesToEdits } from "./coerce-create-to-edit";
+import { expandTableHeaderAnchors } from "./expand-table-anchor";
 import type { PatchEdit } from "./parse-patch";
 
 /** A typed reason (plus human-readable message) for a declined structured phase. */
@@ -352,7 +353,7 @@ export async function tryStructuredPhase(
 
     const applyResult = await applyEditsTransactionally(
       workspace,
-      coerceCreatesToEdits(workspace, editsResult.value),
+      expandTableHeaderAnchors(workspace, coerceCreatesToEdits(workspace, editsResult.value)),
     );
     if (!applyResult.ok) {
       return applyResult;
