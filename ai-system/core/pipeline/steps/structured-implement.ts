@@ -284,7 +284,11 @@ async function applyEditsTransactionally(
  * `orchestratePatch`), convert it to `PatchEdit[]`, pass the result through
  * `coerceCreatesToEdits` (the filesystem-aware normalization that turns a
  * `create` op targeting an already-existing, non-empty file into a clean
- * whole-file-replace edit -- see coerce-create-to-edit.ts), and apply it
+ * whole-file-replace edit -- see coerce-create-to-edit.ts), expand
+ * table-header anchors via `expandTableHeaderAnchors` (which now returns a
+ * `Result`: a confirmed table-header rename anchor that cannot be uniquely
+ * resolved declines with `anchor-unexpandable`, which the caller treats as a
+ * HARD-ABORT rather than a text-loop fallback), and apply the result
  * transactionally.
  *
  * This function NEVER THROWS. Returns an error `Result` for every
@@ -351,10 +355,18 @@ export async function tryStructuredPhase(
       };
     }
 
-    const applyResult = await applyEditsTransactionally(
+    const expansion = expandTableHeaderAnchors(
       workspace,
-      expandTableHeaderAnchors(workspace, coerceCreatesToEdits(workspace, editsResult.value)),
+      coerceCreatesToEdits(workspace, editsResult.value),
     );
+    if (!expansion.ok) {
+      return {
+        ok: false,
+        error: { reason: expansion.error.reason, message: expansion.error.message },
+      };
+    }
+
+    const applyResult = await applyEditsTransactionally(workspace, expansion.value);
     if (!applyResult.ok) {
       return applyResult;
     }
