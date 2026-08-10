@@ -590,6 +590,25 @@ export function createVerifiedImplementStep(
           currentFileContents,
         );
       } else {
+        // Only `anchor-unexpandable` — the well-understood
+        // confirmed-rename-unresolvable class — hard-aborts; all other
+        // structured failures keep the historical text-loop fallback.
+        if (structuredResult.error.reason === "anchor-unexpandable") {
+          options.onProgress?.({
+            kind: "patch-path",
+            phase: options.phaseNumber ?? 0,
+            path: "structured-aborted",
+            reason: "anchor-unexpandable",
+            detail: structuredResult.error.message,
+          });
+          return {
+            ok: false,
+            error: new Error(
+              `Phase ${options.phaseNumber ?? 0} aborted: structured patch declined with anchor-unexpandable (no aider-text fallback): ${structuredResult.error.message}`,
+            ),
+          };
+        }
+
         options.onProgress?.({
           kind: "patch-path",
           phase: options.phaseNumber ?? 0,
