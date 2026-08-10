@@ -4,6 +4,31 @@ import { isAbsolute, join, normalize } from "node:path";
 import type { PatchEdit } from "./parse-patch";
 
 /**
+ * Escapes a string for safe use as a literal inside a `RegExp`.
+ *
+ * @param literal - The string to escape.
+ * @returns The escaped string, safe to embed in a `RegExp` source.
+ */
+export function escapeRegExp(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Reduces a TOML header line to canonical bare form by stripping surrounding
+ * whitespace and any trailing `#` comment, so `"[lints.clippy]  # note"` and
+ * `"[lints.clippy]"` compare equal.
+ *
+ * @param raw - The raw header line.
+ * @returns The canonical bare header.
+ */
+export function canonicalizeHeader(raw: string): string {
+  return raw
+    .trim()
+    .replace(/\s*#.*$/, "")
+    .trimEnd();
+}
+
+/**
  * Shared in-order predicted-state fold consumed by BOTH
  * `coerceCreatesToEdits` and `expandTableHeaderAnchors`.
  *
@@ -15,7 +40,7 @@ import type { PatchEdit } from "./parse-patch";
  * own copy-pasted `resolveInWorkspace` and its own local prediction map,
  * which could (and did) drift out of sync.
  *
- * The four `record` rules, verbatim (single source of truth):
+ * The five `record` rules, verbatim (single source of truth):
  *   1. `edit.isMove`: let `sourceAbs = resolveInWorkspace(workspace, edit.filePath)`;
  *      let `destAbs = edit.toPath !== undefined ? resolveInWorkspace(workspace, edit.toPath) : undefined`.
  *      Only when BOTH are defined: `predicted.set(destAbs, predictedContentOf(sourceAbs))`
@@ -25,8 +50,24 @@ import type { PatchEdit } from "./parse-patch";
  *      if defined, `predicted.set(abs, edit.replace)`.
  *   3. `edit.wholeFileReplace === true`: let `abs = resolveInWorkspace(workspace, edit.filePath)`;
  *      if defined, `predicted.set(abs, edit.replace)`.
- *   4. Otherwise (a plain partial edit): NO update — a partial edit's
- *      post-edit content is deliberately not simulated.
+ *   4. Otherwise (a plain partial edit), when the opt-in `simulatePartialEdits`
+ *      flag is OFF (the default, unchanged from before): NO update — a
+ *      partial edit's post-edit content is deliberately not simulated. This
+ *      keeps `coerceCreatesToEdits` (which never opts in) behaviorally
+ *      identical to before this flag existed.
+ *   5. Otherwise (a plain partial edit, `simulatePartialEdits` ON, and
+ *      `edit.search !== ""`): resolve `abs`; read `current =
+ *      predictedContentOf(abs)`; if `abs` or `current` is undefined/null,
+ *      skip (no update). **M4 bare-header self-skip guard:** if
+ *      `canonicalizeHeader(edit.search)` is itself a bare table header
+ *      (matches `/^\[\[?[^\]\n]+\]\]?$/`), skip WITHOUT mutating the map —
+ *      this prevents the simulation from seeding its own dangling-body
+ *      prediction ahead of `expandTableHeaderAnchors`'s own anchor-expansion
+ *      logic. Otherwise count `current.split(edit.search).length - 1`
+ *      literal occurrences; only when the count is EXACTLY 1, set
+ *      `predicted.set(abs, current.replace(new RegExp(escapeRegExp(edit.search)), () => edit.replace))`
+ *      (a function replacer avoids `$&`/`$1` special-replacement-pattern
+ *      interpretation in `edit.replace`).
  */
 
 /**
@@ -63,7 +104,11 @@ export interface BatchStatePredictor {
  * Create a fresh `BatchStatePredictor` for `workspace`. All state lives in
  * the returned closure; the factory itself holds no global state.
  */
-export function createBatchStatePredictor(workspace: string): BatchStatePredictor {
+export function createBatchStatePredictor(
+  workspace: string,
+  simulatePartialEdits = false,
+): BatchStatePredictor {
+  const bareHeaderGate = /^\[\[?[^\]\n]+\]\]?$/;
   const predicted = new Map<string, string | null>();
 
   const predictedContentOf = (absPath: string): string | null => {
@@ -108,7 +153,27 @@ export function createBatchStatePredictor(workspace: string): BatchStatePredicto
       return;
     }
 
-    // Plain partial edit: post-edit content is deliberately not simulated.
+    // Plain partial edit: post-edit content is not simulated unless
+    // `simulatePartialEdits` is on.
+    if (simulatePartialEdits === true && edit.search !== "") {
+      const abs = resolveInWorkspace(workspace, edit.filePath);
+      if (abs === undefined) return;
+      const current = predictedContentOf(abs);
+      if (current === null) return;
+
+      // M4 GUARD: never simulate when the search anchor is itself a bare
+      // table header -- doing so would seed a dangling-body prediction
+      // ahead of `expandTableHeaderAnchors`'s own anchor-expansion logic.
+      if (bareHeaderGate.test(canonicalizeHeader(edit.search))) return;
+
+      const occurrences = current.split(edit.search).length - 1;
+      if (occurrences !== 1) return;
+
+      predicted.set(
+        abs,
+        current.replace(new RegExp(escapeRegExp(edit.search)), () => edit.replace),
+      );
+    }
   };
 
   return { predictedContentOf, record };
@@ -124,8 +189,9 @@ export function createBatchStatePredictor(workspace: string): BatchStatePredicto
 export function* predictBatchStates(
   workspace: string,
   edits: readonly PatchEdit[],
+  options?: { readonly simulatePartialEdits?: boolean },
 ): Generator<{ readonly edit: PatchEdit; readonly predictedContentForFilePath: string | null }> {
-  const predictor = createBatchStatePredictor(workspace);
+  const predictor = createBatchStatePredictor(workspace, options?.simulatePartialEdits ?? false);
 
   for (const edit of edits) {
     const resolved = resolveInWorkspace(workspace, edit.filePath);
