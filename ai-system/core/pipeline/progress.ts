@@ -51,7 +51,7 @@ export type ProgressEvent =
       readonly kind: "patch-path";
       readonly phase: number;
       readonly step?: number;
-      readonly path: "structured-applied" | "fell-back-to-text";
+      readonly path: "structured-applied" | "fell-back-to-text" | "structured-aborted";
       readonly reason: StructuredPatchReason;
       /**
        * Optional human-readable diagnostic detail, present only for the
@@ -160,8 +160,10 @@ function buildLabel(event: ProgressEvent): string {
       const base =
         event.path === "structured-applied"
           ? `Phase ${event.phase}  structured patch applied (${event.reason})`
-          : `Phase ${event.phase}  fell back to text loop (${event.reason})`;
-      return event.path === "fell-back-to-text" &&
+          : event.path === "structured-aborted"
+            ? `Phase ${event.phase}  structured patch ABORTED (${event.reason})`
+            : `Phase ${event.phase}  fell back to text loop (${event.reason})`;
+      return (event.path === "fell-back-to-text" || event.path === "structured-aborted") &&
         event.detail !== undefined &&
         event.detail.length > 0
         ? `${base}: ${event.detail}`

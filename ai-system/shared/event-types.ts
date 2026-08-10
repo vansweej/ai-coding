@@ -109,9 +109,13 @@ export type PatchOp =
  * back to the incremental aider-text loop. Distinguishes the two not-capable
  * feature-detection outcomes, a dispatch-time failure, a conversion failure,
  * the two transactional-apply refusal sites (directory-declined vs
- * apply-failed), a thrown/rejected dispatcher, and the applied-then-verification
+ * apply-failed), a thrown/rejected dispatcher, the applied-then-verification
  * -red fall-through (the structured patch DID apply, but verification failed
- * and the phase resumes via the text loop).
+ * and the phase resumes via the text loop), and `anchor-unexpandable` -- a
+ * confirmed table-header rename anchor that could not be uniquely resolved
+ * (0 or >1 canonical matches, or the target predicts absent), which the caller
+ * must treat as a HARD-ABORT with NO aider-text fallback (distinct from
+ * `apply-failed`, which still falls back).
  */
 export type StructuredDeclineReason =
   | "not-capable-text-mode"
@@ -121,7 +125,8 @@ export type StructuredDeclineReason =
   | "apply-failed"
   | "directory-declined"
   | "threw"
-  | "verification-red-after-structured";
+  | "verification-red-after-structured"
+  | "anchor-unexpandable";
 
 /**
  * The `reason` carried on a `patch-path` progress event: every decline reason,
