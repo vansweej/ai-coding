@@ -983,7 +983,25 @@ content — a malformed-but-cargo-tolerated result in the observed case).
    retained permanently (not a temporary probe) and now also reports the
    tolerant-match outcome.
 
-
+6. **Uniform-indent hypothesis hint on `not-found` errors**
+   (`computeHypothesisHint` in
+   `ai-system/core/pipeline/steps/compute-hypothesis-hint.ts`, invoked from `applyPatch`
+   in `apply-patch-step.ts`) fires **only on the `not-found` branch** — after
+   exact-match and tolerant-match have both declined. It inspects the raw
+   `edit.search` string and, when every non-empty line shares an identical
+   non-zero leading-whitespace prefix (spaces and/or tabs), appends an
+   advisory hypothesis to the error message: that the anchor may be uniformly
+   indented relative to the target, and that the applier compares exact leading
+   whitespace. This is **diagnostic only** — it does not alter apply behaviour,
+   attempt a dedent-and-reapply, or change the `reason` field. The hint is
+   deliberately phrased as a hypothesis (not an assertion) because the heuristic
+   can produce false positives on legitimately-indented anchors that failed for
+   an unrelated reason. No dedent recovery is attempted: this is consistent
+   with the language-agnostic strict-indentation invariant enforced by
+   mitigations (5) and (4) — a silent dedent in Python/Haskell/YAML would
+   produce incorrect indentation. Fires on both the structured and aider-text
+   paths since it is a read-only message enrichment on the shared `applyPatch`
+   not-found return point.
 
 **Scope note:** mitigation (2) addresses the additive/malformed-edit failure
 mode non-deterministically (a prompt nudge, not an applier guard) for the
