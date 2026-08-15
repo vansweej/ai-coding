@@ -91,6 +91,12 @@ function parseTomlSource(source: string): Result<Record<string, unknown>> {
 }
 
 /**
+ * The current assert-grammar version. Used for forward-compat policy checks
+ * to detect plan files authored against a future grammar version.
+ */
+export const assertGrammarVersion = 2;
+
+/**
  * Parses the text following an `Assert:` directive into a `PhaseAssertion`.
  *
  * Supported grammars:
