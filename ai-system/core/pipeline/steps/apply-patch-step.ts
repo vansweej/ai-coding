@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { expandTableHeaderAnchorAgainstContent } from "./expand-table-anchor";
 import type { PatchEdit } from "./parse-patch";
 import { type PathSafetyError, assertInsideWorkspace } from "./patch-path-guard";
+import { matchTolerantAnchor } from "./tolerant-anchor-match";
 
 /**
  * Details about a successfully applied patch.
@@ -41,6 +42,14 @@ export interface ApplyPatchOptions {
    * table-header expansion semantics) are unaffected.
    */
   readonly expandTableAnchors?: boolean;
+
+  /**
+   * When `true`, EDIT ops whose exact `search` yields zero matches fall back
+   * to the language-agnostic blank-line-bounded tolerant matcher (see
+   * `tolerant-anchor-match.ts`). Default `false` -- the text-loop caller
+   * passes no options and is unaffected.
+   */
+  readonly tolerantAnchorMatch?: boolean;
 }
 
 /**
@@ -221,7 +230,9 @@ export async function applyPatch(
         }
 
         const currentContent = readFileSync(absolutePath, "utf8");
-
+        // Tolerant offsets are valid ONLY against this per-iteration fresh
+        // read of currentContent. Hoisting this read out of the loop would
+        // corrupt multi-edit-same-file batches.
         // OPTIONALLY expand a confirmed table-header rename anchor
         // authoritatively, against the bytes just read from disk -- this is
         // the apply-time fix for the predicted-vs-disk anchor divergence.
@@ -252,6 +263,53 @@ export async function applyPatch(
         ).length;
 
         if (searchCount === 0) {
+          // Before declaring the anchor unrecoverable, OPTIONALLY attempt the
+          // language-agnostic blank-line-bounded tolerant matcher. This
+          // consumes the RAW `edit.search`, NOT `effectiveEdit.search` --
+          // avoids stacking the table-expander paraphrase and the tolerant
+          // paraphrase on the same TOML-table shape.
+          let tolerantOutcome: "not-attempted" | "not-found" | "ambiguous" | "applied" =
+            "not-attempted";
+          if (options?.tolerantAnchorMatch === true) {
+            const tolerantResult = matchTolerantAnchor(currentContent, edit.search);
+            if (tolerantResult.ok) {
+              const { startOffset, endOffset } = tolerantResult.value;
+              const splicedContent =
+                currentContent.slice(0, startOffset) +
+                edit.replace +
+                currentContent.slice(endOffset);
+              writeFileSync(absolutePath, splicedContent, "utf8");
+              applied.push({ filePath: edit.filePath, created: false });
+              tolerantOutcome = "applied";
+              continue;
+            }
+            tolerantOutcome = tolerantResult.error.reason;
+          }
+
+          // ANCHOR_DEBUG is a deliberate, PERMANENT env-gated diagnostic
+          // (not a temporary probe) -- retained for future anchor-mismatch
+          // investigations. It fires on the FINAL failure path only: once
+          // the tolerant matcher (if attempted) has also declined.
+          /* v8 ignore start -- stderr-only, env-gated diagnostic with no return-value effect */
+          if (process.env.ANCHOR_DEBUG === "1") {
+            const sep = "\n========================================\n";
+            process.stderr.write(
+              `${sep}ANCHOR-DEBUG: Search anchor not found${sep}filePath: ${edit.filePath}\nabsolutePath: ${absolutePath}\nisMove: ${edit.isMove}  isCreate: ${edit.isCreate}\nexpandTableAnchors option: ${options?.expandTableAnchors === true}\nexpander fired (raw !== effective): ${edit.search !== effectiveEdit.search}\ntolerantAnchorMatch option: ${options?.tolerantAnchorMatch === true}\ntolerant outcome: ${tolerantOutcome}\n----- RAW edit.search (${JSON.stringify(edit.search).length} chars) -----\n${JSON.stringify(edit.search)}\n----- EFFECTIVE effectiveEdit.search -----\n${JSON.stringify(effectiveEdit.search)}\n----- ACTUAL on-disk currentContent bytes -----\n${JSON.stringify(currentContent)}\n----- currentContent (pretty) -----\n${currentContent}${sep}`,
+            );
+          }
+          /* v8 ignore stop */
+
+          if (tolerantOutcome === "ambiguous") {
+            return {
+              ok: false,
+              error: {
+                filePath: edit.filePath,
+                reason: "ambiguous",
+                message: `Search anchor is ambiguous in "${edit.filePath}" (tolerant match)`,
+              },
+            };
+          }
+
           return {
             ok: false,
             error: {
