@@ -197,6 +197,10 @@ workspace's devShell — there is no way to force a specific language.
   failure events to stderr as the run executes; silent by default. A phase abort restores the
   working tree to the pre-phase HEAD; if that restore itself fails, a `restore-failed` event
   is emitted to the feed rather than failing silently.
+- **Plan-file preservation**: during a working-tree restore (`git clean -fd`), files under
+  `plans/` are always excluded from removal. When `--plan <file>` points to an explicit path
+  outside `plans/`, that path is also excluded. This ensures the active plan file survives a
+  phase abort so the next resume invocation can still read it.
 
 ### Usage
 

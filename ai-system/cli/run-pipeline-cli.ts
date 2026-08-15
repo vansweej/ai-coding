@@ -156,6 +156,7 @@ async function main(): Promise<void> {
     const outcome = await runFeature(planContent, {
       config: configResult.value,
       workspace,
+      planPath,
       retryConfig: { maxLocalRetries: maxRetries },
       onProgress,
     });

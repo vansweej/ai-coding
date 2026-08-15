@@ -374,6 +374,35 @@ never throws; a restore failure (e.g. a non-git workspace) emits a
 `restore-failed` progress event rather than masking the original phase
 failure, so a dirty tree after abort is observable instead of silent.
 
+**Plan-file protection during `git clean` (`git-clean-args.ts`).** All three
+`git clean -fd` callsites in the pipeline — `restoreWorkingTree`
+(`phase-runner.ts`), the structured-patch rollback
+(`gitRestoreWorkingTree` in `steps/structured-implement.ts`), and the
+resume-to-phase cleanup (`resetToPhaseCommit` in `resume.ts`) — build their
+`git clean` argv through the shared leaf module
+`ai-system/core/pipeline/git-clean-args.ts` (`buildGitCleanArgs(repoRoot,
+planPath?)`). This module has ZERO pipeline-internal imports (only
+`node:path`), specifically so it is safely importable by both
+`phase-runner.ts` and `steps/structured-implement.ts` without reintroducing
+the `structured-implement → phase-runner` import cycle those two files
+otherwise avoid by duplicating their restore logic. It always excludes the
+`plans/` directory (`-e plans/`) — the conventional home for on-disk
+`--plan` files — and, when the resolved `--plan` path is supplied and lies
+inside `repoRoot`, additionally excludes that specific repo-relative path
+(`-e <path>`) as a belt-and-suspenders guard for plan files kept outside
+`plans/`. `-x` is deliberately never added, so `.gitignore`d artifacts keep
+their existing survive-behaviour. The resolved `--plan` path is threaded
+optionally end-to-end from the CLI (`run-pipeline-cli.ts`) through
+`RunFeatureOptions`/`RunPhaseOptions` (an optional field, so
+`--plan-ref`/`--input` runs simply fall back to the blanket `plans/` guard)
+into `restoreWorkingTree`, and separately as an optional trailing
+positional parameter through `createVerifiedImplementStep` →
+`tryStructuredPhase` → `gitRestoreWorkingTree` for the structured-patch
+rollback path. Because the specific `--plan` path is protected wherever it
+resides, any generated artifacts should not be written under `plans/` — the
+blanket exclusion means such artifacts would silently survive a rollback
+and could leak stale state across phases/resumes.
+
 A previously-proposed alternative fix — tightening the verified-implement step's
 recheck escape hatches in `verified-implement-step.ts` — was evaluated and rejected
 as provably inert: in phase mode, `implementation !== ""` already implies

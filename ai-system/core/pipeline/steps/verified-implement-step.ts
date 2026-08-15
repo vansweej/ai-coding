@@ -96,6 +96,8 @@ export interface RetryConfig {
 export interface VerifiedImplementStepOptions {
   readonly config: OrchestratorConfig;
   readonly workspace: string;
+  /** Optional path to the active plan file; excluded from `git clean` during working-tree restores. */
+  readonly planPath?: string;
   /**
    * Legacy single-language configuration. Required unless `palette` is
    * provided. When both are supplied, `palette` takes precedence -- see
@@ -547,6 +549,7 @@ export function createVerifiedImplementStep(
         makeEvent(ctx, "edit", prompt),
         options.config,
         options.workspace,
+        options.planPath,
       );
       if (structuredResult.ok) {
         const verificationResult = await runVerification(ctx, verificationSteps);

@@ -2,6 +2,8 @@ import { $ } from "bun";
 
 import type { Result } from "@ai-coding/pipeline";
 
+import { buildGitCleanArgs } from "./git-clean-args";
+
 /** Resume state: the last completed phase number and whether a resume is needed. */
 export interface ResumeState {
   readonly needsResume: boolean;
@@ -171,9 +173,12 @@ export async function resetToPhaseCommit(
       };
     }
 
-    // Reset to that commit and clean up
+    // Reset to that commit and clean up. `resetToPhaseCommit` does not
+    // receive a `--plan` path, so `buildGitCleanArgs` applies the blanket
+    // `plans/` exclusion only (see git-clean-args.ts).
     await $`git reset --hard ${targetCommitHash}`.cwd(workspace).quiet();
-    await $`git clean -fd`.cwd(workspace).quiet();
+    const cleanArgs = buildGitCleanArgs(workspace);
+    await $`git ${cleanArgs}`.cwd(workspace).quiet();
 
     return { ok: true, value: targetCommitHash };
   } catch (error) {

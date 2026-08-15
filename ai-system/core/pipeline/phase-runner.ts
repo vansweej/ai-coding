@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { $ } from "bun";
 
 import type { PipelineContext, Result, StepResult } from "@ai-coding/pipeline";
@@ -6,6 +6,8 @@ import type { AIRequestEvent } from "@ai-coding/shared";
 
 import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import type { ToolchainDescriptor } from "./definitions/language-configs";
+
+import { buildGitCleanArgs } from "./git-clean-args";
 import { checkAssertions } from "./phase-assertions";
 import type { Phase } from "./plan-parser";
 import type { OnProgress } from "./progress";
@@ -44,6 +46,8 @@ export type CommitPhase = (
 export interface RunPhaseOptions {
   readonly config: OrchestratorConfig;
   readonly workspace: string;
+  /** Optional path to the active plan file; excluded from `git clean` during working-tree restores. */
+  readonly planPath?: string;
   /**
    * Set of tool names detected as available in the workspace's devShell
    * (see `devShellPalette` in `@ai-coding/pipeline`, computed once per run
@@ -163,10 +167,14 @@ export function restoreWorkingTree(
   workspace: string,
   phase: number,
   onProgress?: OnProgress,
+  planPath?: string,
 ): void {
   try {
     execSync("git reset --hard HEAD", { cwd: workspace, encoding: "utf8" });
-    execSync("git clean -fd", { cwd: workspace, encoding: "utf8" });
+    execFileSync("git", buildGitCleanArgs(workspace, planPath), {
+      cwd: workspace,
+      encoding: "utf8",
+    });
   } catch (err) {
     onProgress?.({
       kind: "restore-failed",
@@ -314,6 +322,7 @@ export async function runPhase(
   const verifiedStep = createVerifiedImplementStep(`phase-${phase.number}`, {
     config: options.config,
     workspace: options.workspace,
+    planPath: options.planPath,
     palette: options.palette,
     coverage: phase.coverage,
     diff: safeGitDiff(options.workspace),
@@ -328,7 +337,7 @@ export async function runPhase(
   });
   if (!result.ok) {
     const attributed = await attributePhaseFailure(options.workspace, options.palette, result);
-    restoreWorkingTree(options.workspace, phase.number, options.onProgress);
+    restoreWorkingTree(options.workspace, phase.number, options.onProgress, options.planPath);
     return attributed;
   }
 
