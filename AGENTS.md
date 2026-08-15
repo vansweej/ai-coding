@@ -44,6 +44,9 @@ ai-coding/
         routing/           - route.ts: auto-routes each touched file to a toolchain based on the
                              workspace's devShell palette; unmatched/unavailable files are edit-only
         progress.ts        - ProgressEvent model + pure formatProgressEvent (--verbose feed)
+        git-clean-args.ts  - buildGitCleanArgs: constructs the git-clean argv, always excluding
+                             plans/ and optionally an explicit --plan path; single source of
+                             truth for the plan-file exclusion contract used by restoreWorkingTree
     cli/
       parse-args.ts        - CLI args (--profile, --input, --plan, --verbose/-v flags)
       load-config.ts       - Builds OrchestratorConfig with selected profile
@@ -141,7 +144,9 @@ Target **90% code coverage**. Exclude untestable code with:
    repository, update the corresponding documentation in the same commit:
    - `docs/agent-reference.md` — for agent changes (tables, descriptions, workflows,
       file listings)
-   - `docs/architecture.md` — for structural or pipeline changes
+   - `docs/architecture.md` — for structural or pipeline changes (includes working-tree
+     restore behavior and the plan-file exclusion contract: `plans/` and the active
+     `--plan` path are excluded from `git clean` during a phase abort)
    - `docs/ai-coding-os-setup.md` — for setup-facing changes (agent tables,
      daily workflow steps)
    - `README.md` — for user-facing pipeline or configuration changes

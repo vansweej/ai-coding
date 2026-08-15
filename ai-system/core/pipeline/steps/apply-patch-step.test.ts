@@ -191,6 +191,33 @@ describe("applyPatch", () => {
 
     expect(result.error.reason).toBe("not-found");
     expect(result.error.message).toContain("Search anchor not found");
+    // Anchor has no leading whitespace, so no hypothesis hint is appended.
+    expect(result.error.message).toBe('Search anchor not found in "test.ts"');
+    expect(result.error.message).not.toContain("leading whitespace character(s)");
+  });
+
+  it("returns not-found with a hypothesis hint when the anchor is uniformly indented", async () => {
+    // Setup: create a file whose content does not contain the anchor at all.
+    const filePath = join(tempDir, "test.ts");
+    writeFileSync(filePath, "const x = 1;", "utf8");
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "test.ts",
+        search: "  const y = 2;\n  const z = 3;",
+        replace: "  const y = 4;\n  const z = 5;",
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+
+    const result = await applyPatch(tempDir, edits);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected error result");
+
+    expect(result.error.reason).toBe("not-found");
+    expect(result.error.message).toContain("Search anchor not found in");
+    expect(result.error.message).toContain("leading whitespace character(s)");
   });
 
   it("returns ambiguous when anchor appears multiple times", async () => {
@@ -214,6 +241,29 @@ describe("applyPatch", () => {
 
     expect(result.error.reason).toBe("ambiguous");
     expect(result.error.message).toContain("appears 2 times");
+  });
+
+  it("returns ambiguous with an indented anchor and no hypothesis hint (hint is scoped to not-found only)", async () => {
+    // Setup: create a file with duplicate, uniformly-indented content.
+    const filePath = join(tempDir, "test.ts");
+    writeFileSync(filePath, "  const x = 1;\n  const x = 1;", "utf8");
+
+    const edits: PatchEdit[] = [
+      {
+        filePath: "test.ts",
+        search: "  const x = 1;",
+        replace: "  const x = 2;",
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+
+    const result = await applyPatch(tempDir, edits);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected error result");
+
+    expect(result.error.reason).toBe("ambiguous");
+    expect(result.error.message).not.toContain("leading whitespace character(s)");
   });
 
   it("rejects path-escape attempts via ../", async () => {

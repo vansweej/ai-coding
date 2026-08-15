@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AIRequestEvent, Result, StructuredDeclineReason } from "@ai-coding/shared";
@@ -8,6 +8,7 @@ import { orchestratePatch } from "../../orchestrator/orchestrate";
 import type { LLMOptions } from "../../orchestrator/orchestrate";
 import { patchOpsToEdits } from "../../orchestrator/patch-contract";
 import { STRUCTURED_PATCH_SYSTEM } from "../../orchestrator/patch-guidance";
+import { buildGitCleanArgs } from "../git-clean-args";
 import { applyPatch } from "./apply-patch-step";
 import { coerceCreatesToEdits } from "./coerce-create-to-edit";
 import type { PatchEdit } from "./parse-patch";
@@ -125,10 +126,13 @@ function isGitRepo(workspace: string): boolean {
  * never-throws contract, preserving the original apply error as the primary
  * failure even if the restore itself fails.
  */
-function gitRestoreWorkingTree(workspace: string): void {
+function gitRestoreWorkingTree(workspace: string, planPath?: string): void {
   try {
     execSync("git reset --hard HEAD", { cwd: workspace, encoding: "utf8" });
-    execSync("git clean -fd", { cwd: workspace, encoding: "utf8" });
+    execFileSync("git", buildGitCleanArgs(workspace, planPath), {
+      cwd: workspace,
+      encoding: "utf8",
+    });
   } catch {
     // Best-effort restore; the original applyPatch error is still returned
     // to the caller, which falls back to the text loop.
@@ -226,6 +230,7 @@ function rollbackToSnapshot(snapshots: readonly PathSnapshot[]): void {
 async function applyEditsTransactionally(
   workspace: string,
   edits: readonly PatchEdit[],
+  planPath?: string,
 ): Promise<Result<void, StructuredDecline>> {
   if (touchesDirectory(workspace, edits)) {
     if (!isGitRepo(workspace)) {
@@ -244,7 +249,7 @@ async function applyEditsTransactionally(
       tolerantAnchorMatch: true,
     });
     if (!applyResult.ok) {
-      gitRestoreWorkingTree(workspace);
+      gitRestoreWorkingTree(workspace, planPath);
       const reason =
         applyResult.error.reason === "anchor-unexpandable" ? "anchor-unexpandable" : "apply-failed";
       return {
@@ -331,6 +336,7 @@ export async function tryStructuredPhase(
   event: AIRequestEvent,
   config: OrchestratorConfig,
   workspace: string,
+  planPath?: string,
 ): Promise<Result<"applied", StructuredDecline>> {
   try {
     const llmOptions: LLMOptions = { system: STRUCTURED_PATCH_SYSTEM };
@@ -370,7 +376,7 @@ export async function tryStructuredPhase(
 
     const edits = coerceCreatesToEdits(workspace, editsResult.value);
 
-    const applyResult = await applyEditsTransactionally(workspace, edits);
+    const applyResult = await applyEditsTransactionally(workspace, edits, planPath);
     if (!applyResult.ok) {
       return applyResult;
     }

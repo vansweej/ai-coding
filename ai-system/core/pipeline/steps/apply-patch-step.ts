@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
+import { computeHypothesisHint } from "./compute-hypothesis-hint";
 import { expandTableHeaderAnchorAgainstContent } from "./expand-table-anchor";
 import type { PatchEdit } from "./parse-patch";
 import { type PathSafetyError, assertInsideWorkspace } from "./patch-path-guard";
@@ -310,12 +311,13 @@ export async function applyPatch(
             };
           }
 
+          const hint = computeHypothesisHint(edit.search);
           return {
             ok: false,
             error: {
               filePath: edit.filePath,
               reason: "not-found",
-              message: `Search anchor not found in "${edit.filePath}"`,
+              message: `Search anchor not found in "${edit.filePath}"${hint ? ` (${hint})` : ""}`,
             },
           };
         }
