@@ -736,4 +736,248 @@ describe("applyPatch", () => {
       expect(content).toContain("pedantic");
     });
   });
+
+  describe("tolerantAnchorMatch option", () => {
+    it("recovers a paraphrased anchor that drops comment lines (captured-bytes happy path)", async () => {
+      const filePath = join(tempDir, "Cargo.toml");
+      const original =
+        "[lints.clippy]\n" +
+        "# Enforce stricter linting for better code quality\n" +
+        'pedantic = { level = "warn", priority = -1 }\n' +
+        "# Allow some pedantic lints that are too strict for this project\n" +
+        'module_name_repetitions = "allow"\n' +
+        'must_use_candidate = "allow"\n';
+      writeFileSync(filePath, original, "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "Cargo.toml",
+          search:
+            "[lints.clippy]\n" +
+            'pedantic = { level = "warn", priority = -1 }\n' +
+            'module_name_repetitions = "allow"\n' +
+            'must_use_candidate = "allow"',
+          replace: '[lints.clippy]\npedantic = "allow"',
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits, { tolerantAnchorMatch: true });
+      expect(result.ok).toBe(true);
+
+      const content = readFileSync(filePath, "utf8");
+      expect(content).toBe('[lints.clippy]\npedantic = "allow"\n');
+    });
+
+    it("opt-out: fails and leaves bytes unchanged when the option is not set", async () => {
+      const filePath = join(tempDir, "Cargo.toml");
+      const original =
+        "[lints.clippy]\n" +
+        "# Enforce stricter linting for better code quality\n" +
+        'pedantic = { level = "warn", priority = -1 }\n' +
+        "# Allow some pedantic lints that are too strict for this project\n" +
+        'module_name_repetitions = "allow"\n' +
+        'must_use_candidate = "allow"\n';
+      writeFileSync(filePath, original, "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "Cargo.toml",
+          search:
+            "[lints.clippy]\n" +
+            'pedantic = { level = "warn", priority = -1 }\n' +
+            'module_name_repetitions = "allow"\n' +
+            'must_use_candidate = "allow"',
+          replace: '[lints.clippy]\npedantic = "allow"',
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.reason).toBe("not-found");
+        expect(result.error.message).toContain("Search anchor not found");
+      }
+      expect(readFileSync(filePath, "utf8")).toBe(original);
+    });
+
+    it("dangling-following-table rejection: the region never crosses the blank line, following table survives", async () => {
+      const filePath = join(tempDir, "Cargo.toml");
+      const original =
+        "[lints.clippy]\n" +
+        "# Enforce stricter linting for better code quality\n" +
+        'pedantic = { level = "warn", priority = -1 }\n' +
+        "# Allow some pedantic lints that are too strict for this project\n" +
+        'module_name_repetitions = "allow"\n' +
+        'must_use_candidate = "allow"\n' +
+        "\n" +
+        "[lints.rust]\n" +
+        'unsafe_code = "forbid"\n';
+      writeFileSync(filePath, original, "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "Cargo.toml",
+          search:
+            "[lints.clippy]\n" +
+            'pedantic = { level = "warn", priority = -1 }\n' +
+            'module_name_repetitions = "allow"\n' +
+            'must_use_candidate = "allow"',
+          replace: '[lints.clippy]\npedantic = "allow"',
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits, { tolerantAnchorMatch: true });
+      expect(result.ok).toBe(true);
+
+      const content = readFileSync(filePath, "utf8");
+      expect(content).toContain('[lints.rust]\nunsafe_code = "forbid"');
+      expect(content).toContain('[lints.clippy]\npedantic = "allow"');
+    });
+
+    it("zero-candidate: search first line absent leaves bytes unchanged", async () => {
+      const filePath = join(tempDir, "Cargo.toml");
+      const original = "[lints.clippy]\n" + 'pedantic = "warn"\n';
+      writeFileSync(filePath, original, "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "Cargo.toml",
+          search: "[completely.absent]\nfoo = 1",
+          replace: "irrelevant",
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits, { tolerantAnchorMatch: true });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.reason).toBe("not-found");
+      }
+      expect(readFileSync(filePath, "utf8")).toBe(original);
+    });
+
+    it("multi-start ambiguous: two blank-separated satisfying regions leave bytes unchanged", async () => {
+      const filePath = join(tempDir, "config.toml");
+      const original =
+        "[table]\n" +
+        "# comment\n" +
+        'key = "value"\n' +
+        "\n" +
+        "[table]\n" +
+        "# another comment\n" +
+        'key = "value"\n';
+      writeFileSync(filePath, original, "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "config.toml",
+          search: '[table]\nkey = "value"',
+          replace: "irrelevant",
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits, { tolerantAnchorMatch: true });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.reason).toBe("ambiguous");
+      }
+      expect(readFileSync(filePath, "utf8")).toBe(original);
+    });
+
+    it("end-point ambiguity: last anchor line recurs within one non-blank run leaves bytes unchanged", async () => {
+      const filePath = join(tempDir, "config.toml");
+      const original =
+        "[table]\n" + "# comment\n" + 'flag = "allow"\n' + "# comment2\n" + 'flag = "allow"\n';
+      writeFileSync(filePath, original, "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "config.toml",
+          search: '[table]\nflag = "allow"',
+          replace: "irrelevant",
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits, { tolerantAnchorMatch: true });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(["ambiguous", "not-found"]).toContain(result.error.reason);
+      }
+      expect(readFileSync(filePath, "utf8")).toBe(original);
+    });
+
+    it("indentation-significant rejection: differing leading indentation fails closed, bytes unchanged", async () => {
+      const filePath = join(tempDir, "script.py");
+      const original = "if True:\n    print('hello')\n";
+      writeFileSync(filePath, original, "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "script.py",
+          search: "if True:\nprint('hello')",
+          replace: "if True:\nprint('goodbye')",
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits, { tolerantAnchorMatch: true });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.reason).toBe("not-found");
+      }
+      expect(readFileSync(filePath, "utf8")).toBe(original);
+    });
+
+    it("expander-coexistence: exactly one mutation occurs when both options are enabled", async () => {
+      const filePath = join(tempDir, "Cargo.toml");
+      const original =
+        "[lints.clippy]\n" +
+        "# Enforce stricter linting for better code quality\n" +
+        'pedantic = { level = "warn", priority = -1 }\n' +
+        "# Allow some pedantic lints that are too strict for this project\n" +
+        'module_name_repetitions = "allow"\n' +
+        'must_use_candidate = "allow"\n';
+      writeFileSync(filePath, original, "utf8");
+
+      // A multi-line, non-bare-header anchor: the table expander's bare-header
+      // gate does not fire for this shape, so only the tolerant matcher can
+      // recover it (against the RAW edit.search).
+      const edits: PatchEdit[] = [
+        {
+          filePath: "Cargo.toml",
+          search:
+            "[lints.clippy]\n" +
+            'pedantic = { level = "warn", priority = -1 }\n' +
+            'module_name_repetitions = "allow"\n' +
+            'must_use_candidate = "allow"',
+          replace: '[lints.clippy]\npedantic = "allow"',
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits, {
+        expandTableAnchors: true,
+        tolerantAnchorMatch: true,
+      });
+      expect(result.ok).toBe(true);
+
+      const content = readFileSync(filePath, "utf8");
+      // Exactly one mutation: the tolerant region replacement, not a
+      // double-applied/paraphrase-stacked result.
+      expect(content).toBe('[lints.clippy]\npedantic = "allow"\n');
+    });
+  });
 });

@@ -958,6 +958,31 @@ content — a malformed-but-cargo-tolerated result in the observed case).
    `simulatePartialEdits: true`); `coerceCreatesToEdits` never opts in, so its
    behavior is byte-for-byte unchanged by this flag's introduction.
 
+5. **Tolerant anchor matching for paraphrased EDIT search anchors**
+   (`matchTolerantAnchor` in `ai-system/core/pipeline/steps/tolerant-anchor-match.ts`,
+   invoked from `applyPatch` via `options.tolerantAnchorMatch` — see
+   `docs/adr/0005-hardened-tolerant-anchor-matching.md`) targets a DIFFERENT
+   defect class than mitigation (3): a model's `search` anchor that is a
+   PARAPHRASE of the on-disk bytes — most commonly, comment lines physically
+   present on disk but dropped from the anchor. When the exact-match search
+   (post table-header expansion) yields zero occurrences, and this option is
+   enabled, `applyPatch` retries against a pure, language-agnostic matcher
+   that walks the RAW `edit.search` (never the table-expander's derived
+   anchor, to avoid stacking two paraphrase-recovery mechanisms on the same
+   shape) against the file, absorbing interleaved extra lines but never
+   crossing a blank line (the authoritative boundary that prevents overshoot
+   into a following blank-separated block) and never relaxing leading
+   indentation (kept strict for Haskell/Python safety). A match is accepted
+   only when exactly one region resolves; any ambiguity or absence fails
+   closed with the existing `PatchApplyError` reasons (`ambiguous` /
+   `not-found` — no new reason is introduced). Only `structured-implement.ts`'s
+   `applyEditsTransactionally` opts in (`{ expandTableAnchors: true,
+   tolerantAnchorMatch: true }`); the aider-text incremental retry loop in
+   `verified-implement-step.ts` passes no options and is unaffected. The
+   `ANCHOR_DEBUG=1`-gated stderr diagnostic in `apply-patch-step.ts` is
+   retained permanently (not a temporary probe) and now also reports the
+   tolerant-match outcome.
+
 
 
 **Scope note:** mitigation (2) addresses the additive/malformed-edit failure
@@ -984,7 +1009,10 @@ present. See `docs/adr/0003-anchor-unexpandable-hard-abort.md` for the
 rename anchor expansion moved from an up-front prediction-based pass to an
 apply-time, on-disk-bytes pass (closing a predicted-vs-disk anchor divergence
 that could otherwise produce an intermittent `"Search anchor not found"`
-apply failure on certain batch shapes).
+apply failure on certain batch shapes). See
+`docs/adr/0005-hardened-tolerant-anchor-matching.md` for the blank-line-bounded,
+indentation-preserving, fail-closed tolerant anchor matcher (mitigation (5)
+above) and the per-iteration fresh-read invariant it depends on.
 
 ### Observable structured-patch fallback (`patch-path` progress event)
 

@@ -239,7 +239,10 @@ async function applyEditsTransactionally(
       };
     }
 
-    const applyResult = await applyPatch(workspace, edits, { expandTableAnchors: true });
+    const applyResult = await applyPatch(workspace, edits, {
+      expandTableAnchors: true,
+      tolerantAnchorMatch: true,
+    });
     if (!applyResult.ok) {
       gitRestoreWorkingTree(workspace);
       const reason =
@@ -264,7 +267,10 @@ async function applyEditsTransactionally(
   }
   const snapshots = snapshotResult.value;
 
-  const applyResult = await applyPatch(workspace, edits, { expandTableAnchors: true });
+  const applyResult = await applyPatch(workspace, edits, {
+    expandTableAnchors: true,
+    tolerantAnchorMatch: true,
+  });
   if (!applyResult.ok) {
     rollbackToSnapshot(snapshots);
     const reason =
