@@ -89,6 +89,32 @@ const EXIT_CODES = {
   ENVIRONMENT_ERROR: 3,
 } as const;
 
+/**
+ * Build a diagnostic message and exit code for a failed `runFeature` result.
+ *
+ * INVARIANT: `message` is always non-null so pre-progress failures cannot be
+ * swallowed. The `verbose` flag may enrich the message with additional
+ * detail (e.g. stack trace) but MUST NOT gate whether a message is produced.
+ *
+ * @param error   - The error from a failed `runFeature` result.
+ * @param verbose - Whether to enrich the message with additional detail.
+ */
+export function reportFeatureFailure(
+  error: Error,
+  verbose: boolean,
+): { message: string; exitCode: number } {
+  const isEnvironmentError =
+    error instanceof DevShellPaletteError || error instanceof BaselineCheckError;
+  const exitCode = isEnvironmentError
+    ? EXIT_CODES.ENVIRONMENT_ERROR
+    : EXIT_CODES.RESUMABLE_FAILURE;
+
+  const base = `Feature failed: ${error.message}`;
+  const message = verbose && error.stack ? `${base}\n${error.stack}` : base;
+
+  return { message, exitCode };
+}
+
 /* v8 ignore start */
 async function main(): Promise<void> {
   const argsResult = parseArgs(process.argv.slice(2));
@@ -162,22 +188,10 @@ async function main(): Promise<void> {
     });
 
     if (!outcome.ok) {
-      // When verbose, the styled phase-fail event already reported the
-      // failure reason; avoid printing it twice.
-      if (!verbose) {
-        console.error(`Feature failed: ${outcome.error.message}`);
-      }
-      // A BaselineCheckError means the untouched tree was already broken before
-      // any implementation attempt, and a DevShellPaletteError means the
-      // workspace's devShell toolchain palette could not even be detected —
-      // both are environment errors, not resumable phase failures.
-      if (
-        outcome.error instanceof BaselineCheckError ||
-        outcome.error instanceof DevShellPaletteError
-      ) {
-        process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
-      }
-      process.exit(EXIT_CODES.RESUMABLE_FAILURE);
+      const { message, exitCode } = reportFeatureFailure(outcome.error, verbose);
+      console.error(message);
+      process.exit(exitCode);
+      return;
     }
 
     console.log(`Running feature: ${outcome.value.feature}`);
