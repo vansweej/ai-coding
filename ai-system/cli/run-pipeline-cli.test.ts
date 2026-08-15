@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
+import { DevShellPaletteError } from "../core/pipeline/feature-runner";
+import { BaselineCheckError } from "../core/pipeline/phase-runner";
 import { getUsage, parseArgs } from "./parse-args";
 import { reportFeatureFailure } from "./run-pipeline-cli";
 import { selectPipeline } from "./select-pipeline";
-import { DevShellPaletteError } from "../core/pipeline/feature-runner";
-import { BaselineCheckError } from "../core/pipeline/phase-runner";
 
 // ─── parseArgs ────────────────────────────────────────────────────────────────
 

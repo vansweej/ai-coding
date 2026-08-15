@@ -19,7 +19,6 @@ const FIXTURE_DIR = join(import.meta.dir, "fixtures");
 /** Phase 4 fixture files (all .md files present in the fixtures directory). */
 const PHASE_4_FIXTURES = [
   "legacy-contains-v1.md",
-  "legacy-assertions-v1.md",
   "legacy-matches-v2.md",
 ];
 

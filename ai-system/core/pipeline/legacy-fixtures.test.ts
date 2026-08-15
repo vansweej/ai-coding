@@ -1,6 +1,6 @@
+import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "bun:test";
 import { parseAssertion } from "./phase-assertions";
 import { parsePlanFile } from "./plan-parser";
 
@@ -12,10 +12,7 @@ const FIXTURE_DIR = join(import.meta.dir, "fixtures");
  * 6 grammar verbs (3 per fixture, per Steps 1–2) parse without error.
  */
 describe("legacy-fixtures regression", () => {
-  const fixtureFiles = [
-    "legacy-contains-v1.md",
-    "legacy-assertions-v1.md",
-  ];
+  const fixtureFiles = ["legacy-contains-v1.md", "legacy-matches-v2.md"];
 
   for (const filename of fixtureFiles) {
     it(`parsePlanFile succeeds for ${filename}`, () => {

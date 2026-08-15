@@ -6,13 +6,13 @@ import { $ } from "bun";
 
 import { resolvePlanRef } from "../core/orchestrator/cerebrum-plan-source";
 import { DevShellPaletteError, runFeature } from "../core/pipeline/feature-runner";
-import { parsePlanFile } from "../core/pipeline/plan-parser";
-import { reportParseOnly } from "./parse-only";
 import { BaselineCheckError } from "../core/pipeline/phase-runner";
+import { parsePlanFile } from "../core/pipeline/plan-parser";
 import type { OnProgress } from "../core/pipeline/progress";
 import { buildTheme, formatProgressEvent } from "../core/pipeline/progress";
 import { loadConfig } from "./load-config";
 import { parseArgs } from "./parse-args";
+import { reportParseOnly } from "./parse-only";
 import { selectPipeline } from "./select-pipeline";
 
 const PREVIEW_MAX_CHARS = 200;
@@ -107,9 +107,7 @@ export function reportFeatureFailure(
 ): { message: string; exitCode: number } {
   const isEnvironmentError =
     error instanceof DevShellPaletteError || error instanceof BaselineCheckError;
-  const exitCode = isEnvironmentError
-    ? EXIT_CODES.ENVIRONMENT_ERROR
-    : EXIT_CODES.RESUMABLE_FAILURE;
+  const exitCode = isEnvironmentError ? EXIT_CODES.ENVIRONMENT_ERROR : EXIT_CODES.RESUMABLE_FAILURE;
 
   const base = `Feature failed: ${error.message}`;
   const message = verbose && error.stack ? `${base}\n${error.stack}` : base;
@@ -124,8 +122,17 @@ async function main(): Promise<void> {
     console.error(`Error: ${argsResult.error.message}`);
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
-  const { pipelineName, workspace, input, planPath, planRef, maxRetries, profileName, verbose, parseOnly } =
-    argsResult.value;
+  const {
+    pipelineName,
+    workspace,
+    input,
+    planPath,
+    planRef,
+    maxRetries,
+    profileName,
+    verbose,
+    parseOnly,
+  } = argsResult.value;
 
   if (argsResult.value.doctor) {
     const { runDoctorSandboxed } = await import("./doctor");
@@ -255,9 +262,11 @@ async function main(): Promise<void> {
   process.exit(EXIT_CODES.SUCCESS);
 }
 
-main().catch((err: unknown) => {
-  const message = err instanceof Error ? err.message : String(err);
-  console.error(`Unexpected error: ${message}`);
-  process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
-});
+if (import.meta.main) {
+  main().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Unexpected error: ${message}`);
+    process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+  });
+}
 /* v8 ignore stop */
