@@ -17,10 +17,7 @@ import { parsePlanFile } from "./plan-parser";
 const FIXTURE_DIR = join(import.meta.dir, "fixtures");
 
 /** Phase 4 fixture files (all .md files present in the fixtures directory). */
-const PHASE_4_FIXTURES = [
-  "legacy-contains-v1.md",
-  "legacy-matches-v2.md",
-];
+const PHASE_4_FIXTURES = ["legacy-contains-v1.md", "legacy-matches-v2.md"];
 
 describe("assert-grammar-version forward-compat policy", () => {
   it("assertGrammarVersion is a positive integer representing the current grammar version", () => {
