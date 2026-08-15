@@ -6,6 +6,8 @@ import { $ } from "bun";
 
 import { resolvePlanRef } from "../core/orchestrator/cerebrum-plan-source";
 import { DevShellPaletteError, runFeature } from "../core/pipeline/feature-runner";
+import { parsePlanFile } from "../core/pipeline/plan-parser";
+import { reportParseOnly } from "./parse-only";
 import { BaselineCheckError } from "../core/pipeline/phase-runner";
 import type { OnProgress } from "../core/pipeline/progress";
 import { buildTheme, formatProgressEvent } from "../core/pipeline/progress";
@@ -122,7 +124,7 @@ async function main(): Promise<void> {
     console.error(`Error: ${argsResult.error.message}`);
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
-  const { pipelineName, workspace, input, planPath, planRef, maxRetries, profileName, verbose } =
+  const { pipelineName, workspace, input, planPath, planRef, maxRetries, profileName, verbose, parseOnly } =
     argsResult.value;
 
   if (argsResult.value.doctor) {
@@ -182,6 +184,13 @@ async function main(): Promise<void> {
       planContent = readFileSync(planPath, "utf8");
     } else {
       planContent = buildSingleStepPlan(input);
+    }
+
+    if (parseOnly) {
+      const parseResult = parsePlanFile(planContent);
+      const { output, exitCode } = reportParseOnly(parseResult);
+      console.log(output);
+      process.exit(exitCode);
     }
 
     let onProgress: OnProgress | undefined;

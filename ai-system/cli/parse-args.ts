@@ -21,6 +21,12 @@ export interface CliArgs {
   /** Stream per-phase/step progress to stderr while a plan-cycle run executes. */
   readonly verbose: boolean;
   /**
+   * When `true`, parse the plan file and print a structured summary, then
+   * exit without running the pipeline. Useful for validating plan syntax
+   * before committing to a full unattended run.
+   */
+  readonly parseOnly: boolean;
+  /**
    * When `true`, the caller requested the `doctor` subcommand — a
    * self-diagnostic that checks the environment (toolchain availability,
    * env vars, Ollama reachability, etc.) and reports any issues found.
@@ -76,6 +82,7 @@ Examples:
   bun run pipeline plan-cycle ./my-project --input "Add tests" --max-retries 3
   bun run pipeline plan-cycle ./my-project --plan-ref <memory-id> --session <id> --profile bedrock-sonnet
   bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --sandboxed
+  bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --parse-only
   bun run pipeline doctor`;
 
 function readFlag(args: readonly string[], flag: string): Result<string | undefined> {
@@ -134,6 +141,7 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
         verbose: false,
         doctor: true,
         sandboxed: false,
+        parseOnly: false,
       },
     };
   }
@@ -148,7 +156,10 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
   // from ever being swallowed as another flag's value (e.g. `--input -v`).
   const verbose = args.includes("-v") || args.includes("--verbose");
   const sandboxed = args.includes("--sandboxed");
-  const rest = args.filter((arg) => arg !== "-v" && arg !== "--verbose" && arg !== "--sandboxed");
+  const parseOnly = args.includes("--parse-only");
+  const rest = args.filter(
+    (arg) => arg !== "-v" && arg !== "--verbose" && arg !== "--sandboxed" && arg !== "--parse-only",
+  );
 
   const inputResult = readFlag(rest, "--input");
   if (!inputResult.ok) return inputResult;
@@ -202,6 +213,7 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
       verbose,
       doctor: false,
       sandboxed,
+      parseOnly,
     },
   };
 }
