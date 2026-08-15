@@ -20,15 +20,33 @@ export interface CliArgs {
   readonly profileName: string;
   /** Stream per-phase/step progress to stderr while a plan-cycle run executes. */
   readonly verbose: boolean;
+  /**
+   * When `true`, the caller requested the `doctor` subcommand — a
+   * self-diagnostic that checks the environment (toolchain availability,
+   * env vars, Ollama reachability, etc.) and reports any issues found.
+   * Mutually exclusive with a named pipeline run.
+   */
+  readonly doctor: boolean;
+  /**
+   * When `true`, pipeline steps are run in a sandboxed environment (e.g.
+   * inside a restricted `nix develop` shell with network access disabled).
+   * Passed through to the selected pipeline; individual steps opt in to
+   * sandbox enforcement.
+   */
+  readonly sandboxed: boolean;
 }
 
-const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --plan-ref <id> | --input "request text"] [--session <id>] [--max-retries <n>] [--profile <name>] [-v | --verbose]
+const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --plan-ref <id> | --input "request text"] [--session <id>] [--max-retries <n>] [--profile <name>] [-v | --verbose] [--sandboxed]
+       bun run pipeline doctor
 
 Pipeline names:
   plan-cycle       Unattended plan executor: parse plan → per-phase implement → verify/retry → commit; resumable
                     Toolchain per phase is auto-routed from the workspace's devShell (no --language knob)
   scaffold-rust    Rust: cargo init + generate flake.nix
   scaffold-cpp     C++: generate CMakeLists.txt + src/main.cpp + flake.nix
+  doctor           Self-diagnostic: checks toolchain availability, required env vars, Ollama
+                   reachability, and other environment prerequisites; reports any issues found.
+                   Does not require a workspace argument.
 
 Profile names:
   local            All roles → gemma4:26b (local Ollama); no Copilot token required (default)
@@ -45,6 +63,8 @@ Profile names:
 
 Flags:
   -v, --verbose    Stream per-phase/step progress (start/finish/retry) to stderr as a plan-cycle run executes
+  --sandboxed      Run pipeline steps inside a sandboxed environment (restricted nix develop shell
+                   with network access disabled); individual steps opt in to sandbox enforcement
   --plan-ref <id>  Resolve the plan body from cerebrum's plan:<id> scope instead of reading a file.
                    Requires CEREBRUM_BIN to be set. Mutually exclusive with --plan.
   --session <id>   Session id for the caller's own bookkeeping; this process does not manage cerebrum sessions.
@@ -54,7 +74,9 @@ Examples:
   bun run pipeline scaffold-cpp /tmp/my-cpp-project
   bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --profile anthropic-sonnet
   bun run pipeline plan-cycle ./my-project --input "Add tests" --max-retries 3
-  bun run pipeline plan-cycle ./my-project --plan-ref <memory-id> --session <id> --profile bedrock-sonnet`;
+  bun run pipeline plan-cycle ./my-project --plan-ref <memory-id> --session <id> --profile bedrock-sonnet
+  bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --sandboxed
+  bun run pipeline doctor`;
 
 function readFlag(args: readonly string[], flag: string): Result<string | undefined> {
   const index = args.indexOf(flag);
@@ -93,17 +115,40 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
     return { ok: false, error: new Error(`Missing pipeline name.\n\n${USAGE}`) };
   }
 
+  // Handle the `doctor` subcommand: it takes no workspace argument and no
+  // pipeline-specific flags. Return immediately with doctor: true and all
+  // other fields set to their zero/default values.
+  if (pipelineName === "doctor") {
+    const profileName = process.env.AI_CODING_MODEL_PROFILE ?? DEFAULT_PROFILE_NAME;
+    return {
+      ok: true,
+      value: {
+        pipelineName,
+        workspace: "",
+        input: "",
+        planPath: undefined,
+        planRef: undefined,
+        session: undefined,
+        maxRetries: undefined,
+        profileName,
+        verbose: false,
+        doctor: true,
+        sandboxed: false,
+      },
+    };
+  }
+
   const workspace = args.shift();
   if (!workspace) {
     return { ok: false, error: new Error(`Missing workspace path.\n\n${USAGE}`) };
   }
 
-  // Extract the boolean verbose flag up front, before any value-flag lookup
-  // runs against the remaining args. This prevents "-v"/"--verbose" from
-  // ever being swallowed as another flag's value (e.g. `--input -v`) --
-  // readFlag and the --profile lookup below only ever see `rest`.
+  // Extract boolean flags up front, before any value-flag lookup runs
+  // against the remaining args. This prevents "-v"/"--verbose"/"--sandboxed"
+  // from ever being swallowed as another flag's value (e.g. `--input -v`).
   const verbose = args.includes("-v") || args.includes("--verbose");
-  const rest = args.filter((arg) => arg !== "-v" && arg !== "--verbose");
+  const sandboxed = args.includes("--sandboxed");
+  const rest = args.filter((arg) => arg !== "-v" && arg !== "--verbose" && arg !== "--sandboxed");
 
   const inputResult = readFlag(rest, "--input");
   if (!inputResult.ok) return inputResult;
@@ -155,6 +200,8 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
       maxRetries: maxRetries.value,
       profileName,
       verbose,
+      doctor: false,
+      sandboxed,
     },
   };
 }

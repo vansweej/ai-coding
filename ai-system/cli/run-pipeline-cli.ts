@@ -125,6 +125,19 @@ async function main(): Promise<void> {
   const { pipelineName, workspace, input, planPath, planRef, maxRetries, profileName, verbose } =
     argsResult.value;
 
+  if (argsResult.value.doctor) {
+    const { runDoctorSandboxed } = await import("./doctor");
+    const doctorResult = await runDoctorSandboxed();
+    if (!doctorResult.ok) {
+      for (const failure of doctorResult.failures) {
+        console.error(`[fail] ${failure.specifier}: ${failure.message}`);
+      }
+      process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+    }
+    console.log("doctor: all checks passed");
+    process.exit(EXIT_CODES.SUCCESS);
+  }
+
   const configResult = await loadConfig(profileName);
   if (!configResult.ok) {
     console.error(`Error: ${configResult.error.message}`);
