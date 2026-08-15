@@ -10,7 +10,6 @@ import { patchOpsToEdits } from "../../orchestrator/patch-contract";
 import { STRUCTURED_PATCH_SYSTEM } from "../../orchestrator/patch-guidance";
 import { applyPatch } from "./apply-patch-step";
 import { coerceCreatesToEdits } from "./coerce-create-to-edit";
-import { expandTableHeaderAnchors } from "./expand-table-anchor";
 import type { PatchEdit } from "./parse-patch";
 
 /** A typed reason (plus human-readable message) for a declined structured phase. */
@@ -240,13 +239,15 @@ async function applyEditsTransactionally(
       };
     }
 
-    const applyResult = await applyPatch(workspace, edits);
+    const applyResult = await applyPatch(workspace, edits, { expandTableAnchors: true });
     if (!applyResult.ok) {
       gitRestoreWorkingTree(workspace);
+      const reason =
+        applyResult.error.reason === "anchor-unexpandable" ? "anchor-unexpandable" : "apply-failed";
       return {
         ok: false,
         error: {
-          reason: "apply-failed",
+          reason,
           message: `Failed to apply structured patch to "${applyResult.error.filePath}": ${applyResult.error.message}`,
         },
       };
@@ -263,13 +264,15 @@ async function applyEditsTransactionally(
   }
   const snapshots = snapshotResult.value;
 
-  const applyResult = await applyPatch(workspace, edits);
+  const applyResult = await applyPatch(workspace, edits, { expandTableAnchors: true });
   if (!applyResult.ok) {
     rollbackToSnapshot(snapshots);
+    const reason =
+      applyResult.error.reason === "anchor-unexpandable" ? "anchor-unexpandable" : "apply-failed";
     return {
       ok: false,
       error: {
-        reason: "apply-failed",
+        reason,
         message: `Failed to apply structured patch to "${applyResult.error.filePath}": ${applyResult.error.message}`,
       },
     };
@@ -284,12 +287,16 @@ async function applyEditsTransactionally(
  * `orchestratePatch`), convert it to `PatchEdit[]`, pass the result through
  * `coerceCreatesToEdits` (the filesystem-aware normalization that turns a
  * `create` op targeting an already-existing, non-empty file into a clean
- * whole-file-replace edit -- see coerce-create-to-edit.ts), expand
- * table-header anchors via `expandTableHeaderAnchors` (which now returns a
- * `Result`: a confirmed table-header rename anchor that cannot be uniquely
- * resolved declines with `anchor-unexpandable`, which the caller treats as a
- * HARD-ABORT rather than a text-loop fallback), and apply the result
- * transactionally.
+ * whole-file-replace edit -- see coerce-create-to-edit.ts), and apply the
+ * result transactionally. Table-header rename anchors (e.g. `[lints.clippy]`
+ * -> `[lints]`) are now expanded AUTHORITATIVELY AT APPLY TIME, inside
+ * `applyEditsTransactionally`'s `applyPatch` calls (`options.expandTableAnchors:
+ * true`), against the real on-disk bytes read immediately before each edit is
+ * applied -- not against a predicted approximation computed up front. A
+ * confirmed table-header rename anchor that cannot be uniquely resolved even
+ * against real bytes surfaces as `reason: "anchor-unexpandable"` from the
+ * apply seam, which the caller treats as a HARD-ABORT rather than a
+ * text-loop fallback.
  *
  * This function NEVER THROWS. Returns an error `Result` for every
  * non-success case: the model/attempt is not structured-capable
@@ -355,18 +362,9 @@ export async function tryStructuredPhase(
       };
     }
 
-    const expansion = expandTableHeaderAnchors(
-      workspace,
-      coerceCreatesToEdits(workspace, editsResult.value),
-    );
-    if (!expansion.ok) {
-      return {
-        ok: false,
-        error: { reason: expansion.error.reason, message: expansion.error.message },
-      };
-    }
+    const edits = coerceCreatesToEdits(workspace, editsResult.value);
 
-    const applyResult = await applyEditsTransactionally(workspace, expansion.value);
+    const applyResult = await applyEditsTransactionally(workspace, edits);
     if (!applyResult.ok) {
       return applyResult;
     }
