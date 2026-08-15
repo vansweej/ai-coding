@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
+import { expandTableHeaderAnchorAgainstContent } from "./expand-table-anchor";
 import type { PatchEdit } from "./parse-patch";
 import { type PathSafetyError, assertInsideWorkspace } from "./patch-path-guard";
 
@@ -17,8 +18,29 @@ export interface AppliedFile {
  */
 export interface PatchApplyError {
   readonly filePath: string;
-  readonly reason: "not-found" | "ambiguous" | "exists" | "io";
+  readonly reason: "not-found" | "ambiguous" | "exists" | "io" | "anchor-unexpandable";
   readonly message: string;
+}
+
+/**
+ * Options controlling `applyPatch` behaviour.
+ */
+export interface ApplyPatchOptions {
+  /**
+   * When `true`, a confirmed table-header rename anchor (a bare `search`
+   * header and a differing bare `replace` header, e.g. `[lints.clippy]` ->
+   * `[lints]`) is expanded to cover its full table body IMMEDIATELY BEFORE
+   * being searched, against the file content just read from disk for that
+   * edit -- i.e. authoritatively, at apply time, reflecting every preceding
+   * edit/move already applied earlier in this same sequential batch. This is
+   * the fix for the predicted-vs-disk anchor divergence: because the anchor
+   * that is searched is derived from the SAME bytes it is searched against,
+   * no approximation-vs-reality mismatch is possible. Defaults to `false` so
+   * existing callers (e.g. the incremental aider-text retry loop, which
+   * re-issues raw model-authored edits one at a time and does not want
+   * table-header expansion semantics) are unaffected.
+   */
+  readonly expandTableAnchors?: boolean;
 }
 
 /**
@@ -35,12 +57,16 @@ export interface PatchApplyError {
  *     file already exists with byte-identical content, this is a no-op
  *     success (idempotent retry); if it exists with different content, this
  *     fails.
- *   - Otherwise: read the current file, verify the search anchor occurs exactly once,
- *     and replace it with the replacement text.
+ *   - Otherwise: read the current file, OPTIONALLY expand a confirmed
+ *     table-header rename anchor against those just-read bytes (see
+ *     `options.expandTableAnchors`), verify the (possibly-expanded) search
+ *     anchor occurs exactly once, and replace it with the replacement text.
  *
  * The search anchor must match exactly and occur exactly once in the file. If the anchor
  * is not found, returns a `not-found` error. If the anchor appears multiple times,
- * returns an `ambiguous` error.
+ * returns an `ambiguous` error. When `options.expandTableAnchors` is enabled and a
+ * confirmed table-header rename anchor cannot be uniquely resolved against the current
+ * on-disk bytes, returns an `anchor-unexpandable` error instead of guessing.
  *
  * All paths are validated against the workspace root to prevent `../` escapes or
  * absolute-path attacks.
@@ -50,12 +76,14 @@ export interface PatchApplyError {
  *
  * @param root - The workspace root directory under which all edits are applied.
  * @param edits - Array of patch edits to apply.
+ * @param options - Optional behaviour flags; see `ApplyPatchOptions`.
  * @returns A `Promise<Result<AppliedFile[], PatchApplyError>>` — the list of applied files
  *          on success, or the first error encountered on failure.
  */
 export async function applyPatch(
   root: string,
   edits: readonly PatchEdit[],
+  options?: ApplyPatchOptions,
 ): Promise<{ ok: true; value: AppliedFile[] } | { ok: false; error: PatchApplyError }> {
   const applied: AppliedFile[] = [];
 
@@ -194,9 +222,34 @@ export async function applyPatch(
 
         const currentContent = readFileSync(absolutePath, "utf8");
 
+        // OPTIONALLY expand a confirmed table-header rename anchor
+        // authoritatively, against the bytes just read from disk -- this is
+        // the apply-time fix for the predicted-vs-disk anchor divergence.
+        // `null` value means "nothing to expand, use the original edit
+        // unchanged"; an error means the confirmed-rename shape could not be
+        // uniquely resolved even against real bytes, which hard-aborts.
+        let effectiveEdit = edit;
+        if (options?.expandTableAnchors === true) {
+          const expansion = expandTableHeaderAnchorAgainstContent(edit, currentContent);
+          if (!expansion.ok) {
+            return {
+              ok: false,
+              error: {
+                filePath: edit.filePath,
+                reason: "anchor-unexpandable",
+                message: expansion.error.message,
+              },
+            };
+          }
+          if (expansion.value !== null) {
+            effectiveEdit = expansion.value;
+          }
+        }
+
         // Count occurrences of the search anchor
-        const searchCount = (currentContent.match(new RegExp(escapeRegExp(edit.search), "g")) ?? [])
-          .length;
+        const searchCount = (
+          currentContent.match(new RegExp(escapeRegExp(effectiveEdit.search), "g")) ?? []
+        ).length;
 
         if (searchCount === 0) {
           return {
@@ -224,7 +277,10 @@ export async function applyPatch(
         // (rather than passing edit.replace as a string) because a string second
         // argument makes String.prototype.replace interpret $&, $1, $$, $`, and $'
         // as special patterns; a replacer function returns the replacement verbatim.
-        const newContent = currentContent.replace(edit.search, () => edit.replace);
+        const newContent = currentContent.replace(
+          effectiveEdit.search,
+          () => effectiveEdit.replace,
+        );
         writeFileSync(absolutePath, newContent, "utf8");
         applied.push({ filePath: edit.filePath, created: false });
       }

@@ -614,4 +614,126 @@ describe("applyPatch", () => {
       expect(content).toBe("const anchor = 2;");
     });
   });
+
+  describe("options.expandTableAnchors", () => {
+    it("expands a confirmed table-header rename anchor against the on-disk bytes at apply time", async () => {
+      const filePath = join(tempDir, "Cargo.toml");
+      const original =
+        '[package]\nname = "parlang"\n\n[lints.clippy]\npedantic = "warn"\nmodule_name_repetitions = "allow"\n\n[dependencies]\nserde = "1"\n';
+      writeFileSync(filePath, original, "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "Cargo.toml",
+          search: "[lints.clippy]",
+          replace: "[lints]\nworkspace = true",
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits, { expandTableAnchors: true });
+      expect(result.ok).toBe(true);
+
+      const content = readFileSync(filePath, "utf8");
+      expect(content).toContain("[lints]\nworkspace = true");
+      expect(content).not.toContain("pedantic");
+      expect(content).not.toContain("module_name_repetitions");
+    });
+
+    it("passes through an append-same-header edit unexpanded (no table-body deletion)", async () => {
+      const filePath = join(tempDir, "Cargo.toml");
+      const original = '[lints.clippy]\npedantic = "warn"\n\n[dependencies]\nserde = "1"\n';
+      writeFileSync(filePath, original, "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "Cargo.toml",
+          search: "[lints.clippy]",
+          replace: '[lints.clippy]\nunwrap_used = "deny"',
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits, { expandTableAnchors: true });
+      expect(result.ok).toBe(true);
+
+      const content = readFileSync(filePath, "utf8");
+      expect(content).toContain("pedantic");
+      expect(content).toContain("unwrap_used");
+    });
+
+    it("hard-aborts with anchor-unexpandable when a confirmed rename anchor matches zero header lines on disk", async () => {
+      const filePath = join(tempDir, "Cargo.toml");
+      const original = '[package]\nname = "foo"\n\n[dependencies]\nserde = "1"\n';
+      writeFileSync(filePath, original, "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "Cargo.toml",
+          search: "[lints.clippy]",
+          replace: "[lints]\nworkspace = true",
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits, { expandTableAnchors: true });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.reason).toBe("anchor-unexpandable");
+      }
+      expect(readFileSync(filePath, "utf8")).toBe(original);
+    });
+
+    it("hard-aborts with anchor-unexpandable when a confirmed rename anchor matches multiple header lines on disk", async () => {
+      const filePath = join(tempDir, "Cargo.toml");
+      const original = "[lints.clippy]\na = 1\n\n[lints.clippy] # dup\nb = 2\n";
+      writeFileSync(filePath, original, "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "Cargo.toml",
+          search: "[lints.clippy]",
+          replace: "[lints]\nworkspace = true",
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits, { expandTableAnchors: true });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.reason).toBe("anchor-unexpandable");
+      }
+      expect(readFileSync(filePath, "utf8")).toBe(original);
+    });
+
+    it("does not expand when the option is disabled (default behaviour unchanged)", async () => {
+      const filePath = join(tempDir, "Cargo.toml");
+      const original =
+        '[lints.clippy]\npedantic = "warn"\nmodule_name_repetitions = "allow"\n\n[dependencies]\nserde = "1"\n';
+      writeFileSync(filePath, original, "utf8");
+
+      const edits: PatchEdit[] = [
+        {
+          filePath: "Cargo.toml",
+          search: "[lints.clippy]",
+          replace: "[lints]\nworkspace = true",
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+
+      const result = await applyPatch(tempDir, edits);
+      expect(result.ok).toBe(true);
+
+      const content = readFileSync(filePath, "utf8");
+      // Without expansion, only the narrow header anchor is replaced --
+      // the old table body is left dangling under the new header.
+      expect(content).toContain("[lints]\nworkspace = true");
+      expect(content).toContain("pedantic");
+    });
+  });
 });

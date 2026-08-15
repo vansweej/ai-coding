@@ -755,7 +755,11 @@ retry/escalation loop in `createVerifiedImplementStep`:
 
 1. Calls `orchestratePatch()` for the whole phase at once — a single forced
    tool call returning **all** ops for the phase, not one call per step.
-2. Converts ops via `patchOpsToEdits`.
+2. Converts ops via `patchOpsToEdits`, then normalizes them via
+   `coerceCreatesToEdits` (see "Deterministic create→edit coercion" below).
+   Table-header rename anchors are NOT expanded up front here — see
+   mitigation 3 below and ADR 0004 for why that expansion now happens at
+   apply time instead.
 3. Applies them via `applyEditsTransactionally`, which branches on whether any
    touched path (source or destination for moves) resolves to an EXISTING
    DIRECTORY:
@@ -866,71 +870,77 @@ content — a malformed-but-cargo-tolerated result in the observed case).
    region being replaced. This applies to ALL structured-capable providers
    (Anthropic, Copilot).
 
-3. **`expandTableHeaderAnchors`** (`ai-system/core/pipeline/steps/expand-table-anchor.ts`)
-   is a deterministic normalization pass that runs in `tryStructuredPhase`
-   AFTER `coerceCreatesToEdits` and BEFORE `applyEditsTransactionally`,
-   directly targeting the narrow-anchor defect that mitigation (2) can only
-   nudge against non-deterministically. When a model emits an `edit` whose
+3. **Apply-time table-header rename anchor expansion** (`expandTableHeaderAnchorAgainstContent`
+   in `ai-system/core/pipeline/steps/expand-table-anchor.ts`, invoked from
+   `applyPatch` via `options.expandTableAnchors` — see ADR 0004) directly
+   targets the narrow-anchor defect that mitigation (2) can only nudge
+   against non-deterministically. When a model emits an `edit` whose
    `search` is just a bare TOML table-header line (e.g. `[lints.clippy]`)
    while `replace` is a DIFFERENT table header restructuring it (e.g.
    `[lints]\nworkspace = true`), a naive substitution only replaces the
    header line and leaves the old table's body (its key/value lines)
    dangling in the file, orphaned under whatever header follows — the exact
    malformed-but-cargo-tolerated `[lints]` shape mitigation (2) was written
-   to discourage. `expandTableHeaderAnchors` detects this shape and
-   deterministically EXPANDS `search` to cover the anchor's full table body:
-   it locates the single exact-match header line in the file, then scans
-   forward for a FULL-LINE table-header boundary (a genuine next header, not
-   a multi-line array element like `[1, 2],` which fails the anchored
-   full-line boundary regex) whose stripped table path is NEITHER equal to
-   nor a descendant of the anchor's table path — descendant sub-tables (e.g.
-   `[lints.clippy]` under a `[lints]` anchor) are INCLUDED in the expansion,
-   and the scan runs to EOF (preserving the file's final trailing newline)
-   if no such boundary exists. A REPLACE-VS-APPEND DISCRIMINATOR guards
-   against over-expansion: when the CANONICAL (comment/whitespace-stripped,
-   via `canonicalizeHeader`) leading header line of `replace` is EQUAL to the
-   canonical `search` header (an append-a-key-to-the-same-table edit), the
-   edit is passed through UNCHANGED, since expanding would delete the table
-   body the model intended to preserve and append to.
+   to discourage. `expandTableHeaderAnchorAgainstContent` detects this shape
+   and deterministically EXPANDS `search` to cover the anchor's full table
+   body: it locates the single exact-match header line in the file, then
+   scans forward for a FULL-LINE table-header boundary (a genuine next
+   header, not a multi-line array element like `[1, 2],` which fails the
+   anchored full-line boundary regex) whose stripped table path is NEITHER
+   equal to nor a descendant of the anchor's table path — descendant
+   sub-tables (e.g. `[lints.clippy]` under a `[lints]` anchor) are INCLUDED
+   in the expansion, and the scan runs to EOF (preserving the file's final
+   trailing newline) if no such boundary exists. A REPLACE-VS-APPEND
+   DISCRIMINATOR guards against over-expansion: when the CANONICAL
+   (comment/whitespace-stripped, via `canonicalizeHeader`) leading header
+   line of `replace` is EQUAL to the canonical `search` header (an
+   append-a-key-to-the-same-table edit), the edit is passed through
+   UNCHANGED, since expanding would delete the table body the model intended
+   to preserve and append to.
 
-   **`expandTableHeaderAnchors` returns `Result<readonly PatchEdit[],
-   AnchorExpansionError>`** (`Result` from `@ai-coding/shared`), NOT a bare
-   array. The function is still pure — it never throws — and every non-header
+   **CRITICAL: this expansion runs AT APPLY TIME, against the file content
+   `applyPatch` just read from disk for that edit — not against a predicted
+   approximation computed up front.** (See ADR 0004 for the full history:
+   an earlier design ran this pass up front against `predict-batch-state.ts`
+   PREDICTED content, which could diverge from the actual on-disk bytes
+   `applyPatch` searched, producing an intermittent `"Search anchor not
+   found"` apply failure on certain batch shapes — e.g. `move` → an
+   append-same-header body mutation → this rename, all in one phase. That
+   divergence is now structurally impossible: `expandTableHeaderAnchorAgainstContent`
+   is a PURE function operating on an explicit `fileContent` argument, and
+   `applyPatch` supplies the SAME bytes it is about to search, reflecting
+   every preceding edit/move already applied sequentially earlier in the
+   batch.)
+
+   **`expandTableHeaderAnchorAgainstContent` returns `Result<PatchEdit | null,
+   AnchorExpansionError>`** (`Result` from `@ai-coding/shared`). The function
+   is pure — it never throws and never touches the filesystem. Every non-header
    or non-rename shape (creates, moves, non-header search, append-same-header)
-   still passes through unchanged in the ok array. But the CONFIRMED-RENAME
-   shape — a canonical bare `search` header AND a canonical bare `replace`
-   header that differ — now HARD-DECLINES with `AnchorExpansionError { reason:
-   "anchor-unexpandable" }` instead of silently passing the edit through
-   unchanged when its anchor cannot be uniquely resolved: either the target
-   file's predicted content is `null` (absent — e.g. an edit emitted against a
-   pre-move source path), or the canonical header matches zero or more than
-   one line in the predicted content. This is a deliberate behavior change
-   from "degrade to pass-through, let the applier's own not-found handling
-   catch it" to "fail loudly and specifically" for exactly this
-   well-understood defect class, because the pass-through behavior risked the
-   applier silently accepting a stale/ambiguous anchor and reproducing the
-   original dangling-table-body defect. `tryStructuredPhase`
-   (`structured-implement.ts`) propagates `expansion.error.reason` /
-   `expansion.error.message` verbatim into its own `StructuredDecline` return
-   when `expandTableHeaderAnchors` declines — see "Observable structured-patch
-   fallback" below for how `anchor-unexpandable` is treated differently from
-   every other decline reason at the `verified-implement-step.ts` layer.
+   returns `{ ok: true, value: null }` (meaning: pass the original edit
+   through unchanged). But the CONFIRMED-RENAME shape — a canonical bare
+   `search` header AND a canonical bare `replace` header that differ — HARD
+   DECLINES with `{ reason: "anchor-unexpandable" }` instead of silently
+   passing the edit through unchanged when its anchor cannot be uniquely
+   resolved against the actual current bytes: either the target's content is
+   `null` (known absent — e.g. an edit emitted against a pre-move source
+   path), or the canonical header matches zero or more than one line. This is
+   a deliberate behavior change from "degrade to pass-through, let the
+   applier's own not-found handling catch it" to "fail loudly and
+   specifically" for exactly this well-understood defect class. `applyPatch`
+   surfaces this as `PatchApplyError.reason: "anchor-unexpandable"`;
+   `structured-implement.ts`'s `applyEditsTransactionally` maps it through
+   verbatim to the same-named `StructuredDecline.reason` — see "Observable
+   structured-patch fallback" below for how `anchor-unexpandable` is treated
+   differently from every other decline reason at the
+   `verified-implement-step.ts` layer.
 
-   This pass now consumes the same shared `predict-batch-state.ts` fold that
-   `coerceCreatesToEdits` uses (see mitigation 1), but with the OPT-IN
-   `simulatePartialEdits: true` option (see below) — it NO LONGER reads raw
-   disk per edit, so a preceding in-batch `move`, coerced whole-file-replace,
-   OR plain partial edit is reflected in the PREDICTED content it expands
-   against. KNOWN LIMITATION: `simulatePartialEdits` only simulates a plain
-   partial edit's outcome when its `search` text matches the current
-   predicted content EXACTLY ONCE (and is not itself a bare table header —
-   see the M4 guard below); a zero- or ambiguous-match partial edit, or one
-   whose `search` was itself a bare table header, still leaves the prediction
-   un-updated for that edit, identical in spirit to the inherited limitation
-   `coerceCreatesToEdits` documents. The downstream applier's own
-   not-found/ambiguous handling still degrades safely (rolling back to the
-   aider-text loop) for every OTHER decline reason if a stale anchor fails to
-   match.
+   The original batch-level `expandTableHeaderAnchors` function is RETAINED
+   as a non-authoritative up-front diagnostic (it loops over
+   `predict-batch-state.ts`'s PREDICTED-content fold and delegates each edit
+   to `expandTableHeaderAnchorAgainstContent`), but it is **no longer on the
+   production correctness path** — `tryStructuredPhase` does not call it.
+   Do not rely on its output as what will actually be searched at apply time;
+   only the apply-time invocation inside `applyPatch` is authoritative.
 
 4. **`simulatePartialEdits`** (opt-in option on `predictBatchStates` /
    `createBatchStatePredictor`, `ai-system/core/pipeline/steps/predict-batch-state.ts`,
@@ -942,13 +952,11 @@ content — a malformed-but-cargo-tolerated result in the observed case).
    function replacer so a `replace` containing `$&`/`$1` is inserted
    literally, not interpreted as a `RegExp` special replacement pattern).
    **M4 bare-header self-skip guard:** when `canonicalizeHeader(edit.search)`
-   is itself a bare table header, the fold explicitly does NOT simulate —
-   this prevents `expandTableHeaderAnchors` from feeding its own
-   anchor-expansion pass a prediction that already deleted the very table
-   body the expansion logic exists to preserve. `coerceCreatesToEdits` never
-   opts in (`simulatePartialEdits` stays `false` for it), so its behavior is
-   byte-for-byte unchanged by this flag's introduction; only
-   `expandTableHeaderAnchors` opts in.
+   is itself a bare table header, the fold explicitly does NOT simulate. This
+   option is consumed only by the now-non-authoritative diagnostic
+   `expandTableHeaderAnchors` pass described above (opted in via
+   `simulatePartialEdits: true`); `coerceCreatesToEdits` never opts in, so its
+   behavior is byte-for-byte unchanged by this flag's introduction.
 
 
 
@@ -970,7 +978,13 @@ wiring only (not live tool adherence), this change must be treated as
 PROVISIONAL until a human/coordinator re-runs the live Copilot forced-tool
 structured path (parlang plan-cycle, profile `copilot-default`) and confirms
 `emit_patch` still fires and applies correctly WITH the new system prompt
-present.
+present. See `docs/adr/0003-anchor-unexpandable-hard-abort.md` for the
+`anchor-unexpandable` hard-abort decision record, and
+`docs/adr/0004-apply-time-table-header-anchor-expansion.md` for why table-header
+rename anchor expansion moved from an up-front prediction-based pass to an
+apply-time, on-disk-bytes pass (closing a predicted-vs-disk anchor divergence
+that could otherwise produce an intermittent `"Search anchor not found"`
+apply failure on certain batch shapes).
 
 ### Observable structured-patch fallback (`patch-path` progress event)
 
@@ -990,7 +1004,8 @@ silent:
   where `StructuredDecline` pairs a `StructuredDeclineReason` with a
   human-readable `message`. `anchor-unexpandable` signals a confirmed
   table-header rename anchor (see mitigation 3 above) that
-  `expandTableHeaderAnchors` could not uniquely resolve — the caller
+  `expandTableHeaderAnchorAgainstContent` could not uniquely resolve against
+  the actual on-disk bytes at apply time — the caller
   (`verified-implement-step.ts`) treats this ONE reason specially: see the
   hard-abort branch below.
 - `orchestratePatch()`'s `not-capable` outcome carries its own two-value
