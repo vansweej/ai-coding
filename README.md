@@ -68,7 +68,8 @@ custom tool will return an explicit error message.
 ## Running pipelines
 
 ```bash
-bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--max-retries <n>] [--profile <name>] [-v | --verbose]
+bun run pipeline <name> <workspace> [--plan <file> | --input "request text"] [--max-retries <n>] [--profile <name>] [-v | --verbose] [--parse-only] [--sandboxed]
+bun run pipeline doctor [--sandboxed]
 ```
 
 | Pipeline name     | Steps                                                                  | Language(s)   |
@@ -87,6 +88,31 @@ full per-language toolchain reference and Nix flake dev-shell prerequisites.
 **stderr** while a plan-cycle run executes, using nerd-font glyphs and color on a TTY (plain ASCII
 otherwise, and honoring `NO_COLOR`). Off by default — the normal end-of-run summary on stdout is
 unchanged either way.
+
+`--parse-only` parses the plan file and prints a structured summary, then exits without running any
+pipeline step. Useful for validating plan syntax before committing to a full unattended run. Exit
+code 0 on a valid plan, non-zero on a parse error.
+
+`--sandboxed` runs pipeline steps inside a sandboxed environment (restricted `nix develop` shell
+with network access disabled). Individual steps opt in to sandbox enforcement; steps that do not
+support sandboxing are unaffected.
+
+**Pre-progress failure guarantee:** any input or environment error (bad plan file, wrong branch,
+missing env var, unreachable Ollama) is always reported on **stderr** with a non-zero exit code,
+even before the progress feed starts. No failure is ever silently swallowed.
+
+### Doctor subcommand
+
+```bash
+bun run pipeline doctor
+bun run pipeline doctor --sandboxed
+```
+
+Runs a self-diagnostic that dynamically imports every entrypoint module and reports any that fail
+to load. Does not require a workspace argument, does not invoke any dispatcher, and does not
+require network access or valid API tokens. Use it to verify the installation is intact after
+`home-manager switch` or a dependency update. Exit code 0 when all checks pass, exit code 3 when
+any check fails.
 
 ## Codebase indexer
 

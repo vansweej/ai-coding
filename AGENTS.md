@@ -187,6 +187,55 @@ Feature branches from `main` (`feat/…`, `fix/…`). [Conventional Commits](htt
 
 ---
 
+## Doctor Subcommand and Sandbox Mode
+
+### `doctor --sandboxed`
+
+```bash
+bun run pipeline doctor
+bun run pipeline doctor --sandboxed
+```
+
+The `doctor` subcommand dynamically imports every entrypoint module and reports any that fail to
+load. It does not require a workspace argument, does not invoke any dispatcher, and does not
+require network access or valid API tokens.
+
+- **`--sandboxed`** runs pipeline steps inside a sandboxed environment (restricted `nix develop`
+  shell with network access disabled). Individual steps opt in to sandbox enforcement; steps that
+  do not support sandboxing are unaffected. When passed to `doctor`, it signals that the health
+  check should validate sandbox-compatible entrypoints.
+- **`--parse-only`** parses the plan file and prints a structured summary, then exits without
+  running any pipeline step. Exit code 0 on a valid plan, non-zero on a parse error.
+
+Use `doctor` to verify the installation is intact after `home-manager switch` or a dependency
+update. Exit code 0 when all checks pass, exit code 3 when any check fails.
+
+### `assertGrammarVersion` Grammar Forward-Compat Policy
+
+The `assertGrammarVersion` constant (exported from
+`ai-system/core/pipeline/phase-assertions.ts`) is a positive integer representing the current
+`Assert:` directive grammar version. The forward-compat policy is:
+
+> **Anything grammar version N accepts, grammar version N+1 also accepts.**
+
+This guarantees that plan files authored against an older grammar version continue to parse and
+execute correctly after a grammar bump. The policy is enforced by the
+`assert-grammar-version.test.ts` fixture suite, which re-validates every `Assert:` line in all
+legacy fixture files under the current `assertGrammarVersion`. When adding a new assertion verb
+or grammar feature, increment `assertGrammarVersion` and add a corresponding fixture file — never
+remove or tighten an existing verb's parse rules.
+
+Supported assertion verbs (all backward-compatible):
+
+```
+Assert: contains <path> :: <needle>
+Assert: not-contains <path> :: <needle>
+Assert: exists <path>
+Assert: not-exists <path>
+Assert: matches <path> :: <regex>
+Assert: toml-keys <path> :: <dotted.table> :: key1,key2,key3
+```
+
 ## Models and Routing
 
 See `docs/architecture.md` for the action → role → model routing table.

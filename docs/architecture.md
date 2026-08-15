@@ -691,6 +691,20 @@ When no profile is set, the legacy `selectModel(event, mode)` heuristic is used
 
 ---
 
+## Doctor Subcommand and Offline-Import Invariant
+
+### Doctor offline import-graph guard
+
+The `doctor` subcommand (`bun run pipeline doctor`) runs a self-diagnostic that dynamically imports a **fixed hardcoded list** of entrypoint specifiers and reports any that fail to load. It does not invoke any dispatcher, does not call `loadConfig()`, and does not require network access or valid API tokens — it is safe to run in a sandboxed environment with no outbound connectivity.
+
+The offline-import invariant states: every module in the doctor's entrypoint list must be importable offline without performing any I/O at import time. Network calls, token validation, and Ollama reachability probes must be deferred to call-time (i.e., only executed when a function is actually invoked), never triggered as a module-level side effect.
+
+### Fixed hardcoded entrypoint list — never glob
+
+The doctor's entrypoint list is **fixed and hardcoded** in `ai-system/cli/doctor.ts`. It must never use a glob, `readdir`, or any directory-scan walker. Rationale: a glob-based scan would inevitably pick up CLI entry-point files (e.g. `run-pipeline-cli.ts`, `indexer/cli.ts`) that contain top-level I/O and process-exit calls, which would fire at import time inside the doctor and produce spurious failures or side effects in a sandboxed environment.
+
+The sandboxed doctor (`bun run pipeline doctor --sandboxed`) exercises the same fixed list in a restricted `nix develop` shell with network access disabled, verifying the offline-import invariant holds under real sandbox constraints. Exit code 0 when all imports succeed; exit code 3 when any import fails.
+
 ## Structured Patch Output Contract
 
 The `plan-cycle`/`dev-cycle` implement step traditionally asks the model for
