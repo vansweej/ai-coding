@@ -1,5 +1,22 @@
+import type { Result } from "@ai-coding/shared";
+
 import type { PatchEdit } from "./parse-patch";
-import { predictBatchStates } from "./predict-batch-state";
+import { canonicalizeHeader, predictBatchStates } from "./predict-batch-state";
+
+/**
+ * Signals a confirmed table-header rename anchor (a bare `search` header and
+ * a differing bare `replace` header) that could not be uniquely resolved
+ * against the predicted file content — either the target predicts absent,
+ * or the canonical header matched zero or more than one line. This class of
+ * failure must HARD-ABORT the phase (no aider-text fallback): the anchor
+ * shape is well-understood, so silently degrading risks the same
+ * dangling-table-body defect this module exists to prevent.
+ */
+export interface AnchorExpansionError {
+  readonly filePath: string;
+  readonly reason: "anchor-unexpandable";
+  readonly message: string;
+}
 
 /**
  * Deterministic anchor-expansion normalization pass for structured-patch
@@ -27,9 +44,20 @@ import { predictBatchStates } from "./predict-batch-state";
  * `coerceCreatesToEdits` already produces correctly.
  *
  * CONTRACT: this function is PURE. It never throws (every filesystem or
- * matching failure degrades to "pass through unchanged"), never mutates its
- * input `edits` array or any individual edit object, and always returns a
- * NEW array.
+ * matching failure degrades to "pass through unchanged", EXCEPT the
+ * confirmed-rename-unresolvable class described below, which hard-declines
+ * via an error `Result`), never mutates its input `edits` array or any
+ * individual edit object, and always returns a NEW array on success.
+ *
+ * HARD-ABORT CLASS: only the confirmed-rename shape — a canonical bare
+ * `search` header AND a canonical bare `replace` header that differ — can
+ * fail this function. When that shape's anchor cannot be uniquely resolved
+ * (the target file predicts absent, or the canonical header matches zero or
+ * more than one line), this function returns `{ ok: false, error }` with
+ * `reason: "anchor-unexpandable"` instead of guessing. Every OTHER shape
+ * (non-header search, append-same-header, non-rename edits, creates, moves)
+ * still passes through unchanged in the ok array; generic apply failures
+ * elsewhere in the pipeline are unaffected by this hard-abort.
  *
  * KNOWN LIMITATION: this pass now consumes the shared
  * `predict-batch-state.ts` fold (the same one `coerceCreatesToEdits` uses),
@@ -49,13 +77,15 @@ import { predictBatchStates } from "./predict-batch-state";
  *
  * @param workspace - The workspace root the phase is running against.
  * @param edits - The edits produced by `coerceCreatesToEdits`.
- * @returns A new array of edits with eligible narrow table-header anchors
- *   expanded to cover their full table body.
+ * @returns A `Result` whose ok value is a new array of edits with eligible
+ *   narrow table-header anchors expanded to cover their full table body, or
+ *   an `AnchorExpansionError` when a confirmed-rename anchor cannot be
+ *   uniquely resolved.
  */
 export function expandTableHeaderAnchors(
   workspace: string,
   edits: readonly PatchEdit[],
-): readonly PatchEdit[] {
+): Result<readonly PatchEdit[], AnchorExpansionError> {
   const bareHeaderGate = /^\[\[?[^\]\n]+\]\]?$/;
   const boundaryHeaderRegex = /^\[\[?[^\]\n]+\]\]?\s*(#.*)?$/;
 
@@ -66,37 +96,47 @@ export function expandTableHeaderAnchors(
 
   const result: PatchEdit[] = [];
 
-  for (const { edit, predictedContentForFilePath } of predictBatchStates(workspace, edits)) {
+  for (const { edit, predictedContentForFilePath } of predictBatchStates(workspace, edits, {
+    simulatePartialEdits: true,
+  })) {
     if (edit.isCreate || edit.isMove) {
       result.push(edit);
       continue;
     }
 
-    const trimmedSearchHeader = edit.search.trim();
-    if (!bareHeaderGate.test(trimmedSearchHeader)) {
+    const canonSearch = canonicalizeHeader(edit.search);
+    if (!bareHeaderGate.test(canonSearch)) {
       result.push(edit);
       continue;
     }
 
     const replaceLines = edit.replace.split("\n");
     const firstNonEmptyReplaceLine = replaceLines.find((line) => line.trim() !== "");
-    const trimmedReplaceHeader = (firstNonEmptyReplaceLine ?? "").trim();
-    if (!bareHeaderGate.test(trimmedReplaceHeader)) {
+    const canonReplace = canonicalizeHeader(firstNonEmptyReplaceLine ?? "");
+    if (!bareHeaderGate.test(canonReplace)) {
       result.push(edit);
       continue;
     }
 
-    // Replace-vs-append discriminator: same header on both sides means this
-    // is an append-a-key edit, not a table-anchor rename/restructure. Do NOT
+    // Replace-vs-append discriminator: same canonical header on both sides
+    // means this is an append-a-key edit, not a table-anchor rename. Do NOT
     // expand -- expanding here would delete the existing table body.
-    if (trimmedReplaceHeader === trimmedSearchHeader) {
+    if (canonReplace === canonSearch) {
       result.push(edit);
       continue;
     }
 
+    // Confirmed-rename shape from here on: canonical bare search header,
+    // canonical bare replace header, and the two canonical headers differ.
     if (predictedContentForFilePath === null) {
-      result.push(edit);
-      continue;
+      return {
+        ok: false,
+        error: {
+          filePath: edit.filePath,
+          reason: "anchor-unexpandable",
+          message: `Confirmed table-header rename anchor "${edit.search.trim()}" targets "${edit.filePath}", which predicts absent (e.g. an edit emitted against a pre-move source path); cannot uniquely resolve — aborting.`,
+        },
+      };
     }
 
     const fileContent = predictedContentForFilePath;
@@ -106,18 +146,24 @@ export function expandTableHeaderAnchors(
     let headerIdx = -1;
     let matchCount = 0;
     for (let i = 0; i < lines.length; i++) {
-      if ((lines[i] ?? "").trimEnd() === trimmedSearchHeader) {
+      if (canonicalizeHeader(lines[i] ?? "") === canonSearch) {
         matchCount++;
         headerIdx = i;
       }
     }
 
     if (matchCount !== 1) {
-      result.push(edit);
-      continue;
+      return {
+        ok: false,
+        error: {
+          filePath: edit.filePath,
+          reason: "anchor-unexpandable",
+          message: `Confirmed table-header rename anchor "${edit.search.trim()}" matched ${matchCount} candidate header lines in "${edit.filePath}"; a unique anchor is required — aborting.`,
+        },
+      };
     }
 
-    const anchorPath = stripHeaderBrackets(trimmedSearchHeader);
+    const anchorPath = stripHeaderBrackets(canonSearch);
 
     let boundaryIdx = lines.length; // default: EOF (exclusive upper bound == lines.length)
     for (let i = headerIdx + 1; i < lines.length; i++) {
@@ -169,5 +215,5 @@ export function expandTableHeaderAnchors(
     }
   }
 
-  return result;
+  return { ok: true, value: result };
 }

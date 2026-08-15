@@ -191,3 +191,99 @@ describe("predictBatchStates", () => {
     expect(yielded[1]?.predictedContentForFilePath).toBe("X");
   });
 });
+
+describe("predictBatchStates (simulatePartialEdits)", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join("/tmp", "predict-batch-state-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("default off: a later edit sees ORIGINAL on-disk bytes (coerceCreatesToEdits unchanged)", () => {
+    writeFileSync(join(tempDir, "a"), "hello world", "utf8");
+    const edits: PatchEdit[] = [
+      { filePath: "a", search: "hello", replace: "goodbye", isCreate: false, isMove: false },
+      { filePath: "a", search: "world", replace: "there", isCreate: false, isMove: false },
+    ];
+
+    const yielded = [...predictBatchStates(tempDir, edits)];
+
+    expect(yielded[1]?.predictedContentForFilePath).toBe("hello world");
+  });
+
+  it("on, single literal match: a later edit sees the post-replace predicted content", () => {
+    writeFileSync(join(tempDir, "a"), "hello world", "utf8");
+    const edits: PatchEdit[] = [
+      { filePath: "a", search: "hello", replace: "goodbye", isCreate: false, isMove: false },
+      { filePath: "a", search: "world", replace: "there", isCreate: false, isMove: false },
+    ];
+
+    const yielded = [...predictBatchStates(tempDir, edits, { simulatePartialEdits: true })];
+
+    expect(yielded[1]?.predictedContentForFilePath).toBe("goodbye world");
+  });
+
+  it("on, zero matches: prediction left as original bytes", () => {
+    writeFileSync(join(tempDir, "a"), "hello world", "utf8");
+    const edits: PatchEdit[] = [
+      { filePath: "a", search: "nope", replace: "x", isCreate: false, isMove: false },
+      { filePath: "a", search: "world", replace: "there", isCreate: false, isMove: false },
+    ];
+
+    const yielded = [...predictBatchStates(tempDir, edits, { simulatePartialEdits: true })];
+
+    expect(yielded[1]?.predictedContentForFilePath).toBe("hello world");
+  });
+
+  it("on, two-or-more matches: prediction left as original bytes", () => {
+    writeFileSync(join(tempDir, "a"), "aa bb aa", "utf8");
+    const edits: PatchEdit[] = [
+      { filePath: "a", search: "aa", replace: "zz", isCreate: false, isMove: false },
+      { filePath: "a", search: "bb", replace: "cc", isCreate: false, isMove: false },
+    ];
+
+    const yielded = [...predictBatchStates(tempDir, edits, { simulatePartialEdits: true })];
+
+    expect(yielded[1]?.predictedContentForFilePath).toBe("aa bb aa");
+  });
+
+  it("on, M4 bare-header self-skip: a single-occurrence bare-header search does NOT mutate the prediction", () => {
+    writeFileSync(join(tempDir, "Cargo.toml"), '[lints.clippy]\npedantic = "warn"', "utf8");
+    const edits: PatchEdit[] = [
+      {
+        filePath: "Cargo.toml",
+        search: "[lints.clippy]",
+        replace: "[lints]",
+        isCreate: false,
+        isMove: false,
+      },
+      {
+        filePath: "Cargo.toml",
+        search: "pedantic",
+        replace: "other",
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+
+    const yielded = [...predictBatchStates(tempDir, edits, { simulatePartialEdits: true })];
+
+    expect(yielded[1]?.predictedContentForFilePath).toBe('[lints.clippy]\npedantic = "warn"');
+  });
+
+  it("$& safety: a replace containing '$&' is inserted literally", () => {
+    writeFileSync(join(tempDir, "a"), "hello world", "utf8");
+    const edits: PatchEdit[] = [
+      { filePath: "a", search: "hello", replace: "$&$&", isCreate: false, isMove: false },
+      { filePath: "a", search: "world", replace: "there", isCreate: false, isMove: false },
+    ];
+
+    const yielded = [...predictBatchStates(tempDir, edits, { simulatePartialEdits: true })];
+
+    expect(yielded[1]?.predictedContentForFilePath).toBe("$&$& world");
+  });
+});

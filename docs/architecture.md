@@ -887,32 +887,70 @@ content — a malformed-but-cargo-tolerated result in the observed case).
    `[lints.clippy]` under a `[lints]` anchor) are INCLUDED in the expansion,
    and the scan runs to EOF (preserving the file's final trailing newline)
    if no such boundary exists. A REPLACE-VS-APPEND DISCRIMINATOR guards
-   against over-expansion: when the trimmed leading header line of `replace`
-   is EQUAL to the trimmed `search` header (an append-a-key-to-the-same-table
-   edit), the edit is passed through UNCHANGED, since expanding would delete
-   the table body the model intended to preserve and append to. The function
-   is pure — it never throws, never mutates its input, and always returns a
-   new array — passing an edit through unchanged whenever it is a
-   create/move, the anchor doesn't full-match the bare-header shape on
-   either side, the header doesn't appear as a standalone line exactly once
-   in the file, the path is absolute or resolves outside the workspace, or
-   the file is missing/unreadable. This pass now consumes the same shared
-   `predict-batch-state.ts` fold that `coerceCreatesToEdits` uses (see
-   mitigation 1) — it NO LONGER reads raw disk per edit, so a preceding
-   in-batch `move` or coerced whole-file-replace is reflected in the
-   PREDICTED content it expands against. Both passes now share ONE source
-   of truth for the per-op prediction update rules (move / create /
-   coerced-replace / plain-partial edit), so the two passes are correct by
-   construction rather than by parallel piecemeal fixes. KNOWN LIMITATION:
-   the sole remaining limitation is the edit-before-move / preceding
-   partial-edit case: a partial edit's post-edit content is not simulated,
-   so a later table edit whose target content was mutated by an earlier
-   partial edit in the same batch (including edit-before-move) may expand
-   against pre-edit bytes — the same inherited limitation
-   `coerceCreatesToEdits` documents, and out of scope by design. The
-   downstream applier's own not-found/ambiguous handling still degrades
-   safely (rolling back to the aider-text loop) if a stale anchor fails to
+   against over-expansion: when the CANONICAL (comment/whitespace-stripped,
+   via `canonicalizeHeader`) leading header line of `replace` is EQUAL to the
+   canonical `search` header (an append-a-key-to-the-same-table edit), the
+   edit is passed through UNCHANGED, since expanding would delete the table
+   body the model intended to preserve and append to.
+
+   **`expandTableHeaderAnchors` returns `Result<readonly PatchEdit[],
+   AnchorExpansionError>`** (`Result` from `@ai-coding/shared`), NOT a bare
+   array. The function is still pure — it never throws — and every non-header
+   or non-rename shape (creates, moves, non-header search, append-same-header)
+   still passes through unchanged in the ok array. But the CONFIRMED-RENAME
+   shape — a canonical bare `search` header AND a canonical bare `replace`
+   header that differ — now HARD-DECLINES with `AnchorExpansionError { reason:
+   "anchor-unexpandable" }` instead of silently passing the edit through
+   unchanged when its anchor cannot be uniquely resolved: either the target
+   file's predicted content is `null` (absent — e.g. an edit emitted against a
+   pre-move source path), or the canonical header matches zero or more than
+   one line in the predicted content. This is a deliberate behavior change
+   from "degrade to pass-through, let the applier's own not-found handling
+   catch it" to "fail loudly and specifically" for exactly this
+   well-understood defect class, because the pass-through behavior risked the
+   applier silently accepting a stale/ambiguous anchor and reproducing the
+   original dangling-table-body defect. `tryStructuredPhase`
+   (`structured-implement.ts`) propagates `expansion.error.reason` /
+   `expansion.error.message` verbatim into its own `StructuredDecline` return
+   when `expandTableHeaderAnchors` declines — see "Observable structured-patch
+   fallback" below for how `anchor-unexpandable` is treated differently from
+   every other decline reason at the `verified-implement-step.ts` layer.
+
+   This pass now consumes the same shared `predict-batch-state.ts` fold that
+   `coerceCreatesToEdits` uses (see mitigation 1), but with the OPT-IN
+   `simulatePartialEdits: true` option (see below) — it NO LONGER reads raw
+   disk per edit, so a preceding in-batch `move`, coerced whole-file-replace,
+   OR plain partial edit is reflected in the PREDICTED content it expands
+   against. KNOWN LIMITATION: `simulatePartialEdits` only simulates a plain
+   partial edit's outcome when its `search` text matches the current
+   predicted content EXACTLY ONCE (and is not itself a bare table header —
+   see the M4 guard below); a zero- or ambiguous-match partial edit, or one
+   whose `search` was itself a bare table header, still leaves the prediction
+   un-updated for that edit, identical in spirit to the inherited limitation
+   `coerceCreatesToEdits` documents. The downstream applier's own
+   not-found/ambiguous handling still degrades safely (rolling back to the
+   aider-text loop) for every OTHER decline reason if a stale anchor fails to
    match.
+
+4. **`simulatePartialEdits`** (opt-in option on `predictBatchStates` /
+   `createBatchStatePredictor`, `ai-system/core/pipeline/steps/predict-batch-state.ts`,
+   default `false`) extends the shared predicted-state fold's fifth rule: when
+   ON and an edit is a plain partial edit (not move/create/whole-file-replace)
+   with a non-empty `search`, the fold reads the current predicted content,
+   counts LITERAL occurrences of `edit.search`, and — only when the count is
+   EXACTLY 1 — updates the prediction to the post-replace content (using a
+   function replacer so a `replace` containing `$&`/`$1` is inserted
+   literally, not interpreted as a `RegExp` special replacement pattern).
+   **M4 bare-header self-skip guard:** when `canonicalizeHeader(edit.search)`
+   is itself a bare table header, the fold explicitly does NOT simulate —
+   this prevents `expandTableHeaderAnchors` from feeding its own
+   anchor-expansion pass a prediction that already deleted the very table
+   body the expansion logic exists to preserve. `coerceCreatesToEdits` never
+   opts in (`simulatePartialEdits` stays `false` for it), so its behavior is
+   byte-for-byte unchanged by this flag's introduction; only
+   `expandTableHeaderAnchors` opts in.
+
+
 
 **Scope note:** mitigation (2) addresses the additive/malformed-edit failure
 mode non-deterministically (a prompt nudge, not an applier guard) for the
@@ -946,11 +984,15 @@ silent:
   `ai-system/shared/event-types.ts` (the zero-import graph root) as bare
   string-literal unions — `not-capable-text-mode`, `not-capable-no-dispatch-patch`,
   `dispatch-error`, `conversion-failed`, `apply-failed`, `directory-declined`,
-  `threw`, and `verification-red-after-structured` (a decline), plus
-  `structured-applied` (the honest phase-succeeded-via-structured marker).
-  `tryStructuredPhase` returns `Result<"applied", StructuredDecline>`, where
-  `StructuredDecline` pairs a `StructuredDeclineReason` with a human-readable
-  `message`.
+  `threw`, `verification-red-after-structured`, and `anchor-unexpandable` (all
+  declines), plus `structured-applied` (the honest phase-succeeded-via-structured
+  marker). `tryStructuredPhase` returns `Result<"applied", StructuredDecline>`,
+  where `StructuredDecline` pairs a `StructuredDeclineReason` with a
+  human-readable `message`. `anchor-unexpandable` signals a confirmed
+  table-header rename anchor (see mitigation 3 above) that
+  `expandTableHeaderAnchors` could not uniquely resolve — the caller
+  (`verified-implement-step.ts`) treats this ONE reason specially: see the
+  hard-abort branch below.
 - `orchestratePatch()`'s `not-capable` outcome carries its own two-value
   `reason: "text-mode" | "no-dispatch-patch"`, discriminating a text-mode
   model-ID from a structured-capable model whose resolved dispatcher lacks a
@@ -958,8 +1000,11 @@ silent:
   undifferentiated `{ kind: "not-capable" }`.
 - `ai-system/core/pipeline/progress.ts` defines a `patch-path` `ProgressEvent`
   variant (`{ kind: "patch-path"; phase; step?; path: "structured-applied" |
-  "fell-back-to-text"; reason: StructuredPatchReason }`), rendered by
-  `formatProgressEvent` alongside the other event kinds.
+  "fell-back-to-text" | "structured-aborted"; reason: StructuredPatchReason }`),
+  rendered by `formatProgressEvent` alongside the other event kinds. The
+  `structured-aborted` path renders as `Phase ${phase}  structured patch
+  ABORTED (${reason})`, and (like `fell-back-to-text`) appends `: ${detail}`
+  when a non-empty `detail` is present.
 - `createVerifiedImplementStep` (`verified-implement-step.ts`) emits exactly
   three honest `patch-path` events at the structured/text decision point:
   1. `path: "structured-applied"`, `reason: "structured-applied"` — ONLY after
@@ -970,9 +1015,25 @@ silent:
      resumes from its second iteration (the ambiguous case this feature exists
      to disambiguate: the model DID emit valid structured ops, but the result
      didn't verify).
-  3. `path: "fell-back-to-text"`, `reason: structuredResult.error.reason` — the
-     structured attempt declined outright (any `StructuredDeclineReason`), and
-     the text loop runs from the start.
+  3. For every OTHER decline reason EXCEPT `anchor-unexpandable`:
+     `path: "fell-back-to-text"`, `reason: structuredResult.error.reason` — the
+     structured attempt declined outright, and the text loop runs from the
+     start.
+  4. **`anchor-unexpandable` HARD-ABORTS instead of (3):** when
+     `structuredResult.error.reason === "anchor-unexpandable"`, the step emits
+     `path: "structured-aborted"`, `reason: "anchor-unexpandable"`, `detail:
+     structuredResult.error.message`, then returns a loud, named error
+     `Result` (`Phase ${n} aborted: structured patch declined with
+     anchor-unexpandable (no aider-text fallback): ${message}`) WITHOUT
+     entering the aider-text retry loop at all. Per `phase-runner.ts`, a
+     returned error `Result` from a step is terminal — there is no outer
+     per-step retry that re-invokes the step. This is the one reason
+     considered well-understood enough that silently degrading to the
+     text-loop risks reproducing the exact dangling-table-body defect
+     `expandTableHeaderAnchors` exists to prevent; every OTHER decline reason
+     (`apply-failed`, `directory-declined`, `dispatch-error`,
+     `conversion-failed`, `threw`, the two not-capable reasons) keeps the
+     historical text-loop fallback unchanged.
 
 Every structured decline now surfaces a diagnostic detail in the verbose
 feed: the `fell-back-to-text` progress line forwards

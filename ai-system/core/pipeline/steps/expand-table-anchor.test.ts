@@ -33,13 +33,16 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    const value = result.value;
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.search).toBe(
+    expect(value).toHaveLength(1);
+    expect(value[0]?.search).toBe(
       '[lints.clippy]\npedantic = "warn"\nmodule_name_repetitions = "allow"\nmust_use_candidate = "allow"',
     );
-    expect(result[0]?.isCreate).toBe(false);
-    expect(result[0]?.isMove).toBe(false);
+    expect(value[0]?.isCreate).toBe(false);
+    expect(value[0]?.isMove).toBe(false);
   });
 
   it("bounds expansion at a following [dependencies] header", () => {
@@ -59,8 +62,10 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result[0]?.search).toBe('[lints.clippy]\npedantic = "warn"\n');
+    expect(result.value[0]?.search).toBe('[lints.clippy]\npedantic = "warn"\n');
   });
 
   it("bounds expansion at a following [[bin]] header", () => {
@@ -80,8 +85,10 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result[0]?.search).toBe('[lints.clippy]\npedantic = "warn"\n');
+    expect(result.value[0]?.search).toBe('[lints.clippy]\npedantic = "warn"\n');
   });
 
   it("passes through a bare-header search whose replace is not a header", () => {
@@ -97,8 +104,10 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result[0]).toEqual(edits[0]);
+    expect(result.value[0]).toEqual(edits[0]);
   });
 
   it("passes through an already-correct full-block search unchanged", () => {
@@ -114,13 +123,15 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
     // search doesn't full-match the bare-header gate regex (multi-line) so
     // passes through unchanged.
-    expect(result[0]).toEqual(edits[0]);
+    expect(result.value[0]).toEqual(edits[0]);
   });
 
-  it("passes through unchanged when the header appears zero times", () => {
+  it("hard-declines with anchor-unexpandable when the header appears zero times", () => {
     writeFileSync(join(tempDir, "Cargo.toml"), '[package]\nname = "foo"\n', "utf8");
     const edits: PatchEdit[] = [
       {
@@ -134,10 +145,12 @@ describe("expandTableHeaderAnchors", () => {
 
     const result = expandTableHeaderAnchors(tempDir, edits);
 
-    expect(result[0]).toEqual(edits[0]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.error.reason).toBe("anchor-unexpandable");
   });
 
-  it("passes through unchanged when the header appears multiple times", () => {
+  it("hard-declines with anchor-unexpandable when the header appears multiple times", () => {
     writeFileSync(
       join(tempDir, "Cargo.toml"),
       "[lints.clippy]\na = 1\n\n[lints.clippy]\nb = 2\n",
@@ -155,10 +168,12 @@ describe("expandTableHeaderAnchors", () => {
 
     const result = expandTableHeaderAnchors(tempDir, edits);
 
-    expect(result[0]).toEqual(edits[0]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.error.reason).toBe("anchor-unexpandable");
   });
 
-  it("passes through unchanged when the path is absolute", () => {
+  it("hard-declines with anchor-unexpandable when the path is absolute", () => {
     const edits: PatchEdit[] = [
       {
         filePath: "/etc/somewhere/Cargo.toml",
@@ -171,10 +186,12 @@ describe("expandTableHeaderAnchors", () => {
 
     const result = expandTableHeaderAnchors(tempDir, edits);
 
-    expect(result[0]).toEqual(edits[0]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.error.reason).toBe("anchor-unexpandable");
   });
 
-  it("passes through unchanged when the path resolves outside the workspace", () => {
+  it("hard-declines with anchor-unexpandable when the path resolves outside the workspace", () => {
     const edits: PatchEdit[] = [
       {
         filePath: "../outside/Cargo.toml",
@@ -187,10 +204,12 @@ describe("expandTableHeaderAnchors", () => {
 
     const result = expandTableHeaderAnchors(tempDir, edits);
 
-    expect(result[0]).toEqual(edits[0]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.error.reason).toBe("anchor-unexpandable");
   });
 
-  it("passes through unchanged when the file is missing", () => {
+  it("hard-declines with anchor-unexpandable when the file is missing", () => {
     const edits: PatchEdit[] = [
       {
         filePath: "does-not-exist.toml",
@@ -203,7 +222,9 @@ describe("expandTableHeaderAnchors", () => {
 
     const result = expandTableHeaderAnchors(tempDir, edits);
 
-    expect(result[0]).toEqual(edits[0]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.error.reason).toBe("anchor-unexpandable");
   });
 
   it("expands a header at EOF to EOF", () => {
@@ -219,8 +240,10 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result[0]?.search).toBe("[lints.clippy]");
+    expect(result.value[0]?.search).toBe("[lints.clippy]");
   });
 
   it("passes through a coerced whole-file multi-line search unchanged", () => {
@@ -236,8 +259,10 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result[0]).toEqual(edits[0]);
+    expect(result.value[0]).toEqual(edits[0]);
   });
 
   it("passes through create and move edits unchanged", () => {
@@ -260,8 +285,10 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result).toEqual(edits);
+    expect(result.value).toEqual(edits);
   });
 
   it("does not false-positive on a substring match, only a full line match", () => {
@@ -281,8 +308,10 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result[0]?.search).toBe('[lints.clippy]\npedantic = "warn"');
+    expect(result.value[0]?.search).toBe('[lints.clippy]\npedantic = "warn"');
   });
 
   it("leaves a same-header append edit untouched (replace-vs-append discriminator)", () => {
@@ -298,8 +327,29 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result[0]).toEqual(edits[0]);
+    expect(result.value[0]).toEqual(edits[0]);
+  });
+
+  it("leaves a same-canonical-header append untouched when replace carries a trailing comment", () => {
+    writeFileSync(join(tempDir, "Cargo.toml"), '[lints.clippy]\npedantic = "warn"\n', "utf8");
+    const edits: PatchEdit[] = [
+      {
+        filePath: "Cargo.toml",
+        search: "[lints.clippy]",
+        replace: '[lints.clippy] # x\nnew_key = "value"',
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+
+    const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+
+    expect(result.value[0]).toEqual(edits[0]);
   });
 
   it("does not stop expansion at a multi-line array value line resembling a header", () => {
@@ -319,8 +369,10 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result[0]?.search).toBe("[lints.clippy]\nmatrix = [\n  [1, 2],\n  [3, 4],\n]\n");
+    expect(result.value[0]?.search).toBe("[lints.clippy]\nmatrix = [\n  [1, 2],\n  [3, 4],\n]\n");
   });
 
   it("includes descendant sub-tables when expanding a parent anchor", () => {
@@ -340,8 +392,10 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result[0]?.search).toBe(
+    expect(result.value[0]?.search).toBe(
       '[lints]\nworkspace = true\n\n[lints.clippy]\npedantic = "warn"\n',
     );
   });
@@ -363,8 +417,10 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result[0]?.search).toBe('[lints.clippy]\npedantic = "warn"\n');
+    expect(result.value[0]?.search).toBe('[lints.clippy]\npedantic = "warn"\n');
   });
 
   it("preserves the trailing empty split element out of expandedSearch when the file ends in a newline", () => {
@@ -380,12 +436,14 @@ describe("expandTableHeaderAnchors", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result[0]?.search.endsWith("\n")).toBe(false);
-    expect(result[0]?.search).toBe('[lints.clippy]\npedantic = "warn"');
+    expect(result.value[0]?.search.endsWith("\n")).toBe(false);
+    expect(result.value[0]?.search).toBe('[lints.clippy]\npedantic = "warn"');
   });
 
-  it("passes through unchanged when reading the file throws (directory at target path)", () => {
+  it("hard-declines with anchor-unexpandable when reading the file throws (directory at target path)", () => {
     mkdirSync(join(tempDir, "Cargo.toml"));
     const edits: PatchEdit[] = [
       {
@@ -399,7 +457,82 @@ describe("expandTableHeaderAnchors", () => {
 
     const result = expandTableHeaderAnchors(tempDir, edits);
 
-    expect(result[0]).toEqual(edits[0]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.error.reason).toBe("anchor-unexpandable");
+  });
+
+  it("hard-declines with anchor-unexpandable when the rename header is absent from the file", () => {
+    writeFileSync(
+      join(tempDir, "Cargo.toml"),
+      '[package]\nname = "foo"\n\n[dependencies]\n',
+      "utf8",
+    );
+    const edits: PatchEdit[] = [
+      {
+        filePath: "Cargo.toml",
+        search: "[some.missing.table]",
+        replace: "[renamed.table]\nworkspace = true",
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+
+    const result = expandTableHeaderAnchors(tempDir, edits);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.error.reason).toBe("anchor-unexpandable");
+  });
+
+  it("(m6) hard-declines when two headers differ only by trailing comment, making canonical matchCount 2", () => {
+    writeFileSync(
+      join(tempDir, "Cargo.toml"),
+      "[lints.clippy]\na = 1\n\n[lints.clippy] # dup\nb = 2\n",
+      "utf8",
+    );
+    const edits: PatchEdit[] = [
+      {
+        filePath: "Cargo.toml",
+        search: "[lints.clippy]",
+        replace: "[lints]\nworkspace = true",
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+
+    const result = expandTableHeaderAnchors(tempDir, edits);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.error.reason).toBe("anchor-unexpandable");
+  });
+
+  it("(M3) hard-declines when an in-batch move nulls the source path and a later confirmed-rename edit targets that null path", () => {
+    writeFileSync(join(tempDir, "old-source.toml"), '[lints.clippy]\npedantic = "warn"\n', "utf8");
+    const edits: PatchEdit[] = [
+      {
+        filePath: "old-source.toml",
+        toPath: "new-dest.toml",
+        search: "",
+        replace: "",
+        isCreate: false,
+        isMove: true,
+      },
+      {
+        filePath: "old-source.toml",
+        search: "[lints.clippy]",
+        replace: "[lints]\nworkspace = true",
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+
+    const result = expandTableHeaderAnchors(tempDir, edits);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.error.reason).toBe("anchor-unexpandable");
   });
 });
 
@@ -439,15 +572,17 @@ describe("expandTableHeaderAnchors (batch-aware predicted-state fold)", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result).toHaveLength(2);
-    expect(result[1]?.search).toContain("pedantic");
-    expect(result[1]?.search).toContain("module_name_repetitions");
-    expect(result[1]?.search).toContain("must_use_candidate");
-    expect(result[1]?.search).not.toBe("[lints.clippy]");
+    expect(result.value).toHaveLength(2);
+    expect(result.value[1]?.search).toContain("pedantic");
+    expect(result.value[1]?.search).toContain("module_name_repetitions");
+    expect(result.value[1]?.search).toContain("must_use_candidate");
+    expect(result.value[1]?.search).not.toBe("[lints.clippy]");
   });
 
-  it("passes a table-header edit through unchanged when its target is absent and no in-batch op produces it", () => {
+  it("hard-declines when a table-header edit's target is absent and no in-batch op produces it", () => {
     const edits: PatchEdit[] = [
       {
         filePath: "nonexistent/Cargo.toml",
@@ -460,8 +595,9 @@ describe("expandTableHeaderAnchors (batch-aware predicted-state fold)", () => {
 
     const result = expandTableHeaderAnchors(tempDir, edits);
 
-    expect(result).toHaveLength(1);
-    expect(result[0]).toEqual(edits[0]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.error.reason).toBe("anchor-unexpandable");
   });
 
   it("uses created content, not move-source content, for a coerced-create-then-edit on the same dest", () => {
@@ -495,8 +631,10 @@ describe("expandTableHeaderAnchors (batch-aware predicted-state fold)", () => {
 
     const coerced = coerceCreatesToEdits(tempDir, rawEdits);
     const result = expandTableHeaderAnchors(tempDir, coerced);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    const lastEdit = result[result.length - 1];
+    const lastEdit = result.value[result.value.length - 1];
     expect(lastEdit?.search).toContain("pedantic");
     expect(lastEdit?.search).toContain("fresh");
     expect(lastEdit?.search).not.toContain("stale");
@@ -541,9 +679,11 @@ describe("expandTableHeaderAnchors (batch-aware predicted-state fold)", () => {
     ];
 
     const result = expandTableHeaderAnchors(tempDir, edits);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
 
-    expect(result).toHaveLength(3);
-    expect(result[1]?.search).toContain("pedantic");
-    expect(result[2]?.search).toContain("unused");
+    expect(result.value).toHaveLength(3);
+    expect(result.value[1]?.search).toContain("pedantic");
+    expect(result.value[2]?.search).toContain("unused");
   });
 });

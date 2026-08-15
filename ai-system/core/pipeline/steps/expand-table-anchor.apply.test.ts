@@ -25,8 +25,10 @@ describe("expandTableHeaderAnchors + applyPatch (end-to-end regression)", () => 
         },
       ];
 
-      const expanded = expandTableHeaderAnchors(tempDir, edits);
-      const applyResult = await applyPatch(tempDir, expanded);
+      const expandResult = expandTableHeaderAnchors(tempDir, edits);
+      expect(expandResult.ok).toBe(true);
+      if (!expandResult.ok) throw new Error("expected ok");
+      const applyResult = await applyPatch(tempDir, expandResult.value);
 
       expect(applyResult.ok).toBe(true);
 
@@ -77,10 +79,10 @@ describe("expandTableHeaderAnchors + applyPatch (end-to-end regression)", () => 
         },
       ];
 
-      const applied = await applyPatch(
-        tempDir,
-        expandTableHeaderAnchors(tempDir, coerceCreatesToEdits(tempDir, edits)),
-      );
+      const expandResult = expandTableHeaderAnchors(tempDir, coerceCreatesToEdits(tempDir, edits));
+      expect(expandResult.ok).toBe(true);
+      if (!expandResult.ok) throw new Error("expected ok");
+      const applied = await applyPatch(tempDir, expandResult.value);
 
       expect(applied.ok).toBe(true);
 

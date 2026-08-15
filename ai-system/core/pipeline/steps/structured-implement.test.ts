@@ -624,6 +624,68 @@ describe("tryStructuredPhase", () => {
     }
   });
 
+  it("(Step 2 boundary) a confirmed table-header rename whose anchor is absent from the on-disk file declines with anchor-unexpandable, tree untouched", async () => {
+    // Boundary regression: a confirmed rename (`search` = bare `[lints.clippy]`,
+    // `replace` = a differing bare `[lints]` header) whose anchor does NOT
+    // exist in the on-disk file must hard-decline with `anchor-unexpandable` --
+    // the whole-phase structured attempt returns an error Result and the file
+    // is byte-for-byte untouched (no partial mutation).
+    const original = '[package]\nname = "foo"\n\n[dependencies]\nserde = "1"\n';
+    writeFileSync(join(workspace, "Cargo.toml"), original, "utf8");
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          {
+            kind: "edit",
+            filePath: "Cargo.toml",
+            search: "[lints.clippy]",
+            replace: "[lints]\nworkspace = true",
+          },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.reason).toBe("anchor-unexpandable");
+    }
+    expect(readFileSync(join(workspace, "Cargo.toml"), "utf8")).toBe(original);
+  });
+
+  it("(Step 2 boundary) two [lints.clippy] headers differing only by trailing comment decline with anchor-unexpandable, tree untouched", async () => {
+    // m6 replay at the tryStructuredPhase seam: two `[lints.clippy]` header
+    // lines that canonicalize equal (differ only by a trailing `# comment`)
+    // make the confirmed rename's canonical matchCount 2, which is not
+    // uniquely resolvable -- the attempt must hard-decline and leave the
+    // on-disk file byte-for-byte untouched.
+    const original = "[lints.clippy]\na = 1\n\n[lints.clippy] # dup\nb = 2\n";
+    writeFileSync(join(workspace, "Cargo.toml"), original, "utf8");
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          {
+            kind: "edit",
+            filePath: "Cargo.toml",
+            search: "[lints.clippy]",
+            replace: "[lints]\nworkspace = true",
+          },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.reason).toBe("anchor-unexpandable");
+    }
+    expect(readFileSync(join(workspace, "Cargo.toml"), "utf8")).toBe(original);
+  });
+
   it("never throws when the dispatcher rejects (honors the never-throws contract)", async () => {
     // The only test that reaches tryStructuredPhase's top-level catch: a
     // rejecting dispatchPatch is a real, reachable production path -- it
@@ -642,5 +704,69 @@ describe("tryStructuredPhase", () => {
     if (!result.ok) {
       expect(result.error.reason).toBe("threw");
     }
+  });
+
+  it("cleans a sole-entry [lints] table on the real rename shape (byte-exact, no dangling body)", async () => {
+    writeFileSync(
+      join(workspace, "Cargo.toml"),
+      '[package]\nname = "parlang"\n\n[lints.clippy]\npedantic = "warn"\nmodule_name_repetitions = "allow"\nmust_use_candidate = "allow"\n\n[dependencies]\nserde = "1"\n',
+      "utf8",
+    );
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          {
+            kind: "edit",
+            filePath: "Cargo.toml",
+            search: "[lints.clippy]",
+            replace: "[lints]\nworkspace = true",
+          },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(true);
+    const finalContent = readFileSync(join(workspace, "Cargo.toml"), "utf8");
+    expect(finalContent).toBe(
+      '[package]\nname = "parlang"\n\n[lints]\nworkspace = true\n[dependencies]\nserde = "1"\n',
+    );
+    expect(finalContent).not.toContain("pedantic");
+    expect(finalContent).not.toContain("module_name_repetitions");
+    expect(finalContent).not.toContain("must_use_candidate");
+  });
+
+  it("cleans the sole-entry table when the on-disk header carries a trailing comment", async () => {
+    writeFileSync(
+      join(workspace, "Cargo.toml"),
+      '[package]\nname = "parlang"\n\n[lints.clippy] # lints\npedantic = "warn"\nmodule_name_repetitions = "allow"\nmust_use_candidate = "allow"\n\n[dependencies]\nserde = "1"\n',
+      "utf8",
+    );
+
+    const config: OrchestratorConfig = {
+      profile: CLAUDE_SONNET_PROFILE,
+      dispatchers: {
+        "claude-sonnet-5": structuredDispatcher([
+          {
+            kind: "edit",
+            filePath: "Cargo.toml",
+            search: "[lints.clippy]",
+            replace: "[lints]\nworkspace = true",
+          },
+        ]),
+      },
+    };
+
+    const result = await tryStructuredPhase(makeEvent(), config, workspace);
+    expect(result.ok).toBe(true);
+    const finalContent = readFileSync(join(workspace, "Cargo.toml"), "utf8");
+    expect(finalContent).toBe(
+      '[package]\nname = "parlang"\n\n[lints]\nworkspace = true\n[dependencies]\nserde = "1"\n',
+    );
+    expect(finalContent).not.toContain("pedantic");
+    expect(finalContent).not.toContain("module_name_repetitions");
+    expect(finalContent).not.toContain("must_use_candidate");
   });
 });

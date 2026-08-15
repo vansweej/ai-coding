@@ -167,6 +167,7 @@ describe("formatProgressEvent (patch-path)", () => {
     "directory-declined",
     "threw",
     "verification-red-after-structured",
+    "anchor-unexpandable",
   ];
 
   it("renders every StructuredPatchReason value for both path values without throwing", () => {
@@ -239,5 +240,19 @@ describe("formatProgressEvent (patch-path)", () => {
     const line = formatProgressEvent(event, theme);
     expect(line).toBe("= Phase 1  fell back to text loop (apply-failed)");
     expect(line.endsWith(": ")).toBe(false);
+  });
+
+  it("renders the structured-aborted line with the anchor-unexpandable reason and the detail text appended", () => {
+    const event: ProgressEvent = {
+      kind: "patch-path",
+      phase: 1,
+      path: "structured-aborted",
+      reason: "anchor-unexpandable",
+      detail: "<msg>",
+    };
+    const line = formatProgressEvent(event, theme);
+    expect(line).toContain("ABORTED");
+    expect(line).toContain("anchor-unexpandable");
+    expect(line.endsWith(event.detail ?? "")).toBe(true);
   });
 });
