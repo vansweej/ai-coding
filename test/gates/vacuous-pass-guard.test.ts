@@ -152,6 +152,25 @@ describe("vacuous-pass guard", () => {
     }
   });
 
+  it("does NOT trip for a floor-routed phase with an empty palette", async () => {
+    const events: ProgressEvent[] = [];
+    const step = createVerifiedImplementStep("verified", {
+      config: makeConfig(),
+      workspace,
+      palette: new Set(),
+      steps: [{ number: 1, title: "Create file", body: "Create docs/hello.md" }],
+      phaseNumber: 1,
+      onProgress: (event) => events.push(event),
+    });
+
+    const result = await step.execute({ event: makeEvent("Create file"), results: new Map() });
+
+    expect(events.find((event) => event.kind === "vacuous-pass")).toBeUndefined();
+    if (!result.ok) {
+      expect(result.error.message).not.toContain("vacuous");
+    }
+  });
+
   // Regression test for the false-positive found dogfooding this exact guard
   // (trustworthy-pipeline-s5b): in PALETTE mode, verification is derived from
   // the LIVE git diff (see `runUnionVerification`). A phase on a genuinely

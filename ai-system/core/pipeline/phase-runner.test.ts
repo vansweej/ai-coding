@@ -139,7 +139,13 @@ describe("runPhase", () => {
 
     expect(result.ok).toBe(true);
     expect(events).toEqual([
-      { kind: "patch-path", phase: 1, path: "fell-back-to-text", reason: "not-capable-text-mode" },
+      {
+        kind: "patch-path",
+        phase: 1,
+        path: "fell-back-to-text",
+        reason: "not-capable-text-mode",
+        detail: "Model/attempt is not structured-patch capable",
+      },
       { kind: "step-start", phase: 1, step: 1, title: "Step" },
       { kind: "step-finish", phase: 1, step: 1 },
     ]);

@@ -278,9 +278,14 @@ describe("CodebaseStore", () => {
   it("deleteFilesByPaths() batches deletes for large path lists", async () => {
     await store.open(DIMS);
     const paths = Array.from({ length: 520 }, (_, i) => `src/file${i}.ts`);
-    for (const p of paths) {
-      await store.upsertFile(REPO_ID, p, [makeChunk(p, 0)], [makeEmbedding(1)]);
-    }
+    await store.upsertFiles(
+      paths.map((filePath) => ({
+        repoId: REPO_ID,
+        filePath,
+        chunks: [makeChunk(filePath, 0)],
+        embeddings: [makeEmbedding(1)],
+      })),
+    );
     expect(await store.countRows()).toBe(520);
 
     await store.deleteFilesByPaths(REPO_ID, paths);

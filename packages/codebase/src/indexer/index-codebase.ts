@@ -206,6 +206,7 @@ export async function indexCodebase(
   const skipped: string[] = [];
   const oversized: string[] = [];
   const newFileHashes: Record<string, string> = {};
+  const pendingUpserts: Parameters<CodebaseStore["upsertFiles"]>[0][number][] = [];
 
   for (const filePath of filesToIndex) {
     const absolutePath = resolveFilePath(repoPath, filePath);
@@ -234,15 +235,17 @@ export async function indexCodebase(
       continue;
     }
 
-    // Chunk → embed → upsert
+    // Chunk → embed → queue for one bulk store write after discovery.
     const language = detectLanguage(filePath);
     const chunks = await chunkFile(pool, repoId, filePath, content, language);
     const embeddings = await embedder.embedBatch(chunks.map((c) => c.text));
-    await store.upsertFile(repoId, filePath, chunks, embeddings);
+    pendingUpserts.push({ repoId, filePath, chunks, embeddings });
 
     newFileHashes[filePath] = hash;
     indexed.push(filePath);
   }
+
+  await store.upsertFiles(pendingUpserts);
 
   // Delete chunks for files that no longer appear in the (filtered) repo set.
   // Files that become newly excluded by .ai-coding-ignore also fall out of

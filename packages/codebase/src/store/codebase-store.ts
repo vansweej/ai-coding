@@ -117,35 +117,77 @@ export class CodebaseStore {
       );
     }
 
+    await this.upsertFiles([
+      {
+        repoId,
+        filePath,
+        chunks,
+        embeddings,
+      },
+    ]);
+  }
+
+  /**
+   * Replace chunks for multiple files in one table write.
+   *
+   * Indexing a repository file-by-file used to create two Lance transactions
+   * per file (delete then add). Large repositories accumulated enough table
+   * versions to trigger Lance's auto-cleanup manifest race. Grouping rows in
+   * one add transaction keeps indexing bounded and avoids that failure mode.
+   */
+  async upsertFiles(
+    files: readonly {
+      readonly repoId: string;
+      readonly filePath: string;
+      readonly chunks: readonly CodeChunk[];
+      readonly embeddings: readonly EmbeddingResult[];
+    }[],
+  ): Promise<void> {
     const table = await this.table();
+    const rows: CodebaseRow[] = [];
+    const filesByRepo = new Map<string, string[]>();
 
-    // Delete existing rows for this file
-    await table.delete(`repo_id = '${escapeStr(repoId)}' AND file_path = '${escapeStr(filePath)}'`);
+    for (const file of files) {
+      if (file.chunks.length !== file.embeddings.length) {
+        throw new Error(
+          `upsertFiles: chunks.length (${file.chunks.length}) !== embeddings.length (${file.embeddings.length}) for ${file.filePath}`,
+        );
+      }
+      const paths = filesByRepo.get(file.repoId) ?? [];
+      paths.push(file.filePath);
+      filesByRepo.set(file.repoId, paths);
+    }
 
-    if (chunks.length === 0) return;
+    for (const [repoId, paths] of filesByRepo) {
+      await this.deleteFilesByPaths(repoId, paths);
+    }
 
     const indexedAt = new Date().toISOString();
-    const rows: CodebaseRow[] = chunks.map((chunk, i) => {
-      const embedding = embeddings[i];
-      if (embedding === undefined) {
-        throw new Error(`Missing embedding at index ${i}`);
+    for (const file of files) {
+      for (const [index, chunk] of file.chunks.entries()) {
+        const embedding = file.embeddings[index];
+        if (embedding === undefined) {
+          throw new Error(`Missing embedding at index ${index} for ${file.filePath}`);
+        }
+        rows.push({
+          vector: embedding.vector,
+          text: chunk.text,
+          repo_id: chunk.repoId,
+          file_path: chunk.filePath,
+          symbol_name: chunk.symbolName ?? "",
+          symbol_kind: chunk.symbolKind ?? "",
+          chunk_index: chunk.chunkIndex,
+          start_line: chunk.startLine,
+          end_line: chunk.endLine,
+          content_hash: hashChunk(chunk),
+          indexed_at: indexedAt,
+        });
       }
-      return {
-        vector: embedding.vector,
-        text: chunk.text,
-        repo_id: chunk.repoId,
-        file_path: chunk.filePath,
-        symbol_name: chunk.symbolName ?? "",
-        symbol_kind: chunk.symbolKind ?? "",
-        chunk_index: chunk.chunkIndex,
-        start_line: chunk.startLine,
-        end_line: chunk.endLine,
-        content_hash: hashChunk(chunk),
-        indexed_at: indexedAt,
-      };
-    });
+    }
 
-    await table.add(rows as unknown as Record<string, unknown>[]);
+    if (rows.length > 0) {
+      await table.add(rows as unknown as Record<string, unknown>[]);
+    }
   }
 
   /**

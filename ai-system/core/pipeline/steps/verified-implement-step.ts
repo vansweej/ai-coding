@@ -561,8 +561,11 @@ export function createVerifiedImplementStep(
       const phaseSteps = options.steps;
 
       // Vacuous-pass guard: an empty verification set on a phase that is
-      // expected to produce changes is NOT a pass -- it means no touched file
-      // routed to a toolchain (e.g. wrong extension, toolchain not in palette).
+      // expected to produce changes is NOT a pass. In palette mode, however,
+      // an empty verification set is valid when the changed files are on the
+      // explicit edit-only floor (for example docs or an unavailable
+      // toolchain). The fixed-config path alone can prove that an empty set
+      // is vacuous at this layer.
       // Fail loudly so the run never silently green on zero verification.
       //
       // This MUST be (re)computed fresh immediately before every
@@ -578,7 +581,7 @@ export function createVerifiedImplementStep(
         | { readonly ok: true; readonly steps: readonly PipelineStep<AIRequestEvent>[] }
         | { readonly ok: false; readonly error: Error } => {
         const steps = options.languageConfig.toolchainSteps(options.workspace);
-        if (steps.length === 0 && phaseSteps !== undefined) {
+        if (steps.length === 0 && phaseSteps !== undefined && options.palette === undefined) {
           const reason =
             "no touched files routed to a verification toolchain — " +
             "verification would be vacuously empty";

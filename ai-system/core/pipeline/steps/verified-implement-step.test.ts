@@ -334,7 +334,13 @@ describe("createVerifiedImplementStep", () => {
 
     expect(result.ok).toBe(true);
     expect(events).toEqual([
-      { kind: "patch-path", phase: 3, path: "fell-back-to-text", reason: "not-capable-text-mode" },
+      {
+        kind: "patch-path",
+        phase: 3,
+        path: "fell-back-to-text",
+        reason: "not-capable-text-mode",
+        detail: "Model/attempt is not structured-patch capable",
+      },
       { kind: "step-start", phase: 3, step: 1, title: "Create a.ts" },
       { kind: "step-finish", phase: 3, step: 1 },
       { kind: "step-start", phase: 3, step: 2, title: "Create b.ts" },
@@ -375,6 +381,7 @@ describe("createVerifiedImplementStep", () => {
       phase: 5,
       path: "fell-back-to-text",
       reason: "not-capable-text-mode",
+      detail: "Model/attempt is not structured-patch capable",
     });
     expect(events[1]).toEqual({ kind: "step-start", phase: 5, step: 1, title: "Create a.ts" });
     expect(events[2]).toEqual({ kind: "step-finish", phase: 5, step: 1 });
@@ -717,6 +724,7 @@ describe("createVerifiedImplementStep (structured whole-phase dual path)", () =>
       phase: 9,
       path: "fell-back-to-text",
       reason: "not-capable-text-mode",
+      detail: "Model/attempt is not structured-patch capable",
     });
   });
 

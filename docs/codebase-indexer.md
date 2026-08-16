@@ -124,9 +124,11 @@ sequenceDiagram
             CF-->>IC: CodeChunk[]
             IC->>OE: embedder.embedBatch(chunk texts)
             OE-->>IC: EmbeddingResult[]
-            IC->>CS: store.upsertFile(repoId, filePath, chunks, embeddings)
+            IC->>IC: queue file chunks and embeddings for bulk write
         end
     end
+
+    IC->>CS: store.upsertFiles(pending file chunks and embeddings)
 
     loop for each file in previous meta but NOT in filesToIndex
         Note over IC: covers deleted, .gitignore'd, AND newly .ai-coding-ignore'd files

@@ -1,9 +1,21 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { DEFAULT_PROFILE_NAME } from "../config/model-profiles";
 import { parseArgs } from "./parse-args";
 
 describe("parseArgs", () => {
+  const originalModelProfile = process.env.AI_CODING_MODEL_PROFILE;
+
+  beforeEach(() => {
+    const env = process.env as Record<string, string | undefined>;
+    env.AI_CODING_MODEL_PROFILE = undefined;
+  });
+
+  afterEach(() => {
+    const env = process.env as Record<string, string | undefined>;
+    env.AI_CODING_MODEL_PROFILE = originalModelProfile;
+  });
+
   it("returns error when no arguments provided", () => {
     const result = parseArgs([]);
     expect(result.ok).toBe(false);

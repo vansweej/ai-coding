@@ -25,6 +25,17 @@ const BEDROCK_MODEL_IDS = new Set(["bedrock-sonnet"]);
 /** Model IDs that indicate OpenCode Zen models (free OpenAI-compatible endpoint). */
 const OPENCODE_ZEN_MODEL_IDS = new Set(["opencode-free"]);
 
+/** Injectable Ollama preflight operations for deterministic callers and tests. */
+export interface OllamaPreflight {
+  readonly isReachable: (baseUrl: string) => Promise<boolean>;
+  readonly isModelAvailable: (modelId: string, baseUrl: string) => Promise<boolean>;
+}
+
+const defaultOllamaPreflight: OllamaPreflight = {
+  isReachable: isOllamaReachable,
+  isModelAvailable: isOllamaModelAvailable,
+};
+
 /**
  * Check if a model ID is a Copilot/cloud model.
  *
@@ -82,11 +93,13 @@ function isOpenCodeZenModel(modelId: string): boolean {
  * @param profileName - Profile name; defaults to DEFAULT_PROFILE_NAME.
  * @param ollamaUrl   - Override base URL for Ollama (for testing / remote).
  * @param strict      - When true, enables strict mode in the returned config.
+ * @param ollamaPreflight - Injectable Ollama probes; defaults to live probes.
  */
 export async function loadConfig(
   profileName: string = DEFAULT_PROFILE_NAME,
   ollamaUrl: string = process.env.OLLAMA_URL ?? "http://localhost:11434",
   strict = false,
+  ollamaPreflight: OllamaPreflight = defaultOllamaPreflight,
 ): Promise<Result<OrchestratorConfig>> {
   const profile = findProfile(profileName);
   if (profile === undefined) {
@@ -108,7 +121,7 @@ export async function loadConfig(
 
   // Check Ollama reachability and model availability only for Ollama models
   if (ollamaModelIds.length > 0) {
-    const reachable = await isOllamaReachable(ollamaUrl);
+    const reachable = await ollamaPreflight.isReachable(ollamaUrl);
     if (!reachable) {
       return {
         ok: false,
@@ -119,7 +132,7 @@ export async function loadConfig(
     }
 
     for (const id of ollamaModelIds) {
-      const available = await isOllamaModelAvailable(id, ollamaUrl);
+      const available = await ollamaPreflight.isModelAvailable(id, ollamaUrl);
       if (!available) {
         return {
           ok: false,

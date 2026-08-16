@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-import { loadConfig } from "./load-config";
+import { type OllamaPreflight, loadConfig } from "./load-config";
+
+const availableOllama: OllamaPreflight = {
+  isReachable: async () => true,
+  isModelAvailable: async () => true,
+};
 
 describe("loadConfig", () => {
   const ORIG_OLLAMA_URL = process.env.OLLAMA_URL;
@@ -31,7 +36,7 @@ describe("loadConfig", () => {
   });
 
   it("returns a config with local profile and gemma4:26b dispatcher", async () => {
-    const result = await loadConfig("local");
+    const result = await loadConfig("local", undefined, false, availableOllama);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.profile?.name).toBe("local");
@@ -93,7 +98,7 @@ describe("loadConfig", () => {
   });
 
   it("returns error for hybrid profile when GITHUB_COPILOT_TOKEN is not set", async () => {
-    const result = await loadConfig("hybrid");
+    const result = await loadConfig("hybrid", undefined, false, availableOllama);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("GITHUB_COPILOT_TOKEN");
   });
@@ -101,7 +106,7 @@ describe("loadConfig", () => {
   it("returns a config with hybrid profile when GITHUB_COPILOT_TOKEN is set", async () => {
     const env = process.env as Record<string, string>;
     env.GITHUB_COPILOT_TOKEN = "test-token";
-    const result = await loadConfig("hybrid");
+    const result = await loadConfig("hybrid", undefined, false, availableOllama);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.profile?.name).toBe("hybrid");
