@@ -4,6 +4,7 @@ import { runPipeline } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 import { $ } from "bun";
 
+import { createLedgerWriter, progressEventToLedgerLine } from "../../src/ledger/ledger-writer";
 import { mintRunId } from "../../src/run/run-id";
 import { resolvePlanRef } from "../core/orchestrator/cerebrum-plan-source";
 import { DevShellPaletteError, runFeature } from "../core/pipeline/feature-runner";
@@ -205,10 +206,15 @@ async function main(): Promise<void> {
 
     const collectedEvents: import("../core/pipeline/progress").ProgressEvent[] = [];
 
+    const runId = mintRunId();
+    const ledgerResult = createLedgerWriter(runId);
+    const ledger = ledgerResult.ok ? ledgerResult.value : undefined;
+
     // Events are always constructed and collected (unconditionally).
-    // Verbose is a formatter that subscribes to the same stream.
+    // The ledger writer subscribes here; verbose is a separate formatter view.
     const onProgress: OnProgress = (event) => {
       collectedEvents.push(event);
+      ledger?.write(progressEventToLedgerLine(event, runId));
       if (verbose) {
         const useColor =
           !process.env.NO_COLOR &&
@@ -217,8 +223,6 @@ async function main(): Promise<void> {
         console.error(formatProgressEvent(event, theme));
       }
     };
-
-    const runId = mintRunId();
 
     const outcome = await runFeature(planContent, {
       config: configResult.value,
