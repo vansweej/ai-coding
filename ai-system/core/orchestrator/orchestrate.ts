@@ -7,8 +7,8 @@ import type {
   Result,
 } from "@ai-coding/shared";
 
+import { diagnosisToLedgerLine, makeDiagnosis } from "../../../src/diagnosis/diagnosis-record";
 import { classifyError } from "../../../src/errors/classify-error";
-import { makeDiagnosis, diagnosisToLedgerLine } from "../../../src/diagnosis/diagnosis-record";
 import { createLedgerWriter } from "../../../src/ledger/ledger-writer";
 import type { ModelProfile } from "../../config/model-profiles";
 import { resolveModelForRole } from "../../config/model-profiles";

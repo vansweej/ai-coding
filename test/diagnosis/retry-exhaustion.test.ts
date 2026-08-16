@@ -2,11 +2,11 @@ import { describe, expect, it } from "bun:test";
 
 import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
 
-import { orchestrate } from "../../ai-system/core/orchestrator/orchestrate";
-import type { OrchestratorConfig } from "../../ai-system/core/orchestrator/orchestrate";
 import { readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { orchestrate } from "../../ai-system/core/orchestrator/orchestrate";
+import type { OrchestratorConfig } from "../../ai-system/core/orchestrator/orchestrate";
 
 function makeEvent(
   overrides: Partial<AIRequestEvent> & Pick<AIRequestEvent, "action" | "source">,

@@ -23,6 +23,35 @@ import { tryStructuredPhase } from "./structured-implement";
 
 const IMPLEMENT_RESULT_NAME = "verified-implement-output";
 
+/**
+ * Error names produced by `writeImplementation` for a chatty/malformed patch
+ * RESPONSE (parse failure) or a stale/mismatched SEARCH anchor (apply
+ * failure). Both are retryable model-quality issues -- refreshed file
+ * contents and the error message are fed back on the next attempt -- NOT
+ * deterministic logic errors, and must be exempted from classifyError's
+ * transient/logic fast-fail gate (see `isNonRetryableLogicError` below).
+ * classifyError's broad "parse"/"unexpected" logic markers are intended for
+ * genuine dispatch/schema failures, not for this pipeline's own patch
+ * parsing/anchor-matching, whose retry-with-correction loop predates
+ * classifyError and is load-bearing for weak/chatty models.
+ */
+const PATCH_RESPONSE_ERROR_NAMES: ReadonlySet<string> = new Set([
+  "PatchParseError",
+  "PatchApplyError",
+]);
+
+/**
+ * Whether an implement/fix attempt's error should fast-fail the retry loop
+ * as a non-retryable logic error, per classifyError -- EXCEPT for the two
+ * patch-response error modes above, which always remain retry-eligible
+ * regardless of their (deterministic-looking but not actually so) message
+ * content.
+ */
+function isNonRetryableLogicError(error: Error): boolean {
+  if (PATCH_RESPONSE_ERROR_NAMES.has(error.name)) return false;
+  return classifyError(error).kind === "logic";
+}
+
 /** Directories that are always skipped during recursive source discovery. */
 const JUNK_DIRS = new Set([
   ".git",
@@ -328,21 +357,33 @@ async function writeImplementation(
   // absorbing this common weak-model failure mode before it reaches parsing.
   const parseResult = parsePatch(stripEnclosingFence(implementation));
   if (!parseResult.ok) {
-    return {
-      ok: false,
-      error: new Error(`Failed to parse patches: ${parseResult.error.message}`),
-    };
+    const error = new Error(`Failed to parse patches: ${parseResult.error.message}`);
+    // Named distinctly so callers can exempt this failure mode from
+    // classifyError's transient/logic gate (see PATCH_RESPONSE_ERROR_NAMES):
+    // a chatty or malformed patch RESPONSE is a retryable model-quality
+    // issue, not a deterministic logic error -- retrying with the parse
+    // error fed back as corrective context is the pipeline's primary,
+    // load-bearing recovery mechanism for weak/chatty models and predates
+    // classifyError entirely. Without this exemption, classifyError's broad
+    // "parse"/"unexpected" logic markers (intended for genuine dispatch/
+    // schema failures) would incorrectly fast-fail every chatty-model
+    // response on the first attempt.
+    error.name = "PatchParseError";
+    return { ok: false, error };
   }
 
   // Apply the patches to the workspace
   const applyResult = await applyPatch(workspace, parseResult.value);
   if (!applyResult.ok) {
-    return {
-      ok: false,
-      error: new Error(
-        `Failed to apply patch to "${applyResult.error.filePath}": ${applyResult.error.message}`,
-      ),
-    };
+    const error = new Error(
+      `Failed to apply patch to "${applyResult.error.filePath}": ${applyResult.error.message}`,
+    );
+    // Same exemption reasoning as PatchParseError above: a SEARCH anchor
+    // that doesn't match the current file contents is a retryable
+    // model-quality issue (refreshed file contents are fed back on retry),
+    // not a deterministic logic error.
+    error.name = "PatchApplyError";
+    return { ok: false, error };
   }
 
   return { ok: true, value: undefined };
@@ -783,7 +824,7 @@ export function createVerifiedImplementStep(
             };
           }
           lastError = verificationResult.error;
-        } else if (classifyError(implementResult.error).kind === "logic") {
+        } else if (isNonRetryableLogicError(implementResult.error)) {
           // Logic (deterministic) failures are not retry-eligible: fail fast
           // rather than burning the local retry budget on an error that will
           // reproduce identically.
@@ -928,7 +969,7 @@ export function createVerifiedImplementStep(
             };
           }
           lastError = verificationResult.error;
-        } else if (classifyError(fixResult.error).kind === "logic") {
+        } else if (isNonRetryableLogicError(fixResult.error)) {
           // Same fast-fail reasoning as the local retry loop above.
           return {
             ok: false,

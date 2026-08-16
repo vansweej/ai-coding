@@ -2,12 +2,12 @@ import { describe, expect, it } from "bun:test";
 
 import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
 
+import { readFileSync } from "node:fs";
 import { orchestrate } from "../../ai-system/core/orchestrator/orchestrate";
 import type { OrchestratorConfig } from "../../ai-system/core/orchestrator/orchestrate";
 import { createLedgerWriter } from "../../src/ledger/ledger-writer";
 import { parseLedgerLine } from "../../src/ledger/parse-ledger-line";
 import { mintRunId } from "../../src/run/run-id";
-import { readFileSync } from "node:fs";
 
 function makeEvent(): AIRequestEvent {
   return {
@@ -85,7 +85,18 @@ describe("per-retry transient diagnosis", () => {
       .split("\n")
       .filter((l) => l.trim().length > 0)
       .map((l) => parseLedgerLine(l))
-      .filter((r): r is { ok: true; value: ReturnType<typeof parseLedgerLine> extends infer T ? T extends { ok: true; value: infer V } ? V : never : never } => r.ok)
+      .filter(
+        (
+          r,
+        ): r is {
+          ok: true;
+          value: ReturnType<typeof parseLedgerLine> extends infer T
+            ? T extends { ok: true; value: infer V }
+              ? V
+              : never
+            : never;
+        } => r.ok,
+      )
       .map((r) => r.value);
 
     const transientRetryLines = lines.filter(
