@@ -210,6 +210,12 @@ async function main(): Promise<void> {
     const ledgerResult = createLedgerWriter(runId);
     const ledger = ledgerResult.ok ? ledgerResult.value : undefined;
 
+    // Emit the stable stdout locator line — parsed by choragos to correlate
+    // this run's ledger file. Printed unconditionally, before the first event.
+    if (ledger) {
+      console.log(`CHORAGOS-LEDGER runId=${runId} path=${ledger.path}`);
+    }
+
     // Events are always constructed and collected (unconditionally).
     // The ledger writer subscribes here; verbose is a separate formatter view.
     const onProgress: OnProgress = (event) => {
