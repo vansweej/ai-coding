@@ -8,6 +8,8 @@ import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import type { ToolchainDescriptor } from "./definitions/language-configs";
 
 import { buildGitCleanArgs } from "./git-clean-args";
+import { PHASE_FAILURE_REASONS, phaseHardFail } from "./phase-hard-fail";
+import { PHASE_FAILURE_REASONS, phaseHardFail } from "./phase-hard-fail";
 import { checkAssertions } from "./phase-assertions";
 import type { Phase } from "./plan-parser";
 import type { OnProgress } from "./progress";
@@ -343,23 +345,21 @@ export async function runPhase(
 
   if (!hasNetWorkingTreeChange(options.workspace)) {
     restoreWorkingTree(options.workspace, phase.number, options.onProgress);
-    return {
-      ok: false,
-      error: new Error(
-        `Phase ${phase.number} produced no net working-tree change; refusing to commit an empty phase (possible false-green partial apply)`,
-      ),
-    };
+    return phaseHardFail(
+      phase.number,
+      PHASE_FAILURE_REASONS.noNetChange,
+      "produced no net working-tree change; refusing to commit an empty phase (possible false-green partial apply)",
+    );
   }
 
   const assertionResult = checkAssertions(options.workspace, phase.assertions ?? []);
   if (!assertionResult.ok) {
     restoreWorkingTree(options.workspace, phase.number, options.onProgress);
-    return {
-      ok: false,
-      error: new Error(
-        `Phase ${phase.number} failed a structural assertion: ${assertionResult.error.message}`,
-      ),
-    };
+    return phaseHardFail(
+      phase.number,
+      PHASE_FAILURE_REASONS.structuralAssertion,
+      `failed a structural assertion: ${assertionResult.error.message}`,
+    );
   }
 
   const commit = options.commitPhase ?? commitPhaseChanges;
