@@ -34,6 +34,11 @@ export type ProgressEvent =
     }
   | { readonly kind: "step-finish"; readonly phase: number; readonly step: number }
   | {
+      readonly kind: "vacuous-pass";
+      readonly phase: number;
+      readonly reason: string;
+    }
+  | {
       readonly kind: "step-fail";
       readonly phase: number;
       readonly step: number;
@@ -86,6 +91,7 @@ const NERD_GLYPHS: Readonly<Record<ProgressEvent["kind"], string>> = {
   "step-retry": "↻",
   "patch-path": "⇄",
   "restore-failed": "⚠",
+  "vacuous-pass": "⊘",
 };
 
 /** ASCII fallback glyphs used when color/Unicode is not appropriate. */
@@ -100,6 +106,7 @@ const ASCII_GLYPHS: Readonly<Record<ProgressEvent["kind"], string>> = {
   "step-retry": "~",
   "patch-path": "=",
   "restore-failed": "!",
+  "vacuous-pass": "0",
 };
 
 /** ANSI SGR codes used to color each event kind's glyph. */
@@ -114,6 +121,7 @@ const SGR: Readonly<Record<ProgressEvent["kind"], string>> = {
   "step-retry": "\x1b[33m", // yellow
   "patch-path": "\x1b[35m", // magenta
   "restore-failed": "\x1b[31m", // red
+  "vacuous-pass": "\x1b[31m", // red
 };
 
 const SGR_RESET = "\x1b[0m";
@@ -156,6 +164,8 @@ function buildLabel(event: ProgressEvent): string {
       return `Step ${event.step}  ${event.retry} retry ${event.index}/${event.max}`;
     case "restore-failed":
       return `Phase ${event.phase}  working-tree restore FAILED: ${event.reason}`;
+    case "vacuous-pass":
+      return `Phase ${event.phase}  VACUOUS PASS blocked: ${event.reason}`;
     case "patch-path": {
       const base =
         event.path === "structured-applied"
