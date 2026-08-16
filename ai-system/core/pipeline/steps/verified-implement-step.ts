@@ -135,6 +135,7 @@ export interface VerifiedImplementStepOptions {
   readonly phaseNumber?: number;
   /** Optional progress reporter; silent when omitted. */
   readonly onProgress?: OnProgress;
+  readonly onDegrade?: (phaseNumber: number, detail: string) => void;
 }
 
 /**
@@ -622,6 +623,7 @@ export function createVerifiedImplementStep(
           // so every decline reason renders a non-empty diagnostic.
           detail: structuredResult.error.detail ?? structuredResult.error.message,
         });
+          options.onDegrade?.(options.phaseNumber ?? 0, structuredResult.error.detail ?? structuredResult.error.message);
       }
 
       const totalImplementerAttempts = 1 + maxLocalRetries;

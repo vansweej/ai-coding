@@ -87,6 +87,7 @@ const EXIT_CODES = {
   SUCCESS: 0,
   RESUMABLE_FAILURE: 2,
   ENVIRONMENT_ERROR: 3,
+  DEGRADED: 4,
 } as const;
 
 /* v8 ignore start */
@@ -184,6 +185,14 @@ async function main(): Promise<void> {
     console.log(`Workspace:       ${workspace}`);
     for (const phase of outcome.value.phases) {
       console.log(`[ok] Phase ${phase.phaseNumber}: ${phase.commitMessage}`);
+    }
+
+    const degradations: string[] = [];
+    if (degradations.length > 0) {
+      for (const warn of degradations) {
+        console.warn(`WARN: ${warn}`);
+      }
+      process.exit(EXIT_CODES.DEGRADED);
     }
     process.exit(EXIT_CODES.SUCCESS);
   }

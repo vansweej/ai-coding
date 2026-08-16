@@ -68,6 +68,7 @@ export interface RunPhaseOptions {
    * When omitted, no events are constructed and there is no overhead.
    */
   readonly onProgress?: OnProgress;
+  readonly onDegrade?: (phaseNumber: number, detail: string) => void;
 }
 
 /** Commit all phase changes with the plan-authored commit message and Phase trailer. */
@@ -332,6 +333,7 @@ export async function runPhase(
     steps: phase.steps,
     phaseNumber: phase.number,
     onProgress: options.onProgress,
+    onDegrade: options.onDegrade,
   });
   const result = await verifiedStep.execute({
     event: buildStepEvent(buildPhaseInstruction(phase)),
