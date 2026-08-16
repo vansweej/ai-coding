@@ -384,7 +384,10 @@ export async function checkAssertions(
       }
       case "test-passes": {
         const resolvedPath = resolve(workspace, assertion.path);
-        const step = createNixShellStep<unknown>("assert-test", ["bun", "test", resolvedPath], { cwd: workspace, timeoutMs: 300000 });
+        const step = createNixShellStep<unknown>("assert-test", ["bun", "test", resolvedPath], {
+          cwd: workspace,
+          timeoutMs: 300000,
+        });
         const testResult = await step.execute({ event: undefined, results: new Map() });
         if (!testResult.ok) {
           return {

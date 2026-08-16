@@ -73,7 +73,7 @@ export async function runFeature(
   }
 
   const degradations: string[] = [];
-  const onDegrade = (detail: string, phaseNumber: number): void => {
+  const onDegrade = (phaseNumber: number, detail: string): void => {
     degradations.push(`Phase ${phaseNumber}: ${detail}`);
   };
 
@@ -81,7 +81,11 @@ export async function runFeature(
   for (let i = startPhaseIndex; i < parsed.value.phases.length; i++) {
     const phase = parsed.value.phases[i];
     options.onProgress?.({ kind: "phase-start", phase: phase.number, title: phase.title });
-    const result = await runPhase(phase, { ...options, palette, onDegrade: (detail) => onDegrade(detail, phase.number) });
+    const result = await runPhase(phase, {
+      ...options,
+      palette,
+      onDegrade: (phaseNumber, detail) => onDegrade(phaseNumber, detail),
+    });
     if (!result.ok) {
       options.onProgress?.({
         kind: "phase-fail",

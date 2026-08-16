@@ -7,6 +7,7 @@ import type { AIAction, AIRequestEvent } from "@ai-coding/shared";
 import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { orchestrate } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
+import { PHASE_FAILURE_REASONS, phaseHardFail } from "../phase-hard-fail";
 import type { CoverageDirective, Step } from "../plan-parser";
 import type { OnProgress } from "../progress";
 import {
@@ -17,7 +18,6 @@ import {
 } from "../routing/route";
 import { applyPatch } from "./apply-patch-step";
 import { parsePatch, stripEnclosingFence } from "./parse-patch";
-import { phaseHardFail, PHASE_FAILURE_REASONS } from "../phase-hard-fail";
 import { tryStructuredPhase } from "./structured-implement";
 
 const IMPLEMENT_RESULT_NAME = "verified-implement-output";
@@ -598,7 +598,19 @@ export function createVerifiedImplementStep(
         // Only `anchor-unexpandable` — the well-understood
         // confirmed-rename-unresolvable class — hard-aborts; all other
         // structured failures keep the historical text-loop fallback.
-        if (options.config.strict === true && (structuredResult.error.reason === "dispatch-error" || structuredResult.error.reason === "conversion-failed")) { return phaseHardFail(options.phaseNumber ?? 0, structuredResult.error.reason === "dispatch-error" ? PHASE_FAILURE_REASONS.dispatchError : PHASE_FAILURE_REASONS.conversionFailed, `structured patch declined with ${structuredResult.error.reason} under --strict: ${structuredResult.error.detail ?? structuredResult.error.message}`); }
+        if (
+          options.config.strict === true &&
+          (structuredResult.error.reason === "dispatch-error" ||
+            structuredResult.error.reason === "conversion-failed")
+        ) {
+          return phaseHardFail(
+            options.phaseNumber ?? 0,
+            structuredResult.error.reason === "dispatch-error"
+              ? PHASE_FAILURE_REASONS.dispatchError
+              : PHASE_FAILURE_REASONS.conversionFailed,
+            `structured patch declined with ${structuredResult.error.reason} under --strict: ${structuredResult.error.detail ?? structuredResult.error.message}`,
+          );
+        }
         if (structuredResult.error.reason === "anchor-unexpandable") {
           options.onProgress?.({
             kind: "patch-path",
@@ -625,7 +637,10 @@ export function createVerifiedImplementStep(
           // so every decline reason renders a non-empty diagnostic.
           detail: structuredResult.error.detail ?? structuredResult.error.message,
         });
-          options.onDegrade?.(options.phaseNumber ?? 0, structuredResult.error.detail ?? structuredResult.error.message);
+        options.onDegrade?.(
+          options.phaseNumber ?? 0,
+          structuredResult.error.detail ?? structuredResult.error.message,
+        );
       }
 
       const totalImplementerAttempts = 1 + maxLocalRetries;

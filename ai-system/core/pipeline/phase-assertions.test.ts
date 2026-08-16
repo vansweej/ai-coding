@@ -297,8 +297,12 @@ describe("checkAssertions", () => {
 
   it("matches fails on an invalid regex without throwing", async () => {
     writeFileSync(join(workspace, "a.txt"), "content");
-    const result = await expect(checkAssertions(workspace, [{ kind: "matches", path: "a.txt", pattern: "(" }])).resolves.toBeDefined();
-    const actual = await checkAssertions(workspace, [{ kind: "matches", path: "a.txt", pattern: "(" }]);
+    const result = await expect(
+      checkAssertions(workspace, [{ kind: "matches", path: "a.txt", pattern: "(" }]),
+    ).resolves.toBeDefined();
+    const actual = await checkAssertions(workspace, [
+      { kind: "matches", path: "a.txt", pattern: "(" },
+    ]);
     expect(actual.ok).toBe(false);
   });
 
@@ -384,9 +388,11 @@ describe("checkAssertions", () => {
   });
 
   it("toml-keys fails on an unreadable/missing file, without throwing", async () => {
-    await expect(checkAssertions(workspace, [
-      { kind: "toml-keys", path: "missing.toml", table: "lints", keys: ["workspace"] },
-    ])).resolves.toBeDefined();
+    await expect(
+      checkAssertions(workspace, [
+        { kind: "toml-keys", path: "missing.toml", table: "lints", keys: ["workspace"] },
+      ]),
+    ).resolves.toBeDefined();
     const result = await checkAssertions(workspace, [
       { kind: "toml-keys", path: "missing.toml", table: "lints", keys: ["workspace"] },
     ]);
@@ -395,9 +401,11 @@ describe("checkAssertions", () => {
 
   it("toml-keys fails on invalid TOML source, without throwing", async () => {
     writeFileSync(join(workspace, "Cargo.toml"), "this is not = = valid toml [[[");
-    await expect(checkAssertions(workspace, [
-      { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
-    ])).resolves.toBeDefined();
+    await expect(
+      checkAssertions(workspace, [
+        { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
+      ]),
+    ).resolves.toBeDefined();
     const result = await checkAssertions(workspace, [
       { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
     ]);

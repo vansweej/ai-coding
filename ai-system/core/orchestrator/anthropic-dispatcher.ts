@@ -174,7 +174,13 @@ export class AnthropicDispatcher implements ModelDispatcher {
 
       const parsed = parsePatchOps(toolUseBlock.input);
       if (!parsed.ok) {
-        return { ok: false, error: new Error(`patch parse failed: ${parsed.error.message}\npayload: ${boundedPayload(JSON.stringify(toolUseBlock.input))}`, { cause: parsed.error }) };
+        return {
+          ok: false,
+          error: new Error(
+            `patch parse failed: ${parsed.error.message}\npayload: ${boundedPayload(JSON.stringify(toolUseBlock.input))}`,
+            { cause: parsed.error },
+          ),
+        };
       }
 
       return { ok: true, value: parsed.value };

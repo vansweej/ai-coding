@@ -8,9 +8,8 @@ import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import type { ToolchainDescriptor } from "./definitions/language-configs";
 
 import { buildGitCleanArgs } from "./git-clean-args";
-import { PHASE_FAILURE_REASONS, phaseHardFail } from "./phase-hard-fail";
-import { PHASE_FAILURE_REASONS, phaseHardFail } from "./phase-hard-fail";
 import { checkAssertions } from "./phase-assertions";
+import { PHASE_FAILURE_REASONS, phaseHardFail } from "./phase-hard-fail";
 import type { Phase } from "./plan-parser";
 import type { OnProgress } from "./progress";
 import { getTouchedFiles, route } from "./routing/route";

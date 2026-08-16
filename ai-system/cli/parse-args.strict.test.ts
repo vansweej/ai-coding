@@ -14,7 +14,7 @@ describe("parse-args strict", () => {
       }
     } finally {
       if (origToken === undefined) {
-        delete (process.env as Record<string, string | undefined>).GITHUB_COPILOT_TOKEN;
+        Reflect.deleteProperty(process.env, "GITHUB_COPILOT_TOKEN");
       } else {
         env.GITHUB_COPILOT_TOKEN = origToken;
       }

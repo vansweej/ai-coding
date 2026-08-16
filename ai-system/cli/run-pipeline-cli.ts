@@ -97,8 +97,17 @@ async function main(): Promise<void> {
     console.error(`Error: ${argsResult.error.message}`);
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
-  const { pipelineName, workspace, input, planPath, planRef, maxRetries, profileName, verbose, strict } =
-    argsResult.value;
+  const {
+    pipelineName,
+    workspace,
+    input,
+    planPath,
+    planRef,
+    maxRetries,
+    profileName,
+    verbose,
+    strict,
+  } = argsResult.value;
 
   const configResult = await loadConfig(profileName, undefined, strict);
   if (!configResult.ok) {

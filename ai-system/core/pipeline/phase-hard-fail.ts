@@ -22,8 +22,7 @@ export const PHASE_FAILURE_REASONS = {
  * Union of all valid phase-failure reason strings, derived from
  * `PHASE_FAILURE_REASONS` so the type and the runtime value stay in sync.
  */
-export type PhaseFailureReason =
-  (typeof PHASE_FAILURE_REASONS)[keyof typeof PHASE_FAILURE_REASONS];
+export type PhaseFailureReason = (typeof PHASE_FAILURE_REASONS)[keyof typeof PHASE_FAILURE_REASONS];
 
 /**
  * Construct a hard-fail result for a plan-cycle phase.

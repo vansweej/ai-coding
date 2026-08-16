@@ -32,9 +32,7 @@ describe("checkAssertions (test-passes verb)", () => {
       "utf8",
     );
 
-    const result = await checkAssertions(tempDir, [
-      { kind: "test-passes", path: fixturePath },
-    ]);
+    const result = await checkAssertions(tempDir, [{ kind: "test-passes", path: fixturePath }]);
     expect(result.ok).toBe(true);
   });
 
@@ -46,18 +44,14 @@ describe("checkAssertions (test-passes verb)", () => {
       "utf8",
     );
 
-    const result = await checkAssertions(tempDir, [
-      { kind: "test-passes", path: fixturePath },
-    ]);
+    const result = await checkAssertions(tempDir, [{ kind: "test-passes", path: fixturePath }]);
     expect(result.ok).toBe(false);
   });
 
   it("test-passes returns ok:false when the fixture file does not exist", async () => {
     const missingPath = join(tempDir, "does-not-exist.test.ts");
 
-    const result = await checkAssertions(tempDir, [
-      { kind: "test-passes", path: missingPath },
-    ]);
+    const result = await checkAssertions(tempDir, [{ kind: "test-passes", path: missingPath }]);
     expect(result.ok).toBe(false);
   });
 });

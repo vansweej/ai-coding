@@ -222,7 +222,13 @@ export class CopilotDispatcher implements ModelDispatcher {
 
       const parsed = parsePatchOps(parsedArguments);
       if (!parsed.ok) {
-        return { ok: false, error: new Error(`patch parse failed: ${parsed.error.message}\npayload: ${boundedPayload(toolCall.function.arguments)}`, { cause: parsed.error }) };
+        return {
+          ok: false,
+          error: new Error(
+            `patch parse failed: ${parsed.error.message}\npayload: ${boundedPayload(toolCall.function.arguments)}`,
+            { cause: parsed.error },
+          ),
+        };
       }
 
       return { ok: true, value: parsed.value };

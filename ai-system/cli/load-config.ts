@@ -86,7 +86,7 @@ function isOpenCodeZenModel(modelId: string): boolean {
 export async function loadConfig(
   profileName: string = DEFAULT_PROFILE_NAME,
   ollamaUrl: string = process.env.OLLAMA_URL ?? "http://localhost:11434",
-  strict: boolean = false,
+  strict = false,
 ): Promise<Result<OrchestratorConfig>> {
   const profile = findProfile(profileName);
   if (profile === undefined) {
