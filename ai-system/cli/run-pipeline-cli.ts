@@ -203,13 +203,20 @@ async function main(): Promise<void> {
       process.exit(exitCode);
     }
 
-    let onProgress: OnProgress | undefined;
-    if (verbose) {
-      const useColor =
-        !process.env.NO_COLOR && (process.env.FORCE_COLOR === "1" || process.stderr.isTTY === true);
-      const theme = buildTheme(useColor);
-      onProgress = (event) => console.error(formatProgressEvent(event, theme));
-    }
+    const collectedEvents: import("../core/pipeline/progress").ProgressEvent[] = [];
+
+    // Events are always constructed and collected (unconditionally).
+    // Verbose is a formatter that subscribes to the same stream.
+    const onProgress: OnProgress = (event) => {
+      collectedEvents.push(event);
+      if (verbose) {
+        const useColor =
+          !process.env.NO_COLOR &&
+          (process.env.FORCE_COLOR === "1" || process.stderr.isTTY === true);
+        const theme = buildTheme(useColor);
+        console.error(formatProgressEvent(event, theme));
+      }
+    };
 
     const runId = mintRunId();
 
