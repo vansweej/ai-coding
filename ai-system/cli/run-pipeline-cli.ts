@@ -4,18 +4,22 @@ import { runPipeline } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 import { $ } from "bun";
 
+import { devShellPalette } from "@ai-coding/pipeline";
 import { createLedgerWriter, progressEventToLedgerLine } from "../../src/ledger/ledger-writer";
 import { mintRunId } from "../../src/run/run-id";
-import { devShellPalette } from "@ai-coding/pipeline";
 import { resolvePlanRef } from "../core/orchestrator/cerebrum-plan-source";
 import { CANDIDATE_TOOLS } from "../core/pipeline/definitions/language-configs";
+import {
+  formatPredictedRunShape,
+  predictRunShape,
+  runShapeToLedgerPayload,
+} from "../core/pipeline/dry-run-shape";
 import { DevShellPaletteError, runFeature } from "../core/pipeline/feature-runner";
 import { BaselineCheckError } from "../core/pipeline/phase-runner";
-import { formatPredictedRunShape, predictRunShape, runShapeToLedgerPayload } from "../core/pipeline/dry-run-shape";
 import { parsePlanFile } from "../core/pipeline/plan-parser";
-import { detectResumeState } from "../core/pipeline/resume";
 import type { OnProgress } from "../core/pipeline/progress";
 import { buildTheme, formatProgressEvent } from "../core/pipeline/progress";
+import { detectResumeState } from "../core/pipeline/resume";
 import { loadConfig } from "./load-config";
 import { parseArgs } from "./parse-args";
 import { reportParseOnly } from "./parse-only";
@@ -220,10 +224,14 @@ async function main(): Promise<void> {
       console.log(output);
       if (exitCode !== 0) {
         process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+        return;
       }
+      if (!parseResult.ok) return;
 
       console.log(`Current branch:  ${currentBranchForDryRun ?? "(unknown)"}`);
-      console.log(`loadConfig:      ok (profile "${configResult.value.profile?.name ?? profileName}")`);
+      console.log(
+        `loadConfig:      ok (profile "${configResult.value.profile?.name ?? profileName}")`,
+      );
 
       const paletteResult = await devShellPalette(workspace, CANDIDATE_TOOLS);
       if (!paletteResult.ok) {
