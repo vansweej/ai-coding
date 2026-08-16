@@ -83,6 +83,8 @@ describe("assert-grammar-version forward-compat policy", () => {
                     return `matches ${assertion.path} :: ${assertion.pattern}`;
                   case "toml-keys":
                     return `toml-keys ${assertion.path} :: ${assertion.table} :: ${assertion.keys.join(",")}`;
+                  case "test-passes":
+                    return `test ${assertion.path}`;
                 }
               })();
               const result = parseAssertion(raw);

@@ -40,6 +40,12 @@ export interface CliArgs {
    * sandbox enforcement.
    */
   readonly sandboxed: boolean;
+  /**
+   * When `true`, a structured patch dispatch-error or conversion-failed
+   * contract break hard-fails the phase (no commit, non-zero exit, named
+   * reason) instead of silently degrading to the text-loop fallback.
+   */
+  readonly strict: boolean;
 }
 
 const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --plan-ref <id> | --input "request text"] [--session <id>] [--max-retries <n>] [--profile <name>] [-v | --verbose] [--sandboxed]
@@ -71,6 +77,8 @@ Flags:
   -v, --verbose    Stream per-phase/step progress (start/finish/retry) to stderr as a plan-cycle run executes
   --sandboxed      Run pipeline steps inside a sandboxed environment (restricted nix develop shell
                    with network access disabled); individual steps opt in to sandbox enforcement
+  --strict         Structured patch contract breaks (dispatch-error, conversion-failed) hard-fail
+                   the phase instead of degrading to the text-loop fallback
   --plan-ref <id>  Resolve the plan body from cerebrum's plan:<id> scope instead of reading a file.
                    Requires CEREBRUM_BIN to be set. Mutually exclusive with --plan.
   --session <id>   Session id for the caller's own bookkeeping; this process does not manage cerebrum sessions.
@@ -142,6 +150,7 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
         doctor: true,
         sandboxed: false,
         parseOnly: false,
+        strict: false,
       },
     };
   }
@@ -152,13 +161,20 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
   }
 
   // Extract boolean flags up front, before any value-flag lookup runs
-  // against the remaining args. This prevents "-v"/"--verbose"/"--sandboxed"
-  // from ever being swallowed as another flag's value (e.g. `--input -v`).
+  // against the remaining args. This prevents "-v"/"--verbose"/"--sandboxed"/
+  // "--strict"/"--parse-only" from ever being swallowed as another flag's
+  // value (e.g. `--input -v`).
   const verbose = args.includes("-v") || args.includes("--verbose");
   const sandboxed = args.includes("--sandboxed");
   const parseOnly = args.includes("--parse-only");
+  const strict = args.includes("--strict");
   const rest = args.filter(
-    (arg) => arg !== "-v" && arg !== "--verbose" && arg !== "--sandboxed" && arg !== "--parse-only",
+    (arg) =>
+      arg !== "-v" &&
+      arg !== "--verbose" &&
+      arg !== "--sandboxed" &&
+      arg !== "--parse-only" &&
+      arg !== "--strict",
   );
 
   const inputResult = readFlag(rest, "--input");
@@ -214,6 +230,7 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
       doctor: false,
       sandboxed,
       parseOnly,
+      strict,
     },
   };
 }

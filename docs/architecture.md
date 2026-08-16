@@ -705,6 +705,28 @@ The doctor's entrypoint list is **fixed and hardcoded** in `ai-system/cli/doctor
 
 The sandboxed doctor (`bun run pipeline doctor --sandboxed`) exercises the same fixed list in a restricted `nix develop` shell with network access disabled, verifying the offline-import invariant holds under real sandbox constraints. Exit code 0 when all imports succeed; exit code 3 when any import fails.
 
+## Phase Hard-Fail Seam
+
+`phaseHardFail` (in `ai-system/core/pipeline/phase-hard-fail.ts`) is the single factory for non-resumable phase failures. It returns `{ ok: false; error }` with `error.name === "PhaseHardFailError"` so callers can identify the class without a fragile `instanceof` check across module boundaries.
+
+### `PhaseFailureReason` vocabulary
+
+| Token | Meaning |
+|-------|---------|
+| `noNetChange` | Phase produced no net working-tree change; refusing to commit an empty phase (possible false-green partial apply) |
+| `structuralAssertion` | A post-verification `Assert:` directive was violated; no commit is made |
+| `dispatchError` | Structured-patch dispatch failed (e.g. truncated tool call); only a hard-fail under `--strict` |
+| `conversionFailed` | `patchOpsToEdits` rejected the structured ops (e.g. empty search anchor); only a hard-fail under `--strict` |
+
+### `--strict` escalation
+
+By default, a structured `dispatch-error` or `conversion-failed` result causes the phase to silently degrade to the aider-text fallback loop — the structured attempt failed but the phase can still succeed via the text path. Under `--strict` (`loadConfig` third argument, forwarded as `config.strict`), these two decline classes are escalated to a `PhaseHardFailError` via `phaseHardFail`, making them non-resumable and mapping to exit code 2 (the same as any other phase exhausting its repair budget). Use `--strict` in CI contexts where silent structured-path degradation must be surfaced as a hard failure.
+
+### Bounded-payload parse diagnostics
+
+Dispatcher parse failures (both `AnthropicDispatcher.dispatchPatch` and `CopilotDispatcher.dispatchPatch`) embed the raw tool-call payload in the returned error message via `boundedPayload` (in `ai-system/core/orchestrator/patch-parse-diagnostic.ts`), capped at 2 000 characters with a trailing `…`. This surfaces malformed tool-call content in `--verbose` progress feeds and logs without flooding them. The underlying parse error is preserved as `error.cause` for downstream consumers.
+
+
 ## Structured Patch Output Contract
 
 The `plan-cycle`/`dev-cycle` implement step traditionally asks the model for
