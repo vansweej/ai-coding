@@ -41,6 +41,7 @@ export type CommitPhase = (
   workspace: string,
   commitMessage: string,
   phaseNumber: number,
+  runId?: string,
 ) => Promise<Result<string>>;
 
 /** Runtime dependencies for executing a phase. */
@@ -49,6 +50,12 @@ export interface RunPhaseOptions {
   readonly workspace: string;
   /** Optional path to the active plan file; excluded from `git clean` during working-tree restores. */
   readonly planPath?: string;
+  /**
+   * Correlation id minted once per plan-cycle run. Stamped as a `Run-Id:`
+   * git commit trailer on every phase commit and carried in ledger lines.
+   * Optional for backward-compat with tests that construct options directly.
+   */
+  readonly runId?: string;
   /**
    * Set of tool names detected as available in the workspace's devShell
    * (see `devShellPalette` in `@ai-coding/pipeline`, computed once per run
@@ -70,16 +77,20 @@ export interface RunPhaseOptions {
   readonly onDegrade?: (phaseNumber: number, detail: string) => void;
 }
 
-/** Commit all phase changes with the plan-authored commit message and Phase trailer. */
+/** Commit all phase changes with the plan-authored commit message and Phase / Run-Id trailers. */
 export async function commitPhaseChanges(
   workspace: string,
   commitMessage: string,
   phaseNumber?: number,
+  runId?: string,
 ): Promise<Result<string>> {
   try {
-    // Add Phase: N trailer to the commit message for resume tracking
+    // Build trailers: Phase: N (resume tracking) + Run-Id: <id> (correlation)
+    const trailers: string[] = [];
+    if (phaseNumber !== undefined) trailers.push(`Phase: ${phaseNumber}`);
+    if (runId !== undefined) trailers.push(`Run-Id: ${runId}`);
     const messageWithTrailer =
-      phaseNumber !== undefined ? `${commitMessage}\n\nPhase: ${phaseNumber}` : commitMessage;
+      trailers.length > 0 ? `${commitMessage}\n\n${trailers.join("\n")}` : commitMessage;
 
     await $`git add -A`.cwd(workspace).quiet();
     await $`git commit -m ${messageWithTrailer}`.cwd(workspace).quiet();
@@ -364,7 +375,12 @@ export async function runPhase(
   }
 
   const commit = options.commitPhase ?? commitPhaseChanges;
-  const commitResult = await commit(options.workspace, phase.commitMessage, phase.number);
+  const commitResult = await commit(
+    options.workspace,
+    phase.commitMessage,
+    phase.number,
+    options.runId,
+  );
   if (!commitResult.ok) return commitResult;
 
   // Store phase completion in memory if memory client is available
