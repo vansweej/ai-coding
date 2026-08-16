@@ -108,7 +108,7 @@ describe("language configs", () => {
     const steps = config.toolchainSteps("/tmp/ws");
     const coverageStep = steps.find((step: { name: string }) => step.name === "coverage");
     expect(coverageStep).toBeDefined();
-    // The coverage step should be fatal (warnOnly: false) for the default 90% gate
+    // The coverage step should be fatal for the default 90% gate
     expect(steps.map((step: { name: string }) => step.name)).toContain("coverage");
     expect(steps.map((step: { name: string }) => step.name)).toContain("tarpaulin");
   });
@@ -130,7 +130,7 @@ describe("language configs", () => {
       "tarpaulin",
       "coverage",
     ]);
-    // RUST_CONFIG should still use warning-only coverage (warnOnly: true)
+    // RUST_CONFIG should also use a fatal coverage gate
     expect(RUST_CONFIG.implementSystem).toContain("fenced code blocks");
     expect(RUST_CONFIG.implementSystem).not.toContain("aider-style");
   });

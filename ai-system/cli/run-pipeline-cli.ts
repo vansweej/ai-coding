@@ -252,8 +252,16 @@ async function main(): Promise<void> {
       console.log(`[ok] Phase ${phase.phaseNumber}: ${phase.commitMessage}`);
     }
 
-    const degradations: string[] = [];
+    const degradations = outcome.value.degradations;
     if (degradations.length > 0) {
+      // Emit a degraded-exit ledger line before printing and exiting
+      ledger?.write({
+        schema_version: 1,
+        runId,
+        ts: new Date().toISOString(),
+        kind: "degraded-exit",
+        payload: { degradations: [...degradations] },
+      });
       for (const warn of degradations) {
         console.warn(`WARN: ${warn}`);
       }

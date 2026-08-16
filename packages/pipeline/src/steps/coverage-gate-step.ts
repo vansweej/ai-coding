@@ -19,7 +19,6 @@ const DEFAULT_COVERAGE_PATTERN = /(\d+\.?\d*)%\s*coverage/i;
  * @param name      - Unique step name, used as the key in PipelineContext.results.
  * @param readFrom  - Name of the step whose output contains the coverage report.
  * @param threshold - Minimum acceptable coverage percentage (0-100).
- * @param warnOnly  - When true, log below-threshold coverage as a warning instead of failing.
  * @param pattern   - Regex with a capture group for the percentage (default: tarpaulin format).
  */
 export function createCoverageGateStep<TEvent = unknown>(
@@ -27,7 +26,6 @@ export function createCoverageGateStep<TEvent = unknown>(
   readFrom: string,
   threshold: number,
   pattern: RegExp = DEFAULT_COVERAGE_PATTERN,
-  warnOnly = false,
 ): PipelineStep<TEvent> {
   return {
     name,
@@ -49,22 +47,11 @@ export function createCoverageGateStep<TEvent = unknown>(
       const percentage = Number.parseFloat(match[1]);
 
       if (percentage < threshold) {
-        const msg = `Coverage: ${percentage.toFixed(2)}% is below threshold ${threshold}%`;
-        if (warnOnly) {
-          console.warn(`[warn] Coverage gate "${name}": ${msg}`);
-          const durationMs = Date.now() - startedAt;
-          return {
-            ok: true,
-            value: {
-              stepName: name,
-              output: `WARN: ${msg}`,
-              durationMs,
-            },
-          };
-        }
         return {
           ok: false,
-          error: new Error(`Coverage gate "${name}": ${msg}`),
+          error: new Error(
+            `Coverage gate "${name}": Coverage: ${percentage.toFixed(2)}% is below threshold ${threshold}%`,
+          ),
         };
       }
 
