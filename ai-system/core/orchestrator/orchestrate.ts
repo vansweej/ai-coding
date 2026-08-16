@@ -8,6 +8,8 @@ import type {
 } from "@ai-coding/shared";
 
 import { classifyError } from "../../../src/errors/classify-error";
+import { makeDiagnosis, diagnosisToLedgerLine } from "../../../src/diagnosis/diagnosis-record";
+import { createLedgerWriter } from "../../../src/ledger/ledger-writer";
 import type { ModelProfile } from "../../config/model-profiles";
 import { resolveModelForRole } from "../../config/model-profiles";
 import { resolveMode } from "../mode-router/resolve-mode";
@@ -131,15 +133,34 @@ export async function orchestrate(
     context: event.context,
   };
   let result = await dispatcher.dispatch(dispatchRequest);
+  let transientAttempts = 1;
 
   if (!result.ok) {
     const classification = classifyError(result.error);
     if (classification.kind === "transient") {
+      transientAttempts++;
       result = await dispatcher.dispatch(dispatchRequest);
     }
   }
 
   if (!result.ok) {
+    const classification = classifyError(result.error);
+    if (classification.kind === "transient") {
+      const record = makeDiagnosis(
+        "unknown-run-id",
+        "transient-exhaustion",
+        "Transient-eligible retry budget exhausted",
+        `Dispatch failed after ${transientAttempts} attempt(s) for model "${model}": ${result.error.message}`,
+      );
+      try {
+        const ledgerResult = createLedgerWriter("unknown-run-id");
+        if (ledgerResult.ok) {
+          ledgerResult.value.write(diagnosisToLedgerLine(record));
+        }
+      } catch {
+        // Never let diagnostic emission failure mask the original error.
+      }
+    }
     return result;
   }
 
