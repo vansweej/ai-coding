@@ -46,9 +46,16 @@ export interface CliArgs {
    * reason) instead of silently degrading to the text-loop fallback.
    */
   readonly strict: boolean;
+  /**
+   * When `true`, validates the plan file and runs read-only pre-flight
+   * checks (branch guard, config/env validation, devShell palette probe,
+   * resume-state detection) then exits WITHOUT dispatching to any model or
+   * mutating the working tree. A superset of `--parse-only`.
+   */
+  readonly dryRun: boolean;
 }
 
-const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --plan-ref <id> | --input "request text"] [--session <id>] [--max-retries <n>] [--profile <name>] [-v | --verbose] [--sandboxed]
+const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --plan-ref <id> | --input "request text"] [--session <id>] [--max-retries <n>] [--profile <name>] [-v | --verbose] [--sandboxed] [--dry-run]
        bun run pipeline doctor
 
 Pipeline names:
@@ -79,6 +86,10 @@ Flags:
                    with network access disabled); individual steps opt in to sandbox enforcement
   --strict         Structured patch contract breaks (dispatch-error, conversion-failed) hard-fail
                    the phase instead of degrading to the text-loop fallback
+  --dry-run        Validate the plan file and run read-only pre-flight checks (branch guard,
+                   config/env validation, devShell palette probe, resume-state detection), then
+                   exit without dispatching to any model or mutating the working tree. A superset
+                   of --parse-only. Zero tokens spent.
   --plan-ref <id>  Resolve the plan body from cerebrum's plan:<id> scope instead of reading a file.
                    Requires CEREBRUM_BIN to be set. Mutually exclusive with --plan.
   --session <id>   Session id for the caller's own bookkeeping; this process does not manage cerebrum sessions.
@@ -151,6 +162,7 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
         sandboxed: false,
         parseOnly: false,
         strict: false,
+        dryRun: false,
       },
     };
   }
@@ -168,13 +180,15 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
   const sandboxed = args.includes("--sandboxed");
   const parseOnly = args.includes("--parse-only");
   const strict = args.includes("--strict");
+  const dryRun = args.includes("--dry-run");
   const rest = args.filter(
     (arg) =>
       arg !== "-v" &&
       arg !== "--verbose" &&
       arg !== "--sandboxed" &&
       arg !== "--parse-only" &&
-      arg !== "--strict",
+      arg !== "--strict" &&
+      arg !== "--dry-run",
   );
 
   const inputResult = readFlag(rest, "--input");
@@ -231,6 +245,7 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
       sandboxed,
       parseOnly,
       strict,
+      dryRun,
     },
   };
 }

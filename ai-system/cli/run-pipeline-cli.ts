@@ -6,10 +6,13 @@ import { $ } from "bun";
 
 import { createLedgerWriter, progressEventToLedgerLine } from "../../src/ledger/ledger-writer";
 import { mintRunId } from "../../src/run/run-id";
+import { devShellPalette } from "@ai-coding/pipeline";
 import { resolvePlanRef } from "../core/orchestrator/cerebrum-plan-source";
+import { CANDIDATE_TOOLS } from "../core/pipeline/definitions/language-configs";
 import { DevShellPaletteError, runFeature } from "../core/pipeline/feature-runner";
 import { BaselineCheckError } from "../core/pipeline/phase-runner";
 import { parsePlanFile } from "../core/pipeline/plan-parser";
+import { detectResumeState } from "../core/pipeline/resume";
 import type { OnProgress } from "../core/pipeline/progress";
 import { buildTheme, formatProgressEvent } from "../core/pipeline/progress";
 import { loadConfig } from "./load-config";
@@ -136,6 +139,7 @@ async function main(): Promise<void> {
     verbose,
     parseOnly,
     strict,
+    dryRun,
   } = argsResult.value;
 
   if (argsResult.value.doctor) {
@@ -158,12 +162,14 @@ async function main(): Promise<void> {
   }
 
   // Enforce isolated run branch for plan-cycle pipelines
+  let currentBranchForDryRun: string | undefined;
   if (isPlanCycle(pipelineName)) {
     const currentBranch = await getCurrentBranch(workspace);
     if (currentBranch === undefined) {
       console.error("Error: unable to determine current git branch");
       process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
     }
+    currentBranchForDryRun = currentBranch;
     if (isProtectedBranch(currentBranch)) {
       console.error(
         `Error: plan-cycle must run on a dedicated feature branch, not "${currentBranch}"`,
@@ -202,6 +208,40 @@ async function main(): Promise<void> {
       const { output, exitCode } = reportParseOnly(parseResult);
       console.log(output);
       process.exit(exitCode);
+    }
+
+    if (dryRun) {
+      // --dry-run is a superset of --parse-only: validate the plan file,
+      // then run ONLY read-only pre-flight blocks. Never dispatch to any
+      // model and never mutate the working tree (no stash, no reset).
+      const parseResult = parsePlanFile(planContent);
+      const { output, exitCode } = reportParseOnly(parseResult);
+      console.log(output);
+      if (exitCode !== 0) {
+        process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+      }
+
+      console.log(`Current branch:  ${currentBranchForDryRun ?? "(unknown)"}`);
+      console.log(`loadConfig:      ok (profile "${configResult.value.profile?.name ?? profileName}")`);
+
+      const paletteResult = await devShellPalette(workspace, CANDIDATE_TOOLS);
+      if (!paletteResult.ok) {
+        console.error(
+          `Error: unable to detect the workspace's devShell toolchain palette: ${paletteResult.error.message}`,
+        );
+        process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+      }
+      console.log(`devShell palette: ${Array.from(paletteResult.value).join(", ") || "(none)"}`);
+
+      const resumeState = await detectResumeState(workspace);
+      console.log(
+        resumeState.needsResume
+          ? `Resume:          would resume after phase ${resumeState.lastPhaseNumber}`
+          : "Resume:          fresh run (no resume detected)",
+      );
+
+      console.log("Dry run complete. No model dispatch and no working-tree mutation occurred.");
+      process.exit(EXIT_CODES.SUCCESS);
     }
 
     const collectedEvents: import("../core/pipeline/progress").ProgressEvent[] = [];
