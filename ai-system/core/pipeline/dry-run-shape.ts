@@ -64,10 +64,7 @@ function isVacuousFloorOnly(
  * @param plan    - The already-parsed plan file.
  * @param palette - Set of tool names detected as available in the devShell.
  */
-export function predictRunShape(
-  plan: PlanFile,
-  palette: ReadonlySet<string>,
-): PredictedRunShape {
+export function predictRunShape(plan: PlanFile, palette: ReadonlySet<string>): PredictedRunShape {
   const phases: PredictedPhaseShape[] = plan.phases.map((phase) => ({
     phase: phase.number,
     title: phase.title,

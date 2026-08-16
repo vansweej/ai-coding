@@ -116,7 +116,8 @@ describe("--dry-run mutates nothing in the working tree", () => {
 describe("--dry-run is a superset of --parse-only (malformed plan yields non-zero)", () => {
   it("a malformed plan file (missing Feature heading) fails parsePlanFile validation", async () => {
     const { parsePlanFile } = await import("../../ai-system/core/pipeline/plan-parser");
-    const malformed = "## Phase 1: no feature heading\n\nCommit message: feat: x\n\n### Step 1: Do\n\nbody\n";
+    const malformed =
+      "## Phase 1: no feature heading\n\nCommit message: feat: x\n\n### Step 1: Do\n\nbody\n";
     const parseResult = parsePlanFile(malformed);
     expect(parseResult.ok).toBe(false);
     if (!parseResult.ok) {
