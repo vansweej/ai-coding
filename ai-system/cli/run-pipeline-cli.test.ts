@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
+import { DevShellPaletteError } from "../core/pipeline/feature-runner";
+import { BaselineCheckError } from "../core/pipeline/phase-runner";
 import { getUsage, parseArgs } from "./parse-args";
+import { reportFeatureFailure } from "./run-pipeline-cli";
 import { selectPipeline } from "./select-pipeline";
 
 // ─── parseArgs ────────────────────────────────────────────────────────────────
@@ -61,6 +64,46 @@ describe("parseArgs", () => {
     expect(usage.length).toBeGreaterThan(0);
     expect(usage).toContain("scaffold-rust");
     expect(usage).toContain("scaffold-cpp");
+  });
+});
+
+// ─── reportFeatureFailure ─────────────────────────────────────────────────────
+
+describe("reportFeatureFailure", () => {
+  const errorCases: ReadonlyArray<{ readonly label: string; readonly error: Error }> = [
+    { label: "plain Error", error: new Error("plain failure") },
+    { label: "DevShellPaletteError", error: new DevShellPaletteError("devshell broken") },
+    { label: "BaselineCheckError", error: new BaselineCheckError("baseline broken") },
+    { label: "parse error", error: new Error("Failed to parse patches: bad input") },
+  ];
+
+  for (const { label, error } of errorCases) {
+    it(`produces a non-null/non-empty message for ${label} with verbose=true`, () => {
+      const { message } = reportFeatureFailure(error, true);
+      expect(message).not.toBeNull();
+      expect(message.length).toBeGreaterThan(0);
+    });
+
+    it(`produces a non-null/non-empty message for ${label} with verbose=false`, () => {
+      const { message } = reportFeatureFailure(error, false);
+      expect(message).not.toBeNull();
+      expect(message.length).toBeGreaterThan(0);
+    });
+  }
+
+  it("yields exitCode 3 (ENVIRONMENT_ERROR) for a DevShellPaletteError", () => {
+    const { exitCode } = reportFeatureFailure(new DevShellPaletteError("bad devshell"), false);
+    expect(exitCode).toBe(3);
+  });
+
+  it("yields exitCode 3 (ENVIRONMENT_ERROR) for a BaselineCheckError", () => {
+    const { exitCode } = reportFeatureFailure(new BaselineCheckError("bad baseline"), false);
+    expect(exitCode).toBe(3);
+  });
+
+  it("yields exitCode 2 (RESUMABLE_FAILURE) for a plain/parse error", () => {
+    const { exitCode } = reportFeatureFailure(new Error("some plain failure"), false);
+    expect(exitCode).toBe(2);
   });
 });
 

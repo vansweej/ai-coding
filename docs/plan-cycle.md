@@ -770,6 +770,60 @@ See [Example: Polyglot Plan File](#example-polyglot-plan-file) above.
 
 ---
 
+## assertGrammarVersion, Legacy Golden Fixtures, and --parse-only Mode
+
+### assertGrammarVersion
+
+`assertGrammarVersion` is a numeric constant exported from
+`ai-system/core/pipeline/phase-assertions.ts` that represents the current
+assert-grammar version. It increments monotonically with each grammar
+extension and is used by the forward-compat policy test
+(`assert-grammar-version.test.ts`) to prove that anything version N accepts,
+version N+1 also accepts.
+
+```typescript
+import { assertGrammarVersion } from "./phase-assertions";
+// assertGrammarVersion === 4  (current, after the `test` verb was added)
+```
+
+Any plan author can rely on this contract: a plan file that parses and
+asserts correctly today will continue to do so after a grammar version bump.
+
+### Legacy Golden Fixtures
+
+The `ai-system/core/pipeline/fixtures/` directory contains legacy golden
+fixture plan files used as regression anchors for the assert grammar:
+
+| File | Grammar verbs covered |
+|------|-----------------------|
+| `legacy-contains-v1.md` | `contains`, `not-contains`, `not-exists` |
+| `legacy-matches-v2.md` | `exists`, `matches`, `toml-keys` |
+
+These fixtures are loaded by `legacy-fixtures.test.ts` and
+`assert-grammar-version.test.ts` on every CI run. A new grammar version
+must not break any fixture — the test suite enforces this automatically.
+
+### --parse-only Mode
+
+The `--parse-only` flag parses a plan file and prints a structured summary,
+then exits without running any pipeline step:
+
+```bash
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --parse-only
+```
+
+Exit codes:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Plan parsed successfully |
+| `1` | Parse error (malformed plan file) |
+
+This is useful for validating plan syntax — including all `Assert:`
+directives — before committing to a full unattended run. The underlying
+implementation lives in `ai-system/cli/parse-only.ts` (`reportParseOnly`),
+which is a pure formatting helper with no I/O side effects.
+
 ## Structural Assertion Grammar (version 4)
 
 The `Assert:` grammar version is **4**. Seven verbs are supported:
@@ -805,6 +859,7 @@ Assert: test src/parser.test.ts
 
 Write comprehensive unit tests for the parser module in src/parser.test.ts.
 ```
+
 
 ## See Also
 

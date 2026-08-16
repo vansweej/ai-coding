@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-import { checkAssertions } from "./phase-assertions";
+import { checkAssertions, parseAssertion } from "./phase-assertions";
 
 /**
  * Tests for the `test-passes` assertion verb.
@@ -52,6 +52,32 @@ describe("checkAssertions (test-passes verb)", () => {
     const missingPath = join(tempDir, "does-not-exist.test.ts");
 
     const result = await checkAssertions(tempDir, [{ kind: "test-passes", path: missingPath }]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("parseAssertion accepts the documented `test <path>` string grammar (not `test-passes`)", () => {
+    // Regression test: the surface grammar documented in README.md, AGENTS.md,
+    // docs/plan-cycle.md, and docs/architecture.md is `Assert: test <path>`.
+    // A real plan file author writes the verb `test`, never `test-passes`
+    // (that string is only the internal PhaseAssertion.kind discriminant).
+    // Every other test in this file constructs the PhaseAssertion object
+    // directly and never exercises the string parser, so this is the only
+    // test proving the documented grammar actually parses end-to-end.
+    const result = parseAssertion("test src/parser.test.ts");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual({ kind: "test-passes", path: "src/parser.test.ts" });
+    }
+  });
+
+  it("parseAssertion rejects an empty path for the `test` verb", () => {
+    const result = parseAssertion("test ");
+    expect(result.ok).toBe(false);
+  });
+
+  it("parseAssertion does NOT recognize the bare kind name `test-passes` as a verb", () => {
+    // Guards against ever silently reverting to the wrong surface keyword.
+    const result = parseAssertion("test-passes src/parser.test.ts");
     expect(result.ok).toBe(false);
   });
 });

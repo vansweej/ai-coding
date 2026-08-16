@@ -7,10 +7,12 @@ import { $ } from "bun";
 import { resolvePlanRef } from "../core/orchestrator/cerebrum-plan-source";
 import { DevShellPaletteError, runFeature } from "../core/pipeline/feature-runner";
 import { BaselineCheckError } from "../core/pipeline/phase-runner";
+import { parsePlanFile } from "../core/pipeline/plan-parser";
 import type { OnProgress } from "../core/pipeline/progress";
 import { buildTheme, formatProgressEvent } from "../core/pipeline/progress";
 import { loadConfig } from "./load-config";
 import { parseArgs } from "./parse-args";
+import { reportParseOnly } from "./parse-only";
 import { selectPipeline } from "./select-pipeline";
 
 const PREVIEW_MAX_CHARS = 200;
@@ -90,6 +92,30 @@ const EXIT_CODES = {
   DEGRADED: 4,
 } as const;
 
+/**
+ * Build a diagnostic message and exit code for a failed `runFeature` result.
+ *
+ * INVARIANT: `message` is always non-null so pre-progress failures cannot be
+ * swallowed. The `verbose` flag may enrich the message with additional
+ * detail (e.g. stack trace) but MUST NOT gate whether a message is produced.
+ *
+ * @param error   - The error from a failed `runFeature` result.
+ * @param verbose - Whether to enrich the message with additional detail.
+ */
+export function reportFeatureFailure(
+  error: Error,
+  verbose: boolean,
+): { message: string; exitCode: number } {
+  const isEnvironmentError =
+    error instanceof DevShellPaletteError || error instanceof BaselineCheckError;
+  const exitCode = isEnvironmentError ? EXIT_CODES.ENVIRONMENT_ERROR : EXIT_CODES.RESUMABLE_FAILURE;
+
+  const base = `Feature failed: ${error.message}`;
+  const message = verbose && error.stack ? `${base}\n${error.stack}` : base;
+
+  return { message, exitCode };
+}
+
 /* v8 ignore start */
 async function main(): Promise<void> {
   const argsResult = parseArgs(process.argv.slice(2));
@@ -106,8 +132,22 @@ async function main(): Promise<void> {
     maxRetries,
     profileName,
     verbose,
+    parseOnly,
     strict,
   } = argsResult.value;
+
+  if (argsResult.value.doctor) {
+    const { runDoctorSandboxed } = await import("./doctor");
+    const doctorResult = await runDoctorSandboxed();
+    if (!doctorResult.ok) {
+      for (const failure of doctorResult.failures) {
+        console.error(`[fail] ${failure.specifier}: ${failure.message}`);
+      }
+      process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+    }
+    console.log("doctor: all checks passed");
+    process.exit(EXIT_CODES.SUCCESS);
+  }
 
   const configResult = await loadConfig(profileName, undefined, strict);
   if (!configResult.ok) {
@@ -155,6 +195,13 @@ async function main(): Promise<void> {
       planContent = buildSingleStepPlan(input);
     }
 
+    if (parseOnly) {
+      const parseResult = parsePlanFile(planContent);
+      const { output, exitCode } = reportParseOnly(parseResult);
+      console.log(output);
+      process.exit(exitCode);
+    }
+
     let onProgress: OnProgress | undefined;
     if (verbose) {
       const useColor =
@@ -172,22 +219,10 @@ async function main(): Promise<void> {
     });
 
     if (!outcome.ok) {
-      // When verbose, the styled phase-fail event already reported the
-      // failure reason; avoid printing it twice.
-      if (!verbose) {
-        console.error(`Feature failed: ${outcome.error.message}`);
-      }
-      // A BaselineCheckError means the untouched tree was already broken before
-      // any implementation attempt, and a DevShellPaletteError means the
-      // workspace's devShell toolchain palette could not even be detected —
-      // both are environment errors, not resumable phase failures.
-      if (
-        outcome.error instanceof BaselineCheckError ||
-        outcome.error instanceof DevShellPaletteError
-      ) {
-        process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
-      }
-      process.exit(EXIT_CODES.RESUMABLE_FAILURE);
+      const { message, exitCode } = reportFeatureFailure(outcome.error, verbose);
+      console.error(message);
+      process.exit(exitCode);
+      return;
     }
 
     console.log(`Running feature: ${outcome.value.feature}`);
@@ -237,9 +272,11 @@ async function main(): Promise<void> {
   process.exit(EXIT_CODES.SUCCESS);
 }
 
-main().catch((err: unknown) => {
-  const message = err instanceof Error ? err.message : String(err);
-  console.error(`Unexpected error: ${message}`);
-  process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
-});
+if (import.meta.main) {
+  main().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Unexpected error: ${message}`);
+    process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+  });
+}
 /* v8 ignore stop */

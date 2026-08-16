@@ -93,6 +93,12 @@ function parseTomlSource(source: string): Result<Record<string, unknown>> {
 }
 
 /**
+ * The current assert-grammar version. Used for forward-compat policy checks
+ * to detect plan files authored against a future grammar version.
+ */
+export const assertGrammarVersion = 4;
+
+/**
  * Parses the text following an `Assert:` directive into a `PhaseAssertion`.
  *
  * Supported grammars:
@@ -195,12 +201,12 @@ export function parseAssertion(spec: string): Result<PhaseAssertion> {
     return { ok: true, value: { kind: "matches", path, pattern } };
   }
 
-  if (verb === "test-passes") {
+  if (verb === "test") {
     const path = rest.trim();
     if (path === "") {
       return {
         ok: false,
-        error: new Error(`invalid "test-passes" assertion (empty path): "${spec}"`),
+        error: new Error(`invalid "test" assertion (empty path): "${spec}"`),
       };
     }
     return { ok: true, value: { kind: "test-passes", path } };
@@ -273,8 +279,6 @@ export function parseAssertion(spec: string): Result<PhaseAssertion> {
  * for a file that cannot be read). `matches` also fails on an invalid regex
  * or on a non-match, never throwing.
  */
-export const assertGrammarVersion = 4;
-
 export async function checkAssertions(
   workspace: string,
   assertions: readonly PhaseAssertion[],
