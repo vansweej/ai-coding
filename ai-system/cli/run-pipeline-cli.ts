@@ -4,6 +4,7 @@ import { runPipeline } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 import { $ } from "bun";
 
+import { mintRunId } from "../../src/run/run-id";
 import { resolvePlanRef } from "../core/orchestrator/cerebrum-plan-source";
 import { DevShellPaletteError, runFeature } from "../core/pipeline/feature-runner";
 import { BaselineCheckError } from "../core/pipeline/phase-runner";
@@ -210,10 +211,13 @@ async function main(): Promise<void> {
       onProgress = (event) => console.error(formatProgressEvent(event, theme));
     }
 
+    const runId = mintRunId();
+
     const outcome = await runFeature(planContent, {
       config: configResult.value,
       workspace,
       planPath,
+      runId,
       retryConfig: { maxLocalRetries: maxRetries },
       onProgress,
     });
