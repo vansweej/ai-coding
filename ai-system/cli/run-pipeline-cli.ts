@@ -11,6 +11,7 @@ import { resolvePlanRef } from "../core/orchestrator/cerebrum-plan-source";
 import { CANDIDATE_TOOLS } from "../core/pipeline/definitions/language-configs";
 import { DevShellPaletteError, runFeature } from "../core/pipeline/feature-runner";
 import { BaselineCheckError } from "../core/pipeline/phase-runner";
+import { formatPredictedRunShape, predictRunShape, runShapeToLedgerPayload } from "../core/pipeline/dry-run-shape";
 import { parsePlanFile } from "../core/pipeline/plan-parser";
 import { detectResumeState } from "../core/pipeline/resume";
 import type { OnProgress } from "../core/pipeline/progress";
@@ -239,6 +240,21 @@ async function main(): Promise<void> {
           ? `Resume:          would resume after phase ${resumeState.lastPhaseNumber}`
           : "Resume:          fresh run (no resume detected)",
       );
+
+      const predictedShape = predictRunShape(parseResult.value, paletteResult.value);
+      console.log(formatPredictedRunShape(predictedShape));
+
+      const shapeRunId = mintRunId();
+      const shapeLedgerResult = createLedgerWriter(shapeRunId);
+      if (shapeLedgerResult.ok) {
+        shapeLedgerResult.value.write({
+          schema_version: 1,
+          runId: shapeRunId,
+          ts: new Date().toISOString(),
+          kind: "run-shape",
+          payload: runShapeToLedgerPayload(predictedShape),
+        });
+      }
 
       console.log("Dry run complete. No model dispatch and no working-tree mutation occurred.");
       process.exit(EXIT_CODES.SUCCESS);
