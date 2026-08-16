@@ -157,13 +157,7 @@ export const RUST_CONFIG: DevCycleLanguageConfig = {
       cwd: workspace,
       failOnNonZero: false,
     }),
-    createCoverageGateStep<AIRequestEvent>(
-      "coverage",
-      "tarpaulin",
-      DEFAULT_COVERAGE_THRESHOLD,
-      undefined,
-      true,
-    ),
+    createCoverageGateStep<AIRequestEvent>("coverage", "tarpaulin", DEFAULT_COVERAGE_THRESHOLD),
   ],
 };
 
@@ -171,7 +165,7 @@ export const RUST_CONFIG: DevCycleLanguageConfig = {
  * Rust plan-cycle configuration with fatal coverage gate and autofix fmt.
  *
  * Differs from RUST_CONFIG in two ways:
- *   1. Coverage gate is fatal (warnOnly: false) instead of warning-only
+ *   1. Coverage gate is always fatal (hard-fail on shortfall)
  *   2. `cargo fmt --check` becomes `cargo fmt` (autofix) instead of check-only
  *
  * This configuration is used by the `plan-cycle` pipeline (via the
@@ -238,7 +232,7 @@ export function createRustPlanConfig(
         }),
         // Coverage gate is fatal when gated (per-phase directives/auto-exempt
         // already resolved above).
-        createCoverageGateStep<AIRequestEvent>("coverage", "tarpaulin", percent, undefined, false),
+        createCoverageGateStep<AIRequestEvent>("coverage", "tarpaulin", percent),
       ];
     },
   };

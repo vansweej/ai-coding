@@ -7,6 +7,13 @@ import type { LedgerLine } from "./parse-ledger-line";
 
 export type Result<T, E = Error> = { ok: true; value: T } | { ok: false; error: E };
 
+/**
+ * Known ledger line kinds (extensible — unknown kinds are accepted by the parser).
+ * Callers use these string literals directly; this list is informational.
+ *
+ * phase-start | step | gate-output | degraded-exit | vacuous-pass | diagnosis | run-shape
+ */
+
 export interface LedgerWriter {
   /** Absolute path to the JSON-lines ledger file. */
   readonly path: string;
