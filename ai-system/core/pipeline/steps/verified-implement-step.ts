@@ -16,6 +16,7 @@ import {
   paletteLanguageHint,
   runUnionVerification,
 } from "../routing/route";
+import { classifyError } from "../../../../src/errors/classify-error";
 import { applyPatch } from "./apply-patch-step";
 import { parsePatch, stripEnclosingFence } from "./parse-patch";
 import { tryStructuredPhase } from "./structured-implement";
@@ -762,6 +763,16 @@ export function createVerifiedImplementStep(
             };
           }
           lastError = verificationResult.error;
+        } else if (classifyError(implementResult.error).kind === "logic") {
+          // Logic (deterministic) failures are not retry-eligible: fail fast
+          // rather than burning the local retry budget on an error that will
+          // reproduce identically.
+          return {
+            ok: false,
+            error: new Error(
+              `Verified implement step "${name}" failed fast on a non-retryable logic error: ${implementResult.error.message}`,
+            ),
+          };
         } else {
           // The model returned prose instead of patches, or a SEARCH anchor
           // did not match the current file contents. This is retryable, not
@@ -892,6 +903,14 @@ export function createVerifiedImplementStep(
             };
           }
           lastError = verificationResult.error;
+        } else if (classifyError(fixResult.error).kind === "logic") {
+          // Same fast-fail reasoning as the local retry loop above.
+          return {
+            ok: false,
+            error: new Error(
+              `Verified implement step "${name}" failed fast on a non-retryable logic error during escalation: ${fixResult.error.message}`,
+            ),
+          };
         } else {
           // Same reasoning as the local loop above: a parse/apply failure
           // during escalation is retryable, not fatal. Also, if a PRIOR

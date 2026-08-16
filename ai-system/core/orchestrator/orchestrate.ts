@@ -13,6 +13,7 @@ import { resolveMode } from "../mode-router/resolve-mode";
 import { actionToRole } from "../model-router/action-to-role";
 import { selectModel } from "../model-router/select-model";
 import type { CerebrumMemory } from "./cerebrum-memory";
+import { classifyError } from "../../../src/errors/classify-error";
 import { patchModeForModel } from "./patch-capability";
 
 /** Configuration for the orchestrator, mapping model names to dispatchers. */
@@ -129,7 +130,14 @@ export async function orchestrate(
     maxTokens: llmOptions?.maxTokens,
     context: event.context,
   };
-  const result = await dispatcher.dispatch(dispatchRequest);
+  let result = await dispatcher.dispatch(dispatchRequest);
+
+  if (!result.ok) {
+    const classification = classifyError(result.error);
+    if (classification.kind === "transient") {
+      result = await dispatcher.dispatch(dispatchRequest);
+    }
+  }
 
   if (!result.ok) {
     return result;
