@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import type { Result } from "@ai-coding/pipeline";
+import { createNixShellStep } from "@ai-coding/pipeline";
 import { parse as parseToml } from "smol-toml";
 
 /**
@@ -53,7 +54,8 @@ export type PhaseAssertion =
       readonly path: string;
       readonly table: string;
       readonly keys: readonly string[];
-    };
+    }
+  | { readonly kind: "test-passes"; readonly path: string };
 
 const SEPARATOR = " :: ";
 
@@ -193,6 +195,17 @@ export function parseAssertion(spec: string): Result<PhaseAssertion> {
     return { ok: true, value: { kind: "matches", path, pattern } };
   }
 
+  if (verb === "test-passes") {
+    const path = rest.trim();
+    if (path === "") {
+      return {
+        ok: false,
+        error: new Error(`invalid "test-passes" assertion (empty path): "${spec}"`),
+      };
+    }
+    return { ok: true, value: { kind: "test-passes", path } };
+  }
+
   if (verb === "toml-keys") {
     const firstSeparatorIndex = rest.indexOf(SEPARATOR);
     if (firstSeparatorIndex === -1) {
@@ -260,10 +273,12 @@ export function parseAssertion(spec: string): Result<PhaseAssertion> {
  * for a file that cannot be read). `matches` also fails on an invalid regex
  * or on a non-match, never throwing.
  */
-export function checkAssertions(
+export const assertGrammarVersion = 4;
+
+export async function checkAssertions(
   workspace: string,
   assertions: readonly PhaseAssertion[],
-): Result<void> {
+): Promise<Result<void>> {
   for (const assertion of assertions) {
     const resolvedPath = resolve(workspace, assertion.path);
 
@@ -362,6 +377,20 @@ export function checkAssertions(
             ok: false,
             error: new Error(
               `Structural assertion failed: file "${assertion.path}" must match /${assertion.pattern}/`,
+            ),
+          };
+        }
+        break;
+      }
+      case "test-passes": {
+        const resolvedPath = resolve(workspace, assertion.path);
+        const step = createNixShellStep<unknown>("assert-test", ["bun", "test", resolvedPath], { cwd: workspace, timeoutMs: 300000 });
+        const testResult = await step.execute({ event: undefined, results: new Map() });
+        if (!testResult.ok) {
+          return {
+            ok: false,
+            error: new Error(
+              `Structural assertion failed: test "${assertion.path}" did not pass: ${testResult.error.message}`,
             ),
           };
         }

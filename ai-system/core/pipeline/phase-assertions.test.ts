@@ -175,39 +175,39 @@ describe("checkAssertions", () => {
     rmSync(workspace, { recursive: true, force: true });
   });
 
-  it("exists passes for a written file", () => {
+  it("exists passes for a written file", async () => {
     writeFileSync(join(workspace, "a.txt"), "content");
-    const result = checkAssertions(workspace, [{ kind: "exists", path: "a.txt" }]);
+    const result = await checkAssertions(workspace, [{ kind: "exists", path: "a.txt" }]);
     expect(result.ok).toBe(true);
   });
 
-  it("exists fails for a missing file", () => {
-    const result = checkAssertions(workspace, [{ kind: "exists", path: "missing.txt" }]);
+  it("exists fails for a missing file", async () => {
+    const result = await checkAssertions(workspace, [{ kind: "exists", path: "missing.txt" }]);
     expect(result.ok).toBe(false);
   });
 
-  it("not-exists passes for a missing file", () => {
-    const result = checkAssertions(workspace, [{ kind: "not-exists", path: "missing.txt" }]);
+  it("not-exists passes for a missing file", async () => {
+    const result = await checkAssertions(workspace, [{ kind: "not-exists", path: "missing.txt" }]);
     expect(result.ok).toBe(true);
   });
 
-  it("not-exists fails for a present file", () => {
+  it("not-exists fails for a present file", async () => {
     writeFileSync(join(workspace, "a.txt"), "content");
-    const result = checkAssertions(workspace, [{ kind: "not-exists", path: "a.txt" }]);
+    const result = await checkAssertions(workspace, [{ kind: "not-exists", path: "a.txt" }]);
     expect(result.ok).toBe(false);
   });
 
-  it("contains passes when content includes the needle", () => {
+  it("contains passes when content includes the needle", async () => {
     writeFileSync(join(workspace, "a.txt"), "hello world");
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "contains", path: "a.txt", needle: "world" },
     ]);
     expect(result.ok).toBe(true);
   });
 
-  it("contains fails when content does not include the needle", () => {
+  it("contains fails when content does not include the needle", async () => {
     writeFileSync(join(workspace, "a.txt"), "hello world");
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "contains", path: "a.txt", needle: "goodbye" },
     ]);
     expect(result.ok).toBe(false);
@@ -216,41 +216,41 @@ describe("checkAssertions", () => {
     }
   });
 
-  it("contains fails on a missing file (read failure surfaced, no throw)", () => {
-    const result = checkAssertions(workspace, [
+  it("contains fails on a missing file (read failure surfaced, no throw)", async () => {
+    const result = await checkAssertions(workspace, [
       { kind: "contains", path: "missing.txt", needle: "x" },
     ]);
     expect(result.ok).toBe(false);
   });
 
-  it("not-contains passes when the needle is absent", () => {
+  it("not-contains passes when the needle is absent", async () => {
     writeFileSync(join(workspace, "a.txt"), "hello world");
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "not-contains", path: "a.txt", needle: "goodbye" },
     ]);
     expect(result.ok).toBe(true);
   });
 
-  it("not-contains fails when the file is missing (absence cannot be proven for an unreadable file)", () => {
-    const result = checkAssertions(workspace, [
+  it("not-contains fails when the file is missing (absence cannot be proven for an unreadable file)", async () => {
+    const result = await checkAssertions(workspace, [
       { kind: "not-contains", path: "missing.txt", needle: "x" },
     ]);
     expect(result.ok).toBe(false);
   });
 
-  it("not-contains fails when the needle is present", () => {
+  it("not-contains fails when the needle is present", async () => {
     writeFileSync(join(workspace, "a.txt"), "hello world");
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "not-contains", path: "a.txt", needle: "world" },
     ]);
     expect(result.ok).toBe(false);
   });
 
-  it("returns ok:true when every assertion passes", () => {
+  it("returns ok:true when every assertion passes", async () => {
     mkdirSync(join(workspace, "docs"), { recursive: true });
     writeFileSync(join(workspace, "a.txt"), "hello world");
     writeFileSync(join(workspace, "docs", "x.md"), "doc");
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "contains", path: "a.txt", needle: "hello" },
       { kind: "exists", path: "docs/x.md" },
       { kind: "not-exists", path: "docs/y.md" },
@@ -259,9 +259,9 @@ describe("checkAssertions", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("short-circuits and names the offending path on a first-violation in the middle", () => {
+  it("short-circuits and names the offending path on a first-violation in the middle", async () => {
     writeFileSync(join(workspace, "a.txt"), "hello world");
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "exists", path: "a.txt" },
       { kind: "contains", path: "a.txt", needle: "goodbye" },
       { kind: "exists", path: "never-checked.txt" },
@@ -272,49 +272,47 @@ describe("checkAssertions", () => {
     }
   });
 
-  it("matches passes when content matches the pattern", () => {
+  it("matches passes when content matches the pattern", async () => {
     writeFileSync(join(workspace, "a.txt"), "export const value = 1;");
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "matches", path: "a.txt", pattern: "^export const value" },
     ]);
     expect(result.ok).toBe(true);
   });
 
-  it("matches fails when content does not match the pattern", () => {
+  it("matches fails when content does not match the pattern", async () => {
     writeFileSync(join(workspace, "a.txt"), "const value = 1;");
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "matches", path: "a.txt", pattern: "^export" },
     ]);
     expect(result.ok).toBe(false);
   });
 
-  it("matches fails on a missing/unreadable file", () => {
-    const result = checkAssertions(workspace, [
+  it("matches fails on a missing/unreadable file", async () => {
+    const result = await checkAssertions(workspace, [
       { kind: "matches", path: "missing.txt", pattern: "^export" },
     ]);
     expect(result.ok).toBe(false);
   });
 
-  it("matches fails on an invalid regex without throwing", () => {
+  it("matches fails on an invalid regex without throwing", async () => {
     writeFileSync(join(workspace, "a.txt"), "content");
-    expect(() =>
-      checkAssertions(workspace, [{ kind: "matches", path: "a.txt", pattern: "(" }]),
-    ).not.toThrow();
-    const result = checkAssertions(workspace, [{ kind: "matches", path: "a.txt", pattern: "(" }]);
-    expect(result.ok).toBe(false);
+    const result = await expect(checkAssertions(workspace, [{ kind: "matches", path: "a.txt", pattern: "(" }])).resolves.toBeDefined();
+    const actual = await checkAssertions(workspace, [{ kind: "matches", path: "a.txt", pattern: "(" }]);
+    expect(actual.ok).toBe(false);
   });
 
-  it("toml-keys passes on an exact key-set match", () => {
+  it("toml-keys passes on an exact key-set match", async () => {
     writeFileSync(join(workspace, "Cargo.toml"), "[lints]\nworkspace = true\n");
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
     ]);
     expect(result.ok).toBe(true);
   });
 
-  it("toml-keys fails on a superset of keys, naming the extra key", () => {
+  it("toml-keys fails on a superset of keys, naming the extra key", async () => {
     writeFileSync(join(workspace, "Cargo.toml"), '[lints]\nworkspace = true\nextra = "oops"\n');
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
     ]);
     expect(result.ok).toBe(false);
@@ -323,9 +321,9 @@ describe("checkAssertions", () => {
     }
   });
 
-  it("toml-keys fails on a subset of keys", () => {
+  it("toml-keys fails on a subset of keys", async () => {
     writeFileSync(join(workspace, "Cargo.toml"), '[package]\nname = "x"\nversion = "1.0"\n');
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       {
         kind: "toml-keys",
         path: "Cargo.toml",
@@ -336,25 +334,25 @@ describe("checkAssertions", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("toml-keys fails when the table is missing", () => {
+  it("toml-keys fails when the table is missing", async () => {
     writeFileSync(join(workspace, "Cargo.toml"), '[package]\nname = "x"\n');
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
     ]);
     expect(result.ok).toBe(false);
   });
 
-  it("toml-keys passes for a nested dotted-table path", () => {
+  it("toml-keys passes for a nested dotted-table path", async () => {
     writeFileSync(join(workspace, "Cargo.toml"), "[lints.workspace]\nfoo = true\n");
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "toml-keys", path: "Cargo.toml", table: "lints.workspace", keys: ["foo"] },
     ]);
     expect(result.ok).toBe(true);
   });
 
-  it("toml-keys fails when a segment resolves to a primitive", () => {
+  it("toml-keys fails when a segment resolves to a primitive", async () => {
     writeFileSync(join(workspace, "Cargo.toml"), "[lints]\nworkspace = true\n");
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "toml-keys", path: "Cargo.toml", table: "lints.workspace", keys: ["foo"] },
     ]);
     expect(result.ok).toBe(false);
@@ -363,9 +361,9 @@ describe("checkAssertions", () => {
     }
   });
 
-  it("toml-keys fails when a segment resolves to an array", () => {
+  it("toml-keys fails when a segment resolves to an array", async () => {
     writeFileSync(join(workspace, "Cargo.toml"), '[[bin]]\nname = "x"\n');
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "toml-keys", path: "Cargo.toml", table: "bin", keys: ["name"] },
     ]);
     expect(result.ok).toBe(false);
@@ -374,9 +372,9 @@ describe("checkAssertions", () => {
     }
   });
 
-  it("toml-keys fails when a segment resolves to a datetime", () => {
+  it("toml-keys fails when a segment resolves to a datetime", async () => {
     writeFileSync(join(workspace, "Cargo.toml"), "key = 1979-05-27T07:32:00Z\n");
-    const result = checkAssertions(workspace, [
+    const result = await checkAssertions(workspace, [
       { kind: "toml-keys", path: "Cargo.toml", table: "key", keys: ["foo"] },
     ]);
     expect(result.ok).toBe(false);
@@ -385,26 +383,22 @@ describe("checkAssertions", () => {
     }
   });
 
-  it("toml-keys fails on an unreadable/missing file, without throwing", () => {
-    expect(() =>
-      checkAssertions(workspace, [
-        { kind: "toml-keys", path: "missing.toml", table: "lints", keys: ["workspace"] },
-      ]),
-    ).not.toThrow();
-    const result = checkAssertions(workspace, [
+  it("toml-keys fails on an unreadable/missing file, without throwing", async () => {
+    await expect(checkAssertions(workspace, [
+      { kind: "toml-keys", path: "missing.toml", table: "lints", keys: ["workspace"] },
+    ])).resolves.toBeDefined();
+    const result = await checkAssertions(workspace, [
       { kind: "toml-keys", path: "missing.toml", table: "lints", keys: ["workspace"] },
     ]);
     expect(result.ok).toBe(false);
   });
 
-  it("toml-keys fails on invalid TOML source, without throwing", () => {
+  it("toml-keys fails on invalid TOML source, without throwing", async () => {
     writeFileSync(join(workspace, "Cargo.toml"), "this is not = = valid toml [[[");
-    expect(() =>
-      checkAssertions(workspace, [
-        { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
-      ]),
-    ).not.toThrow();
-    const result = checkAssertions(workspace, [
+    await expect(checkAssertions(workspace, [
+      { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
+    ])).resolves.toBeDefined();
+    const result = await checkAssertions(workspace, [
       { kind: "toml-keys", path: "Cargo.toml", table: "lints", keys: ["workspace"] },
     ]);
     expect(result.ok).toBe(false);

@@ -354,7 +354,7 @@ export async function runPhase(
     );
   }
 
-  const assertionResult = checkAssertions(options.workspace, phase.assertions ?? []);
+  const assertionResult = await checkAssertions(options.workspace, phase.assertions ?? []);
   if (!assertionResult.ok) {
     restoreWorkingTree(options.workspace, phase.number, options.onProgress);
     return phaseHardFail(
