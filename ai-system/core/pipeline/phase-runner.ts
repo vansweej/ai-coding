@@ -9,6 +9,7 @@ import type { ToolchainDescriptor } from "./definitions/language-configs";
 
 import { buildGitCleanArgs } from "./git-clean-args";
 import { checkAssertions } from "./phase-assertions";
+import { PHASE_FAILURE_REASONS, phaseHardFail } from "./phase-hard-fail";
 import type { Phase } from "./plan-parser";
 import type { OnProgress } from "./progress";
 import { getTouchedFiles, route } from "./routing/route";
@@ -66,6 +67,7 @@ export interface RunPhaseOptions {
    * When omitted, no events are constructed and there is no overhead.
    */
   readonly onProgress?: OnProgress;
+  readonly onDegrade?: (phaseNumber: number, detail: string) => void;
 }
 
 /** Commit all phase changes with the plan-authored commit message and Phase trailer. */
@@ -330,6 +332,7 @@ export async function runPhase(
     steps: phase.steps,
     phaseNumber: phase.number,
     onProgress: options.onProgress,
+    onDegrade: options.onDegrade,
   });
   const result = await verifiedStep.execute({
     event: buildStepEvent(buildPhaseInstruction(phase)),
@@ -343,23 +346,21 @@ export async function runPhase(
 
   if (!hasNetWorkingTreeChange(options.workspace)) {
     restoreWorkingTree(options.workspace, phase.number, options.onProgress);
-    return {
-      ok: false,
-      error: new Error(
-        `Phase ${phase.number} produced no net working-tree change; refusing to commit an empty phase (possible false-green partial apply)`,
-      ),
-    };
+    return phaseHardFail(
+      phase.number,
+      PHASE_FAILURE_REASONS.noNetChange,
+      "produced no net working-tree change; refusing to commit an empty phase (possible false-green partial apply)",
+    );
   }
 
-  const assertionResult = checkAssertions(options.workspace, phase.assertions ?? []);
+  const assertionResult = await checkAssertions(options.workspace, phase.assertions ?? []);
   if (!assertionResult.ok) {
     restoreWorkingTree(options.workspace, phase.number, options.onProgress);
-    return {
-      ok: false,
-      error: new Error(
-        `Phase ${phase.number} failed a structural assertion: ${assertionResult.error.message}`,
-      ),
-    };
+    return phaseHardFail(
+      phase.number,
+      PHASE_FAILURE_REASONS.structuralAssertion,
+      `failed a structural assertion: ${assertionResult.error.message}`,
+    );
   }
 
   const commit = options.commitPhase ?? commitPhaseChanges;

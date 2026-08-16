@@ -11,6 +11,7 @@ import { detectResumeState, resetToPhaseCommit } from "./resume";
 export interface FeatureRunResult {
   readonly feature: string;
   readonly phases: readonly PhaseRunResult[];
+  readonly degradations: readonly string[];
 }
 
 /**
@@ -71,11 +72,20 @@ export async function runFeature(
     startPhaseIndex = resumeState.lastPhaseNumber;
   }
 
+  const degradations: string[] = [];
+  const onDegrade = (phaseNumber: number, detail: string): void => {
+    degradations.push(`Phase ${phaseNumber}: ${detail}`);
+  };
+
   const phaseResults: PhaseRunResult[] = [];
   for (let i = startPhaseIndex; i < parsed.value.phases.length; i++) {
     const phase = parsed.value.phases[i];
     options.onProgress?.({ kind: "phase-start", phase: phase.number, title: phase.title });
-    const result = await runPhase(phase, { ...options, palette });
+    const result = await runPhase(phase, {
+      ...options,
+      palette,
+      onDegrade: (phaseNumber, detail) => onDegrade(phaseNumber, detail),
+    });
     if (!result.ok) {
       options.onProgress?.({
         kind: "phase-fail",
@@ -92,5 +102,5 @@ export async function runFeature(
     });
   }
 
-  return { ok: true, value: { feature: parsed.value.feature, phases: phaseResults } };
+  return { ok: true, value: { feature: parsed.value.feature, phases: phaseResults, degradations } };
 }

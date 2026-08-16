@@ -2,6 +2,7 @@ import { PATCH_OPS_JSON_SCHEMA, PATCH_TOOL_NAME } from "@ai-coding/shared";
 import type { DispatchRequest, ModelDispatcher, PatchOp, Result } from "@ai-coding/shared";
 
 import { parsePatchOps } from "./patch-contract";
+import { boundedPayload } from "./patch-parse-diagnostic";
 
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -173,7 +174,13 @@ export class AnthropicDispatcher implements ModelDispatcher {
 
       const parsed = parsePatchOps(toolUseBlock.input);
       if (!parsed.ok) {
-        return { ok: false, error: new Error(parsed.error.message) };
+        return {
+          ok: false,
+          error: new Error(
+            `patch parse failed: ${parsed.error.message}\npayload: ${boundedPayload(JSON.stringify(toolUseBlock.input))}`,
+            { cause: parsed.error },
+          ),
+        };
       }
 
       return { ok: true, value: parsed.value };

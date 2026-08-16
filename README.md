@@ -498,6 +498,38 @@ for the context audit skill reference.
 
 ---
 
+## Strict mode and degradation
+
+### `--strict` flag
+
+Pass `--strict` to the pipeline CLI to opt into stricter structured-patch behaviour:
+
+```bash
+bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md --strict
+```
+
+By default, when the structured whole-phase patch path declines with a `dispatch-error` or
+`conversion-failed` reason, the pipeline degrades gracefully to the aider-text retry loop and
+the run continues. Under `--strict`, those two decline classes are instead routed through a
+non-resumable phase hard-fail (exit code 3), making structured-patch failures visible immediately
+rather than silently falling back.
+
+All other structured-patch decline reasons (`not-capable-text-mode`, `not-capable-no-dispatch-patch`,
+`apply-failed`, `verification-red-after-structured`, etc.) always fall back to the text loop
+regardless of `--strict`.
+
+### `DEGRADED` exit code (4)
+
+| Exit Code | Meaning |
+|-----------|---------|
+| 4 | One or more phases degraded from the structured patch path to the text loop |
+
+When one or more phases fall back from the structured path to the aider-text loop, the run still
+completes and phases are committed normally. After the final phase, degradation warnings are printed
+as `WARN` lines on stdout and the process exits with code `4` instead of `0`. This is a non-fatal
+signal — the feature is complete, but the caller can detect that the structured path was not used
+end to end.
+
 ## Development
 
 ```bash

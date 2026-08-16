@@ -187,6 +187,31 @@ Feature branches from `main` (`feat/…`, `fix/…`). [Conventional Commits](htt
 
 ---
 
+## Strict Mode, Degraded Exit Code, and `test` Assertion
+
+### `--strict` flag
+Pass `--strict` (or set `strict: true` in `loadConfig`) to treat structured-patch
+decline reasons `dispatch-error` and `conversion-failed` as hard failures instead of
+falling back to the aider-text loop. Useful in CI to surface wiring problems early.
+
+### `DEGRADED` exit code (4)
+When a plan-cycle run completes but accumulated non-fatal degradations (e.g.
+structured-patch fell back to the text loop), the CLI exits with code **4**
+rather than 0. All phases committed successfully; the degradation list is
+printed to stdout as `WARN:` lines.
+
+### `Assert: test <path>` assertion verb
+A phase directive that runs a single test file and fails the phase if the test
+does not pass:
+```
+Assert: test <relative-or-absolute-path-to-test-file>
+```
+The file is executed with `bun test <path>` inside a `NixShellStep` (respecting
+the workspace's devShell). A missing file, a syntax error, or any failing test
+assertion causes the phase to fail before commit. Useful for encoding a
+machine-checked "this specific test must be green" invariant alongside the
+other structural assertion verbs.
+
 ## Models and Routing
 
 See `docs/architecture.md` for the action → role → model routing table.

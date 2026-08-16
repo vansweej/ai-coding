@@ -770,6 +770,42 @@ See [Example: Polyglot Plan File](#example-polyglot-plan-file) above.
 
 ---
 
+## Structural Assertion Grammar (version 4)
+
+The `Assert:` grammar version is **4**. Seven verbs are supported:
+
+```
+Assert: contains <path> :: <needle>
+Assert: not-contains <path> :: <needle>
+Assert: exists <path>
+Assert: not-exists <path>
+Assert: matches <path> :: <regex>
+Assert: toml-keys <path> :: <dotted.table> :: key1,key2,key3
+Assert: test <path>
+```
+
+The `test <path>` verb (7th verb) runs `bun test <resolved-path>` via a
+sandbox-honoring `NixShellStep` (so the devShell is active if a `flake.nix`
+is present). The path is resolved relative to the workspace root. The step
+runs last among all assertion checks, immediately before the phase commits.
+A non-zero exit from `bun test` (test failure, file not found, or any other
+error) is a **FAILURE** — the commit is blocked and the phase is reported as
+failed. A passing test suite is required for the phase to commit.
+
+Example — asserting that a newly-written test file passes before the phase
+commits:
+
+```markdown
+## Phase 3: Add unit tests
+
+Commit message: test: add parser unit tests
+Assert: test src/parser.test.ts
+
+### Step 1: Write tests
+
+Write comprehensive unit tests for the parser module in src/parser.test.ts.
+```
+
 ## See Also
 
 - [`README.md`](../README.md) — Quick start and pipeline overview
