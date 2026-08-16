@@ -97,10 +97,10 @@ async function main(): Promise<void> {
     console.error(`Error: ${argsResult.error.message}`);
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
   }
-  const { pipelineName, workspace, input, planPath, planRef, maxRetries, profileName, verbose } =
+  const { pipelineName, workspace, input, planPath, planRef, maxRetries, profileName, verbose, strict } =
     argsResult.value;
 
-  const configResult = await loadConfig(profileName);
+  const configResult = await loadConfig(profileName, undefined, strict);
   if (!configResult.ok) {
     console.error(`Error: ${configResult.error.message}`);
     process.exit(EXIT_CODES.ENVIRONMENT_ERROR);

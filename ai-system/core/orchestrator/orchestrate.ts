@@ -29,6 +29,11 @@ export interface OrchestratorConfig {
    * When provided, the orchestrator can store and retrieve memories.
    */
   readonly memory?: CerebrumMemory;
+  /**
+   * When true, strict mode is enabled: warnings are treated as errors and
+   * stricter validation is enforced across pipeline steps.
+   */
+  readonly strict?: boolean;
 }
 
 /** Optional LLM-level parameters forwarded to the dispatcher. */

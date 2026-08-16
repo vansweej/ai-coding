@@ -20,6 +20,8 @@ export interface CliArgs {
   readonly profileName: string;
   /** Stream per-phase/step progress to stderr while a plan-cycle run executes. */
   readonly verbose: boolean;
+  /** Enable strict mode: treat warnings as errors and enforce stricter validation. */
+  readonly strict: boolean;
 }
 
 const USAGE = `Usage: bun run pipeline <name> <workspace> [--plan <file> | --plan-ref <id> | --input "request text"] [--session <id>] [--max-retries <n>] [--profile <name>] [-v | --verbose]
@@ -45,6 +47,7 @@ Profile names:
 
 Flags:
   -v, --verbose    Stream per-phase/step progress (start/finish/retry) to stderr as a plan-cycle run executes
+  --strict         Enable strict mode: treat warnings as errors and enforce stricter validation
   --plan-ref <id>  Resolve the plan body from cerebrum's plan:<id> scope instead of reading a file.
                    Requires CEREBRUM_BIN to be set. Mutually exclusive with --plan.
   --session <id>   Session id for the caller's own bookkeeping; this process does not manage cerebrum sessions.
@@ -98,12 +101,11 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
     return { ok: false, error: new Error(`Missing workspace path.\n\n${USAGE}`) };
   }
 
-  // Extract the boolean verbose flag up front, before any value-flag lookup
-  // runs against the remaining args. This prevents "-v"/"--verbose" from
-  // ever being swallowed as another flag's value (e.g. `--input -v`) --
-  // readFlag and the --profile lookup below only ever see `rest`.
+  // Extract the boolean verbose and strict flags up front, before any value-flag
+  // lookup runs against the remaining args.
   const verbose = args.includes("-v") || args.includes("--verbose");
-  const rest = args.filter((arg) => arg !== "-v" && arg !== "--verbose");
+  const strict = args.includes("--strict");
+  const rest = args.filter((arg) => arg !== "-v" && arg !== "--verbose" && arg !== "--strict");
 
   const inputResult = readFlag(rest, "--input");
   if (!inputResult.ok) return inputResult;
@@ -155,6 +157,7 @@ export function parseArgs(argv: readonly string[]): Result<CliArgs> {
       maxRetries: maxRetries.value,
       profileName,
       verbose,
+      strict,
     },
   };
 }

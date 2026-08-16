@@ -81,10 +81,12 @@ function isOpenCodeZenModel(modelId: string): boolean {
  *
  * @param profileName - Profile name; defaults to DEFAULT_PROFILE_NAME.
  * @param ollamaUrl   - Override base URL for Ollama (for testing / remote).
+ * @param strict      - When true, enables strict mode in the returned config.
  */
 export async function loadConfig(
   profileName: string = DEFAULT_PROFILE_NAME,
   ollamaUrl: string = process.env.OLLAMA_URL ?? "http://localhost:11434",
+  strict: boolean = false,
 ): Promise<Result<OrchestratorConfig>> {
   const profile = findProfile(profileName);
   if (profile === undefined) {
@@ -227,6 +229,7 @@ export async function loadConfig(
     value: {
       profile,
       dispatchers,
+      strict,
     },
   };
 }
