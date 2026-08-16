@@ -2,6 +2,7 @@ import { PATCH_OPS_JSON_SCHEMA, PATCH_TOOL_NAME } from "@ai-coding/shared";
 import type { DispatchRequest, ModelDispatcher, PatchOp, Result } from "@ai-coding/shared";
 
 import { parsePatchOps } from "./patch-contract";
+import { boundedPayload } from "./patch-parse-diagnostic";
 
 const COPILOT_CHAT_URL = "https://api.githubcopilot.com/chat/completions";
 
@@ -221,7 +222,7 @@ export class CopilotDispatcher implements ModelDispatcher {
 
       const parsed = parsePatchOps(parsedArguments);
       if (!parsed.ok) {
-        return { ok: false, error: new Error(parsed.error.message) };
+        return { ok: false, error: new Error(`patch parse failed: ${parsed.error.message}\npayload: ${boundedPayload(toolCall.function.arguments)}`, { cause: parsed.error }) };
       }
 
       return { ok: true, value: parsed.value };
