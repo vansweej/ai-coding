@@ -518,6 +518,22 @@ export function createVerifiedImplementStep(
       const originalInstruction = ctx.event.payload.input ?? "";
       const phaseSteps = options.steps;
       const verificationSteps = options.languageConfig.toolchainSteps(options.workspace);
+
+      // Vacuous-pass guard: an empty verification set on a phase that is
+      // expected to produce changes is NOT a pass -- it means no touched file
+      // routed to a toolchain (e.g. wrong extension, toolchain not in palette).
+      // Fail loudly so the run never silently green on zero verification.
+      if (verificationSteps.length === 0 && phaseSteps !== undefined) {
+        const reason =
+          "no touched files routed to a verification toolchain — " +
+          "verification would be vacuously empty";
+        options.onProgress?.({
+          kind: "vacuous-pass",
+          phase: options.phaseNumber ?? 0,
+          reason,
+        });
+        return phaseHardFail(options.phaseNumber ?? 0, PHASE_FAILURE_REASONS.vacuousPass, reason);
+      }
       const baselineContext = buildBaselineContext(options.workspace, options.languageConfig);
       let prompt = baselineContext
         ? buildImplementationPrompt(options.languageConfig, originalInstruction, baselineContext)

@@ -16,6 +16,7 @@ export const PHASE_FAILURE_REASONS = {
   structuralAssertion: "structuralAssertion",
   dispatchError: "dispatchError",
   conversionFailed: "conversionFailed",
+  vacuousPass: "vacuousPass",
 } as const;
 
 /**
