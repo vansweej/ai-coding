@@ -158,7 +158,11 @@ describe("withPhaseTimeout", () => {
 
   it("aborts a phase that exceeds its budget with a transient-classifiable TimeoutError", async () => {
     const timer = makeFakeTimer();
-    const promise = withPhaseTimeout(() => hangingOperation<{ phaseNumber: number }>(), 1000, timer);
+    const promise = withPhaseTimeout(
+      () => hangingOperation<{ phaseNumber: number }>(),
+      1000,
+      timer,
+    );
     timer.fire();
 
     let captured: unknown;

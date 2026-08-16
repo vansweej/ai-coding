@@ -7,13 +7,13 @@ import type {
   Result,
 } from "@ai-coding/shared";
 
+import { classifyError } from "../../../src/errors/classify-error";
 import type { ModelProfile } from "../../config/model-profiles";
 import { resolveModelForRole } from "../../config/model-profiles";
 import { resolveMode } from "../mode-router/resolve-mode";
 import { actionToRole } from "../model-router/action-to-role";
 import { selectModel } from "../model-router/select-model";
 import type { CerebrumMemory } from "./cerebrum-memory";
-import { classifyError } from "../../../src/errors/classify-error";
 import { patchModeForModel } from "./patch-capability";
 
 /** Configuration for the orchestrator, mapping model names to dispatchers. */

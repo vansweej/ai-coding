@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -148,6 +149,67 @@ describe("vacuous-pass guard", () => {
     // Should not fail due to vacuous-pass
     if (!result.ok) {
       expect(result.error.message).not.toContain("vacuous");
+    }
+  });
+
+  // Regression test for the false-positive found dogfooding this exact guard
+  // (trustworthy-pipeline-s5b): in PALETTE mode, verification is derived from
+  // the LIVE git diff (see `runUnionVerification`). A phase on a genuinely
+  // CLEAN starting tree (the normal case -- e.g. right after the previous
+  // phase committed) has zero touched files BEFORE any implementation
+  // attempt runs. If the guard is evaluated once, up front, from that
+  // pre-implementation diff, it hard-fails every such phase before the model
+  // ever gets a chance to make its real, routable changes -- an over-eager
+  // false positive, not the "nothing landed" case the guard exists to catch.
+  it("does NOT trip on a clean starting tree when a real implementation attempt lands routable changes (palette mode)", async () => {
+    // Use a REAL git repo (not the plain tmpdir from beforeEach) so
+    // `runUnionVerification`'s live `git diff`/`git diff --staged` calls
+    // reflect actual on-disk state rather than failing silently.
+    const gitWorkspace = mkdtempSync(join(tmpdir(), "vacuous-pass-git-test-"));
+    try {
+      execSync("git init -q", { cwd: gitWorkspace });
+      execSync("git config user.email test@example.com", { cwd: gitWorkspace });
+      execSync("git config user.name Test", { cwd: gitWorkspace });
+      execSync("git commit --allow-empty -q -m init", { cwd: gitWorkspace });
+
+      const events: ProgressEvent[] = [];
+      const dispatcher: ModelDispatcher = {
+        dispatch: async (): Promise<Result<string>> => ({
+          ok: true,
+          value: "src/hello.ts\n<<<<<<< SEARCH\n=======\nexport const hello = 1;\n>>>>>>> REPLACE",
+        }),
+      };
+      const step = createVerifiedImplementStep("verified", {
+        config: {
+          profile: LOCAL_PROFILE,
+          dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+        },
+        workspace: gitWorkspace,
+        palette: new Set(["bun"]),
+        // steps defined = phase mode = guard is active
+        steps: [{ number: 1, title: "Add hello", body: "Create src/hello.ts" }],
+        phaseNumber: 1,
+        onProgress: (e) => events.push(e),
+      });
+
+      const result = await step.execute({
+        event: makeEvent("Add hello"),
+        results: new Map(),
+      });
+
+      // The guard must NOT have fired: real routable changes landed, so
+      // verification proceeds against the ACTUAL typescript toolchain
+      // (typecheck/lint/test) rather than short-circuiting on an empty set.
+      // The temp workspace has no real package.json/devShell, so the
+      // toolchain commands themselves may still fail -- that's fine, this
+      // test only asserts the guard did not trip, not that a bare-bones
+      // scratch repo satisfies a full TypeScript toolchain.
+      expect(events.find((e) => e.kind === "vacuous-pass")).toBeUndefined();
+      if (!result.ok) {
+        expect(result.error.message).not.toContain("vacuous");
+      }
+    } finally {
+      rmSync(gitWorkspace, { recursive: true, force: true });
     }
   });
 });

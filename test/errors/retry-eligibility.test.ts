@@ -15,9 +15,7 @@ import { createVerifiedImplementStep } from "../../ai-system/core/pipeline/steps
  * once, no retry attempted), while a `transient` error is retried.
  */
 describe("retry eligibility gating (classifyError)", () => {
-  function makeDispatcher(
-    error: Error,
-  ): { dispatcher: ModelDispatcher; callCount: () => number } {
+  function makeDispatcher(error: Error): { dispatcher: ModelDispatcher; callCount: () => number } {
     let calls = 0;
     const dispatcher: ModelDispatcher = {
       dispatch: async (_req: DispatchRequest): Promise<Result<string>> => {

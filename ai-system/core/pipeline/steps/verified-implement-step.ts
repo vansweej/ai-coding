@@ -4,6 +4,7 @@ import { join, relative, resolve } from "node:path";
 import type { PipelineContext, PipelineStep, Result, StepResult } from "@ai-coding/pipeline";
 import type { AIAction, AIRequestEvent } from "@ai-coding/shared";
 
+import { classifyError } from "../../../../src/errors/classify-error";
 import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { orchestrate } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
@@ -16,7 +17,6 @@ import {
   paletteLanguageHint,
   runUnionVerification,
 } from "../routing/route";
-import { classifyError } from "../../../../src/errors/classify-error";
 import { applyPatch } from "./apply-patch-step";
 import { parsePatch, stripEnclosingFence } from "./parse-patch";
 import { tryStructuredPhase } from "./structured-implement";
@@ -518,23 +518,39 @@ export function createVerifiedImplementStep(
 
       const originalInstruction = ctx.event.payload.input ?? "";
       const phaseSteps = options.steps;
-      const verificationSteps = options.languageConfig.toolchainSteps(options.workspace);
 
       // Vacuous-pass guard: an empty verification set on a phase that is
       // expected to produce changes is NOT a pass -- it means no touched file
       // routed to a toolchain (e.g. wrong extension, toolchain not in palette).
       // Fail loudly so the run never silently green on zero verification.
-      if (verificationSteps.length === 0 && phaseSteps !== undefined) {
-        const reason =
-          "no touched files routed to a verification toolchain — " +
-          "verification would be vacuously empty";
-        options.onProgress?.({
-          kind: "vacuous-pass",
-          phase: options.phaseNumber ?? 0,
-          reason,
-        });
-        return phaseHardFail(options.phaseNumber ?? 0, PHASE_FAILURE_REASONS.vacuousPass, reason);
-      }
+      //
+      // This MUST be (re)computed fresh immediately before every
+      // `runVerification` call below, never once up front: the palette-routed
+      // union verification (`runUnionVerification`) is derived from the LIVE
+      // git diff. Computing it before any implementation attempt has run
+      // would see the diff as it stood BEFORE this phase touched anything --
+      // typically empty on the normal, expected clean-tree start of a phase --
+      // and would hard-fail every phase before it even had a chance to make
+      // its changes. The guard is only meaningful AFTER an implementation
+      // attempt has run and STILL produced nothing routable.
+      const computeVerificationOrFail = ():
+        | { readonly ok: true; readonly steps: readonly PipelineStep<AIRequestEvent>[] }
+        | { readonly ok: false; readonly error: Error } => {
+        const steps = options.languageConfig.toolchainSteps(options.workspace);
+        if (steps.length === 0 && phaseSteps !== undefined) {
+          const reason =
+            "no touched files routed to a verification toolchain — " +
+            "verification would be vacuously empty";
+          options.onProgress?.({
+            kind: "vacuous-pass",
+            phase: options.phaseNumber ?? 0,
+            reason,
+          });
+          return phaseHardFail(options.phaseNumber ?? 0, PHASE_FAILURE_REASONS.vacuousPass, reason);
+        }
+        return { ok: true, steps };
+      };
+
       const baselineContext = buildBaselineContext(options.workspace, options.languageConfig);
       let prompt = baselineContext
         ? buildImplementationPrompt(options.languageConfig, originalInstruction, baselineContext)
@@ -571,7 +587,9 @@ export function createVerifiedImplementStep(
         options.planPath,
       );
       if (structuredResult.ok) {
-        const verificationResult = await runVerification(ctx, verificationSteps);
+        const verificationCheck = computeVerificationOrFail();
+        if (!verificationCheck.ok) return verificationCheck;
+        const verificationResult = await runVerification(ctx, verificationCheck.steps);
         if (verificationResult.ok) {
           options.onProgress?.({
             kind: "patch-path",
@@ -751,7 +769,9 @@ export function createVerifiedImplementStep(
         if (implementResult.ok) {
           implementation = implementResult.value;
 
-          const verificationResult = await runVerification(ctx, verificationSteps);
+          const verificationCheck = computeVerificationOrFail();
+          if (!verificationCheck.ok) return verificationCheck;
+          const verificationResult = await runVerification(ctx, verificationCheck.steps);
           if (verificationResult.ok) {
             return {
               ok: true,
@@ -794,7 +814,10 @@ export function createVerifiedImplementStep(
           // toolchain (e.g. existing tests unrelated to the new feature)
           // could cause a false "verified" result with nothing implemented.
           if (implementation !== "") {
-            const recheck = await runVerification(ctx, verificationSteps);
+            const recheck = await runVerification(
+              ctx,
+              options.languageConfig.toolchainSteps(options.workspace),
+            );
             if (recheck.ok) {
               return {
                 ok: true,
@@ -891,7 +914,9 @@ export function createVerifiedImplementStep(
         if (fixResult.ok) {
           implementation = fixResult.value;
 
-          const verificationResult = await runVerification(ctx, verificationSteps);
+          const verificationCheck = computeVerificationOrFail();
+          if (!verificationCheck.ok) return verificationCheck;
+          const verificationResult = await runVerification(ctx, verificationCheck.steps);
           if (verificationResult.ok) {
             return {
               ok: true,
@@ -922,7 +947,10 @@ export function createVerifiedImplementStep(
           // coincidence of its own baseline already satisfying the
           // toolchain.
           if (implementation !== "") {
-            const recheck = await runVerification(ctx, verificationSteps);
+            const recheck = await runVerification(
+              ctx,
+              options.languageConfig.toolchainSteps(options.workspace),
+            );
             if (recheck.ok) {
               return {
                 ok: true,

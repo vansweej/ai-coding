@@ -1,9 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
-import type { LedgerLine } from "../../src/ledger/parse-ledger-line";
 import { runRuntimeSelfChecks } from "../../src/diagnosis/runtime-self-checks";
+import type { LedgerLine } from "../../src/ledger/parse-ledger-line";
 
-function makeRecordingLedger(): { lines: LedgerLine[]; write: (line: LedgerLine) => { ok: true; value: undefined } } {
+function makeRecordingLedger(): {
+  lines: LedgerLine[];
+  write: (line: LedgerLine) => { ok: true; value: undefined };
+} {
   const lines: LedgerLine[] = [];
   return {
     lines,
@@ -19,7 +22,11 @@ describe("runRuntimeSelfChecks", () => {
     const ledger = makeRecordingLedger();
 
     const violated = runRuntimeSelfChecks(
-      { runId: "", ledgerPath: "/home/user/.local/share/ai-coding/ledger/run-1.jsonl", eventStreamInitialized: true },
+      {
+        runId: "",
+        ledgerPath: "/home/user/.local/share/ai-coding/ledger/run-1.jsonl",
+        eventStreamInitialized: true,
+      },
       ledger,
     );
 

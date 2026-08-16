@@ -1,6 +1,6 @@
 import type { LedgerWriter } from "../ledger/ledger-writer";
-import { diagnosisToLedgerLine, makeDiagnosis } from "./diagnosis-record";
 import type { RunId } from "../run/run-id";
+import { diagnosisToLedgerLine, makeDiagnosis } from "./diagnosis-record";
 
 /**
  * Cheap, load-bearing, read-only self-checks about the run's own health,

@@ -145,20 +145,32 @@ export function composeImplementSystem(palette: ReadonlySet<string>): string {
 
 /**
  * Returns paths of files touched in the workspace: the union of unstaged
- * changes (`git diff --name-only`) and staged changes
- * (`git diff --name-only --staged`), deduplicated. Used to scope union
- * verification to only the toolchains relevant to what actually changed, and
- * by phase-runner's lazy baseline attribution to detect whether any
- * whole-repo validator was implicated by the current phase.
+ * changes (`git diff --name-only`), staged changes
+ * (`git diff --name-only --staged`), and untracked new files
+ * (`git ls-files --others --exclude-standard`), deduplicated. Used to scope
+ * union verification to only the toolchains relevant to what actually
+ * changed, and by phase-runner's lazy baseline attribution to detect whether
+ * any whole-repo validator was implicated by the current phase.
  *
- * Silently returns an empty list when either git command fails (e.g. not a
- * git repository) -- verification simply has nothing to route, matching the
+ * The untracked-files source is essential: nothing in the pipeline `git add`s
+ * a newly created file before verification runs (staging happens only at
+ * commit time, after verification succeeds), so a phase whose ENTIRE diff is
+ * brand-new file creation would otherwise be invisible to both `git diff`
+ * commands above and route to zero toolchains -- exactly the false-positive
+ * vacuous-pass trip found dogfooding this guard (trustworthy-pipeline-s5b).
+ *
+ * Silently returns an empty list when a git command fails (e.g. not a git
+ * repository) -- verification simply has nothing to route, matching the
  * existing tolerant git-diff handling in `buildBaselineContext`.
  */
 export function getTouchedFiles(workspace: string): readonly string[] {
   const files = new Set<string>();
 
-  for (const command of ["git diff --name-only", "git diff --name-only --staged"]) {
+  for (const command of [
+    "git diff --name-only",
+    "git diff --name-only --staged",
+    "git ls-files --others --exclude-standard",
+  ]) {
     try {
       const output = execSync(command, { cwd: workspace, encoding: "utf8" });
       for (const line of output.split("\n")) {
