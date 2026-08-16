@@ -1,0 +1,9 @@
+{"schema_version":1,"runId":"run-golden-001","ts":"2026-08-16T12:00:00.000Z","kind":"run-shape","payload":{"profile":"copilot-default","phases":2,"dryRun":false}}
+{"schema_version":1,"runId":"run-golden-001","ts":"2026-08-16T12:00:01.000Z","kind":"phase-start","phase":1,"payload":{"commitMsg":"feat: add multiply function"}}
+{"schema_version":1,"runId":"run-golden-001","ts":"2026-08-16T12:00:02.000Z","kind":"step","phase":1,"step":1,"payload":{"status":"ok","attempt":1}}
+{"schema_version":1,"runId":"run-golden-001","ts":"2026-08-16T12:00:03.000Z","kind":"gate-output","phase":1,"payload":{"gate":"typecheck","exitCode":0}}
+{"schema_version":1,"runId":"run-golden-001","ts":"2026-08-16T12:00:04.000Z","kind":"gate-output","phase":1,"opId":"op-abc123","payload":{"gate":"test","exitCode":0,"opId":"op-abc123"}}
+{"schema_version":1,"runId":"run-golden-001","ts":"2026-08-16T12:00:05.000Z","kind":"degraded-exit","payload":{"degradations":["structured-patch fell back to text loop on phase 2 step 1"]}}
+{"schema_version":1,"runId":"run-golden-001","ts":"2026-08-16T12:00:06.000Z","kind":"vacuous-pass","payload":{"phase":2}}
+{"schema_version":1,"runId":"run-golden-001","ts":"2026-08-16T12:00:07.000Z","kind":"diagnosis","payload":{"check":"dispatcher-reachable","status":"ok"}}
+{"schema_version":1,"runId":"run-golden-001","ts":"2026-08-16T12:00:08.000Z","kind":"diagnosis","payload":{"check":"token-present","status":"fail","detail":"GITHUB_COPILOT_TOKEN not set"}}
