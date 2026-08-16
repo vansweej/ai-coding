@@ -55,6 +55,36 @@ export interface LLMOptions {
  * `orchestratePatch()` so model resolution is never forked between the two
  * facades.
  */
+/**
+ * Emit a lightweight `diagnosis` ledger line for a single retried transient
+ * failure (attempt index + classification reason), BEFORE the backoff sleep
+ * that precedes the next dispatch attempt. Distinct from the terminal
+ * `transient-exhaustion` record: this fires on every retried attempt, not
+ * only when the retry budget is exhausted. Never throws -- a ledger-write
+ * failure must never mask or interrupt the original dispatch flow.
+ */
+function emitTransientRetryDiagnosis(
+  attemptIndex: number,
+  reason: string,
+  model: string,
+  errorMessage: string,
+): void {
+  try {
+    const record = makeDiagnosis(
+      "unknown-run-id",
+      "transient-retry",
+      "Retrying after a transient dispatch failure",
+      `Attempt ${attemptIndex} for model "${model}" failed transiently (${reason}): ${errorMessage}`,
+    );
+    const ledgerResult = createLedgerWriter("unknown-run-id");
+    if (ledgerResult.ok) {
+      ledgerResult.value.write(diagnosisToLedgerLine(record));
+    }
+  } catch {
+    // Never let diagnostic emission failure mask the original dispatch flow.
+  }
+}
+
 function resolveDispatcher(
   event: AIRequestEvent,
   config: OrchestratorConfig,
@@ -138,6 +168,7 @@ export async function orchestrate(
   if (!result.ok) {
     const classification = classifyError(result.error);
     if (classification.kind === "transient") {
+      emitTransientRetryDiagnosis(1, classification.reason, model, result.error.message);
       transientAttempts++;
       result = await dispatcher.dispatch(dispatchRequest);
     }
