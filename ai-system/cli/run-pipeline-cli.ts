@@ -4,6 +4,7 @@ import { runPipeline } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
 import { $ } from "bun";
 
+import { createLedgerWriter, progressEventToLedgerLine } from "../../src/ledger/ledger-writer";
 import { mintRunId } from "../../src/run/run-id";
 import { resolvePlanRef } from "../core/orchestrator/cerebrum-plan-source";
 import { DevShellPaletteError, runFeature } from "../core/pipeline/feature-runner";
@@ -203,15 +204,31 @@ async function main(): Promise<void> {
       process.exit(exitCode);
     }
 
-    let onProgress: OnProgress | undefined;
-    if (verbose) {
-      const useColor =
-        !process.env.NO_COLOR && (process.env.FORCE_COLOR === "1" || process.stderr.isTTY === true);
-      const theme = buildTheme(useColor);
-      onProgress = (event) => console.error(formatProgressEvent(event, theme));
-    }
+    const collectedEvents: import("../core/pipeline/progress").ProgressEvent[] = [];
 
     const runId = mintRunId();
+    const ledgerResult = createLedgerWriter(runId);
+    const ledger = ledgerResult.ok ? ledgerResult.value : undefined;
+
+    // Emit the stable stdout locator line — parsed by choragos to correlate
+    // this run's ledger file. Printed unconditionally, before the first event.
+    if (ledger) {
+      console.log(`CHORAGOS-LEDGER runId=${runId} path=${ledger.path}`);
+    }
+
+    // Events are always constructed and collected (unconditionally).
+    // The ledger writer subscribes here; verbose is a separate formatter view.
+    const onProgress: OnProgress = (event) => {
+      collectedEvents.push(event);
+      ledger?.write(progressEventToLedgerLine(event, runId));
+      if (verbose) {
+        const useColor =
+          !process.env.NO_COLOR &&
+          (process.env.FORCE_COLOR === "1" || process.stderr.isTTY === true);
+        const theme = buildTheme(useColor);
+        console.error(formatProgressEvent(event, theme));
+      }
+    };
 
     const outcome = await runFeature(planContent, {
       config: configResult.value,
