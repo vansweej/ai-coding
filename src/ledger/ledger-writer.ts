@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import type { GateOutput } from "../gates/gate-output";
 import type { RunId } from "../run/run-id";
 import type { LedgerLine } from "./parse-ledger-line";
 
@@ -19,6 +20,8 @@ export interface LedgerWriter {
   readonly path: string;
   /** Append one ledger line. Returns err on IO failure. */
   write(line: LedgerLine): Result<void>;
+  /** Write a gate-output kind ledger line from a GateOutput record. */
+  writeGateOutput(go: GateOutput, runId: RunId, phase?: number): Result<void>;
   /** No-op — included for symmetry and future buffered implementations. */
   close(): void;
 }
@@ -46,18 +49,42 @@ export function createLedgerWriter(runId: RunId): Result<LedgerWriter> {
     };
   }
 
+  function append(line: LedgerLine): Result<void> {
+    try {
+      appendFileSync(path, `${JSON.stringify(line)}\n`, "utf-8");
+      return { ok: true, value: undefined };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err : new Error(String(err)),
+      };
+    }
+  }
+
   const writer: LedgerWriter = {
     path,
     write(line: LedgerLine): Result<void> {
-      try {
-        appendFileSync(path, `${JSON.stringify(line)}\n`, "utf-8");
-        return { ok: true, value: undefined };
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err : new Error(String(err)),
-        };
-      }
+      return append(line);
+    },
+    writeGateOutput(go: GateOutput, rid: RunId, phase?: number): Result<void> {
+      const line: LedgerLine = {
+        schema_version: 1,
+        runId: rid,
+        ts: new Date().toISOString(),
+        kind: "gate-output",
+        ...(phase !== undefined ? { phase } : {}),
+        ...(go.opId !== undefined ? { opId: go.opId } : {}),
+        payload: {
+          gate: go.gate,
+          exitCode: go.exitCode,
+          passed: go.passed,
+          stdout: go.stdout,
+          stderr: go.stderr,
+          durationMs: go.durationMs,
+          ...(go.opId !== undefined ? { opId: go.opId } : {}),
+        },
+      };
+      return append(line);
     },
     close() {
       // no-op for synchronous append-based implementation
