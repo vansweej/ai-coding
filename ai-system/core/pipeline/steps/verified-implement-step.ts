@@ -13,10 +13,12 @@ import type { CoverageDirective, Step } from "../plan-parser";
 import type { OnProgress } from "../progress";
 import {
   composeImplementSystem,
+  hasMappedButUnavailableTouchedFile,
   paletteExtensions,
   paletteLanguageHint,
   runUnionVerification,
 } from "../routing/route";
+import { MappedToolchainUnavailableError } from "../feature-runner";
 import { applyPatch } from "./apply-patch-step";
 import { parsePatch, stripEnclosingFence } from "./parse-patch";
 import { tryStructuredPhase } from "./structured-implement";
@@ -595,6 +597,41 @@ export function createVerifiedImplementStep(
         return { ok: true, steps };
       };
 
+      /**
+       * Single verification-decision helper routed through by every
+       * verification call site in this function. In palette mode, first
+       * checks whether any touched file maps to a known toolchain that is
+       * unavailable in the devShell -- this check fires unconditionally on
+       * the touched-set property, not gated on an empty step set, and
+       * surfaces as a MappedToolchainUnavailableError (an environment
+       * error, not an ordinary phase failure). Then runs the existing
+       * legacy vacuous-pass check (computeVerificationOrFail), and finally
+       * runs verification itself.
+       */
+      const verifyOrFail = async (): Promise<
+        { readonly ok: true; readonly value: readonly StepResult[] } | { readonly ok: false; readonly error: Error }
+      > => {
+        if (options.palette !== undefined) {
+          const mappedUnavailable = hasMappedButUnavailableTouchedFile(
+            options.workspace,
+            options.palette,
+          );
+          if (mappedUnavailable.hit) {
+            return {
+              ok: false,
+              error: new MappedToolchainUnavailableError(
+                `Touched file "${mappedUnavailable.filePath}" requires the "${mappedUnavailable.toolchain}" toolchain, which is unavailable in this workspace's devShell.`,
+              ),
+            };
+          }
+        }
+
+        const verificationCheck = computeVerificationOrFail();
+        if (!verificationCheck.ok) return verificationCheck;
+
+        return runVerification(ctx, verificationCheck.steps);
+      };
+
       const baselineContext = buildBaselineContext(options.workspace, options.languageConfig);
       let prompt = baselineContext
         ? buildImplementationPrompt(options.languageConfig, originalInstruction, baselineContext)
@@ -631,9 +668,10 @@ export function createVerifiedImplementStep(
         options.planPath,
       );
       if (structuredResult.ok) {
-        const verificationCheck = computeVerificationOrFail();
-        if (!verificationCheck.ok) return verificationCheck;
-        const verificationResult = await runVerification(ctx, verificationCheck.steps);
+        const verificationResult = await verifyOrFail();
+        if (!verificationResult.ok && verificationResult.error instanceof MappedToolchainUnavailableError) {
+          return verificationResult;
+        }
         if (verificationResult.ok) {
           options.onProgress?.({
             kind: "patch-path",
@@ -813,9 +851,10 @@ export function createVerifiedImplementStep(
         if (implementResult.ok) {
           implementation = implementResult.value;
 
-          const verificationCheck = computeVerificationOrFail();
-          if (!verificationCheck.ok) return verificationCheck;
-          const verificationResult = await runVerification(ctx, verificationCheck.steps);
+          const verificationResult = await verifyOrFail();
+          if (!verificationResult.ok && verificationResult.error instanceof MappedToolchainUnavailableError) {
+            return verificationResult;
+          }
           if (verificationResult.ok) {
             return {
               ok: true,
@@ -858,10 +897,10 @@ export function createVerifiedImplementStep(
           // toolchain (e.g. existing tests unrelated to the new feature)
           // could cause a false "verified" result with nothing implemented.
           if (implementation !== "") {
-            const recheck = await runVerification(
-              ctx,
-              options.languageConfig.toolchainSteps(options.workspace),
-            );
+            const recheck = await verifyOrFail();
+            if (!recheck.ok && recheck.error instanceof MappedToolchainUnavailableError) {
+              return recheck;
+            }
             if (recheck.ok) {
               return {
                 ok: true,
@@ -958,9 +997,10 @@ export function createVerifiedImplementStep(
         if (fixResult.ok) {
           implementation = fixResult.value;
 
-          const verificationCheck = computeVerificationOrFail();
-          if (!verificationCheck.ok) return verificationCheck;
-          const verificationResult = await runVerification(ctx, verificationCheck.steps);
+          const verificationResult = await verifyOrFail();
+          if (!verificationResult.ok && verificationResult.error instanceof MappedToolchainUnavailableError) {
+            return verificationResult;
+          }
           if (verificationResult.ok) {
             return {
               ok: true,
@@ -991,10 +1031,10 @@ export function createVerifiedImplementStep(
           // coincidence of its own baseline already satisfying the
           // toolchain.
           if (implementation !== "") {
-            const recheck = await runVerification(
-              ctx,
-              options.languageConfig.toolchainSteps(options.workspace),
-            );
+            const recheck = await verifyOrFail();
+            if (!recheck.ok && recheck.error instanceof MappedToolchainUnavailableError) {
+              return recheck;
+            }
             if (recheck.ok) {
               return {
                 ok: true,

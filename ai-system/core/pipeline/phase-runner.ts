@@ -279,6 +279,17 @@ export async function attributePhaseFailure(
 ): Promise<Result<PhaseRunResult>> {
   if (originalFailure.ok) return originalFailure;
 
+  // Passthrough: a MappedToolchainUnavailableError (name-checked here to
+  // avoid a cross-module import cycle with feature-runner.ts, mirroring the
+  // PhaseHardFailError name-based convention) is already an environment
+  // error produced by verifyOrFail's palette-mode guard in
+  // verified-implement-step.ts. It must propagate unchanged -- never
+  // re-wrapped as a BaselineCheckError -- so it reaches reportFeatureFailure
+  // and exits 3.
+  if (originalFailure.error.name === "MappedToolchainUnavailableError") {
+    return originalFailure;
+  }
+
   const implicated = findImplicatedWholeRepoValidators(workspace, palette);
   if (implicated.length === 0) return originalFailure;
 
