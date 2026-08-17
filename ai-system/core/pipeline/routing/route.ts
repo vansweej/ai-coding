@@ -36,6 +36,45 @@ function isAvailable(descriptor: ToolchainDescriptor, palette: ReadonlySet<strin
 }
 
 /**
+ * Classification of a single file path against a devShell palette,
+ * replicating the exact branch logic `route()` uses internally:
+ *   - "unmapped": the path has no extension, a trailing-dot-only suffix, or
+ *     an extension absent from `EXTENSION_TO_TOOLCHAIN`.
+ *   - "mapped-unavailable": the extension maps to a toolchain, but that
+ *     toolchain's driver tool is not present in `palette`.
+ *   - "routed": the extension maps to a toolchain that IS available.
+ *
+ * Pure function: no I/O, no side effects. Extension matching is
+ * case-insensitive and includes the full multi-part suffix a path ends
+ * with (e.g. `foo.test.ts` still resolves via its final `.ts` extension).
+ *
+ * @param filePath - Path (relative or absolute) to the file being classified.
+ * @param palette  - Set of tool names detected as available in the devShell.
+ */
+export function classifyRoute(
+  filePath: string,
+  palette: ReadonlySet<string>,
+): "unmapped" | "mapped-unavailable" | "routed" {
+  const lastDot = filePath.lastIndexOf(".");
+  if (lastDot === -1 || lastDot === filePath.length - 1) {
+    return "unmapped";
+  }
+
+  const extension = filePath.slice(lastDot).toLowerCase();
+  const toolchainId: ToolchainId | undefined = EXTENSION_TO_TOOLCHAIN[extension];
+  if (toolchainId === undefined) {
+    return "unmapped";
+  }
+
+  const descriptor = TOOLCHAIN_DESCRIPTORS[toolchainId];
+  if (!isAvailable(descriptor, palette)) {
+    return "mapped-unavailable";
+  }
+
+  return "routed";
+}
+
+/**
  * Routes a single file to the toolchain descriptor responsible for
  * verifying it, given the tools actually detected in the workspace's
  * devShell (see {@link devShellPalette} in `@ai-coding/pipeline`).
@@ -45,31 +84,56 @@ function isAvailable(descriptor: ToolchainDescriptor, palette: ReadonlySet<strin
  *   - the file's extension maps to a toolchain, but that toolchain's driver
  *     tool is not present in `palette` (the devShell doesn't provide it).
  *
- * Pure function: no I/O, no side effects. Extension matching is
- * case-insensitive and includes the full multi-part suffix a path ends
- * with (e.g. `foo.test.ts` still resolves via its final `.ts` extension).
+ * Pure function: no I/O, no side effects. Delegates its branch logic to
+ * {@link classifyRoute} so there is exactly one place that logic lives.
  *
  * @param filePath - Path (relative or absolute) to the file being routed.
  * @param palette  - Set of tool names detected as available in the devShell.
  */
 export function route(filePath: string, palette: ReadonlySet<string>): ToolchainDescriptor | null {
+  if (classifyRoute(filePath, palette) !== "routed") {
+    return null;
+  }
+
   const lastDot = filePath.lastIndexOf(".");
-  if (lastDot === -1 || lastDot === filePath.length - 1) {
-    return null;
-  }
-
   const extension = filePath.slice(lastDot).toLowerCase();
-  const toolchainId: ToolchainId | undefined = EXTENSION_TO_TOOLCHAIN[extension];
-  if (toolchainId === undefined) {
-    return null;
-  }
+  const toolchainId = EXTENSION_TO_TOOLCHAIN[extension] as ToolchainId;
+  return TOOLCHAIN_DESCRIPTORS[toolchainId];
+}
 
-  const descriptor = TOOLCHAIN_DESCRIPTORS[toolchainId];
-  if (!isAvailable(descriptor, palette)) {
-    return null;
-  }
+/**
+ * Result of {@link hasMappedButUnavailableTouchedFile}.
+ */
+export type MappedButUnavailableResult =
+  | { readonly hit: false }
+  | { readonly hit: true; readonly filePath: string; readonly toolchain: string };
 
-  return descriptor;
+/**
+ * Scans every file touched in the workspace (per {@link getTouchedFiles})
+ * and returns the FIRST one whose classification is "mapped-unavailable"
+ * -- i.e. its extension maps to a known toolchain, but that toolchain's
+ * driver tool is not present in the devShell palette. Returns
+ * `{ hit: false }` when no such file is found.
+ *
+ * The impure git read (`getTouchedFiles`) is isolated here; the per-path
+ * classification itself remains the pure `classifyRoute`.
+ *
+ * @param workspace - Absolute path to the workspace being scanned.
+ * @param palette   - Set of tool names detected as available in the devShell.
+ */
+export function hasMappedButUnavailableTouchedFile(
+  workspace: string,
+  palette: ReadonlySet<string>,
+): MappedButUnavailableResult {
+  for (const filePath of getTouchedFiles(workspace)) {
+    if (classifyRoute(filePath, palette) === "mapped-unavailable") {
+      const lastDot = filePath.lastIndexOf(".");
+      const extension = filePath.slice(lastDot).toLowerCase();
+      const toolchainId = EXTENSION_TO_TOOLCHAIN[extension] as ToolchainId;
+      return { hit: true, filePath, toolchain: toolchainId };
+    }
+  }
+  return { hit: false };
 }
 
 /**
