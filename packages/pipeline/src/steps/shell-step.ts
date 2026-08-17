@@ -12,6 +12,23 @@ export interface ShellStepOptions {
    * Set to false to treat any exit code as success and capture output regardless.
    */
   readonly failOnNonZero?: boolean;
+  /**
+   * Optional callback fired exactly once per invocation with the real
+   * captured output, regardless of pass/fail/soft-gate status -- fired
+   * BEFORE the failOnNonZero branch decision, so a caller always learns the
+   * true exit code and full stdout/stderr even when the step itself reports
+   * success (failOnNonZero: false) or when it fails. Intended for
+   * persisting a gate-output ledger line; this package intentionally takes
+   * only primitive arguments so it never depends on ai-system's ledger/gate
+   * types.
+   */
+  readonly onGateOutput?: (
+    name: string,
+    stdout: string,
+    stderr: string,
+    exitCode: number,
+    durationMs: number,
+  ) => void;
 }
 
 /**
@@ -63,6 +80,8 @@ export function createShellStep<TEvent = unknown>(
         ]);
 
         const durationMs = Date.now() - startedAt;
+
+        options?.onGateOutput?.(name, stdoutText, stderrText, exitCode, durationMs);
 
         if (failOnNonZero && exitCode !== 0) {
           const detail = stderrText.trim() || stdoutText.trim();

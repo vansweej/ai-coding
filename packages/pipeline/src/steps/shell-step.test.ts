@@ -102,4 +102,49 @@ describe("createShellStep", () => {
     if (!result.ok) return;
     expect(result.value.output).toBe("");
   });
+
+  it("fires onGateOutput with real captured values on success", async () => {
+    const calls: Array<{
+      name: string;
+      stdout: string;
+      stderr: string;
+      exitCode: number;
+      durationMs: number;
+    }> = [];
+    const step = createShellStep<TestEvent>("ok-gate", ["true"], {
+      onGateOutput: (name, stdout, stderr, exitCode, durationMs) => {
+        calls.push({ name, stdout, stderr, exitCode, durationMs });
+      },
+    });
+    const result = await step.execute(testCtx);
+
+    expect(result.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.name).toBe("ok-gate");
+    expect(calls[0]?.exitCode).toBe(0);
+    expect(calls[0]?.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("fires onGateOutput exactly once with the real non-zero exit code even when the step itself fails", async () => {
+    const calls: Array<{
+      name: string;
+      stdout: string;
+      stderr: string;
+      exitCode: number;
+      durationMs: number;
+    }> = [];
+    const step = createShellStep<TestEvent>("fail-gate", ["sh", "-c", "echo boom >&2; exit 1"], {
+      onGateOutput: (name, stdout, stderr, exitCode, durationMs) => {
+        calls.push({ name, stdout, stderr, exitCode, durationMs });
+      },
+    });
+    const result = await step.execute(testCtx);
+
+    expect(result.ok).toBe(false);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.name).toBe("fail-gate");
+    expect(calls[0]?.exitCode).toBe(1);
+    expect(calls[0]?.stderr).toContain("boom");
+    expect(calls[0]?.durationMs).toBeGreaterThanOrEqual(0);
+  });
 });
