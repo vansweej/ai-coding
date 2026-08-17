@@ -287,6 +287,51 @@ file whose toolchain isn't available in the devShell, or which has no matching t
 (e.g. `.md`/`.json`/`.toml`), falls back to an edit-only "floor" — the patch is still applied and
 committed, but no compiler, linter, or coverage gate runs against it.
 
+### Route classification and the mapped-but-unavailable guard
+
+`classifyRoute(filePath, palette)` (`ai-system/core/pipeline/routing/route.ts`) is the single
+source of truth for how a touched file's floor status is decided, and `route()` is implemented in
+terms of it. Every file classifies as exactly one of:
+
+- **`unmapped`** — the extension has no `EXTENSION_TO_TOOLCHAIN` entry at all (`.md`, `.toml`,
+  `.json`, ...). This is a legitimate, permanent edit-only floor: no toolchain will ever exist for
+  these extensions, so committing them with zero verification is correct and expected.
+- **`mapped-unavailable`** — the extension IS registered to a toolchain (e.g. `.rs` → `rust`), but
+  none of that toolchain's `driverTools` are present in the current devShell palette. This is a
+  transient environment gap, not a legitimate floor: the file *should* have been verified, but the
+  devShell doesn't currently expose the tool needed to do so.
+- **`routed`** — the extension is mapped and its toolchain's driver tool is present; normal
+  verification runs.
+
+A phase whose ENTIRE touched-file set floors on `unmapped` files still commits normally (the
+existing edit-only behavior). But if ANY touched file classifies as `mapped-unavailable` — even
+when OTHER touched files in the same phase produced non-empty, passing verification steps — the
+phase is aborted with a `MappedToolchainUnavailableError` (`ai-system/core/pipeline/feature-runner.ts`),
+mapped by the CLI to `EXIT_CODES.ENVIRONMENT_ERROR` (exit 3), non-retryable, aborting the whole
+run rather than just the phase. Retrying cannot help: the palette is workspace-global, so every
+subsequent Rust phase would hit the identical fault. This check runs unconditionally on the
+touched-file set (via `hasMappedButUnavailableTouchedFile`), not gated on the verification step
+list being empty — a phase touching both a `.rs` file (mapped-unavailable, no cargo) and a `.ts`
+file (routed, real steps) must still abort, since the non-empty `.ts` steps would otherwise mask
+the completely unverified `.rs` change.
+
+This closes a real false-green found dogfooding a Rust workspace: `cargo` was briefly absent from
+a probed devShell palette (a cold `nix develop` realization can under-report a driver tool within
+the probe's timeout window while the probe process itself still exits 0), so `.rs` files silently
+floor-routed with zero verification and a non-compiling commit landed as `[ok]`. This is the Rust
+analog of the same false-green class the vacuous-pass guard and the reflexivity self-test close
+for the TypeScript-only case — but keyed on "a mapped toolchain's driver tool is unavailable",
+not "the verification step list happens to be empty", since the latter is neither necessary nor
+sufficient once multiple toolchains can be routed in the same phase.
+
+`devShellPalette` (`packages/pipeline/src/steps/devshell-palette.ts`) is hardened as a second,
+defense-in-depth layer against the same root cause: the flake.nix probe path uses a raised default
+`timeoutMs` (300s vs. 60s for the bare-PATH path) to tolerate a cold toolchain realization, and
+runs a best-effort `nix develop --command true` warm-up before the actual `command -v` probe so
+the probe itself races an already-realized shell. This reduces how often the probe under-reports a
+tool in the first place; the mapped-but-unavailable guard above is what guarantees correctness even
+when it still does.
+
 ### `PLAN_CONFIG_FACTORIES` registry
 
 `ai-system/core/pipeline/definitions/language-configs.ts` exports a `PlanConfigFactory` type —
