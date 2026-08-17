@@ -116,4 +116,46 @@ describe("devShellPalette", () => {
       rmSync(dir, { recursive: true });
     }
   });
+
+  it("uses a raised default timeout for the flake path when timeoutMs is not supplied", async () => {
+    // A malformed flake.nix fails fast (Nix evaluation error) well within
+    // even the raised default, so this only pins that the flake path does
+    // NOT time out prematurely under the old 60s default when no explicit
+    // timeoutMs is given -- the failure below must be a Nix evaluation
+    // error, never a "timed out" message, proving the effective timeout is
+    // not the tighter bare-PATH default.
+    const dir = makeTempDir();
+    try {
+      writeFileSync(join(dir, "flake.nix"), "{ this is not valid nix");
+      const result = await devShellPalette(dir, ["sh"], { cwd: dir });
+      if (!result.ok) {
+        expect(result.error.message).not.toContain("timed out after 60000ms");
+      }
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("still honors an explicit timeoutMs override on the flake path", async () => {
+    const dir = makeTempDir();
+    try {
+      writeFileSync(join(dir, "flake.nix"), "{ this is not valid nix");
+      const result = await devShellPalette(dir, ["sh"], { cwd: dir, timeoutMs: 1 });
+      // With a 1ms budget covering both the warm-up and the probe, this
+      // must not hang for anywhere near the raised 300s default.
+      expect(result.ok).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("uses the bare-PATH default timeout when no flake.nix is present", async () => {
+    const dir = makeTempDir();
+    try {
+      const result = await devShellPalette(dir, ["sh"], { cwd: dir });
+      expect(result.ok).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
 });

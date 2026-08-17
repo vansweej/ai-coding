@@ -20,10 +20,10 @@ Commit message: feat: create file
 
 ### Step 1: Create file
 
-Create src/hello.rs with a hello function.
+Create src/hello.txt with a hello function.
 `;
 
-const PATCH_RESPONSE = `src/hello.rs
+const PATCH_RESPONSE = `src/hello.txt
 <<<<<<< SEARCH
 =======
 pub fn hello() {}

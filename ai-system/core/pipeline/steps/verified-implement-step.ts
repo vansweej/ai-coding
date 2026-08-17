@@ -8,6 +8,7 @@ import { classifyError } from "../../../../src/errors/classify-error";
 import type { LLMOptions, OrchestratorConfig } from "../../orchestrator/orchestrate";
 import { orchestrate } from "../../orchestrator/orchestrate";
 import type { DevCycleLanguageConfig } from "../definitions/language-configs";
+import { MappedToolchainUnavailableError } from "../feature-runner";
 import { PHASE_FAILURE_REASONS, phaseHardFail } from "../phase-hard-fail";
 import type { CoverageDirective, Step } from "../plan-parser";
 import type { OnProgress } from "../progress";
@@ -18,7 +19,6 @@ import {
   paletteLanguageHint,
   runUnionVerification,
 } from "../routing/route";
-import { MappedToolchainUnavailableError } from "../feature-runner";
 import { applyPatch } from "./apply-patch-step";
 import { parsePatch, stripEnclosingFence } from "./parse-patch";
 import { tryStructuredPhase } from "./structured-implement";
@@ -609,7 +609,8 @@ export function createVerifiedImplementStep(
        * runs verification itself.
        */
       const verifyOrFail = async (): Promise<
-        { readonly ok: true; readonly value: readonly StepResult[] } | { readonly ok: false; readonly error: Error }
+        | { readonly ok: true; readonly value: readonly StepResult[] }
+        | { readonly ok: false; readonly error: Error }
       > => {
         if (options.palette !== undefined) {
           const mappedUnavailable = hasMappedButUnavailableTouchedFile(
@@ -669,7 +670,10 @@ export function createVerifiedImplementStep(
       );
       if (structuredResult.ok) {
         const verificationResult = await verifyOrFail();
-        if (!verificationResult.ok && verificationResult.error instanceof MappedToolchainUnavailableError) {
+        if (
+          !verificationResult.ok &&
+          verificationResult.error instanceof MappedToolchainUnavailableError
+        ) {
           return verificationResult;
         }
         if (verificationResult.ok) {
@@ -852,7 +856,10 @@ export function createVerifiedImplementStep(
           implementation = implementResult.value;
 
           const verificationResult = await verifyOrFail();
-          if (!verificationResult.ok && verificationResult.error instanceof MappedToolchainUnavailableError) {
+          if (
+            !verificationResult.ok &&
+            verificationResult.error instanceof MappedToolchainUnavailableError
+          ) {
             return verificationResult;
           }
           if (verificationResult.ok) {
@@ -998,7 +1005,10 @@ export function createVerifiedImplementStep(
           implementation = fixResult.value;
 
           const verificationResult = await verifyOrFail();
-          if (!verificationResult.ok && verificationResult.error instanceof MappedToolchainUnavailableError) {
+          if (
+            !verificationResult.ok &&
+            verificationResult.error instanceof MappedToolchainUnavailableError
+          ) {
             return verificationResult;
           }
           if (verificationResult.ok) {

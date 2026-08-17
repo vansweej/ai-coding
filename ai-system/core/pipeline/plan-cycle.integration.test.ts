@@ -16,11 +16,14 @@ import { runFeature } from "./feature-runner";
  * Integration test suite for the plan-cycle pipeline.
  * Tests the full flow: plan parsing → phase execution → memory tracking → git commits.
  *
- * Touched files use the ".rs" extension, but the test environment's devShell
- * palette (bare PATH probe, no flake.nix in these ephemeral workspaces) does
- * not include "cargo" -- so these files route to the no-toolchain floor and
- * verification is always an empty step list, exactly like the old mocked
+ * Touched files use the ".txt" extension, a genuinely unmapped extension (no
+ * EXTENSION_TO_TOOLCHAIN entry) so verification is always an empty,
+ * legitimately edit-only step list -- exactly like the old mocked
  * `toolchainSteps: () => []` config these tests previously supplied by hand.
+ * Deliberately NOT ".rs": that extension IS mapped to the rust toolchain, and
+ * these ephemeral tmpdir workspaces have no cargo in their devShell palette,
+ * which would now correctly trip the mapped-but-unavailable environment
+ * guard (MappedToolchainUnavailableError) instead of silently floor-routing.
  */
 
 // Mock dispatcher that returns aider-style patches
@@ -84,7 +87,7 @@ Commit message: feat: add test module
 
 ### Step 1: Create test module
 
-Create a new file src/test.rs with basic test utilities.
+Create a new file src/test.txt with basic test utilities.
 
 ## Phase 2: Add test cases
 
@@ -92,11 +95,11 @@ Commit message: feat: add test cases
 
 ### Step 1: Add test cases
 
-Add test cases to src/test.rs.
+Add test cases to src/test.txt.
 `;
 
 // Aider-style patch responses for the two-phase plan
-const PHASE_1_RESPONSE = `src/test.rs
+const PHASE_1_RESPONSE = `src/test.txt
 <<<<<<< SEARCH
 =======
 #[cfg(test)]
@@ -108,7 +111,7 @@ mod tests {
 }
 >>>>>>> REPLACE`;
 
-const PHASE_2_RESPONSE = `src/test.rs
+const PHASE_2_RESPONSE = `src/test.txt
 <<<<<<< SEARCH
 #[cfg(test)]
 mod tests {
@@ -142,15 +145,15 @@ Commit message: refactor: relocate legacy module into new layout
 
 ### Step 1: Move the legacy file and directory
 
-Move legacy/mod.rs to crates/parlang/legacy/mod.rs, and move legacy/support
+Move legacy/mod.txt to crates/parlang/legacy/mod.txt, and move legacy/support
 to crates/parlang/legacy/support.
 `;
 
 // Aider-style MOVE-directive response relocating a file and a directory.
-const MOVE_RESPONSE = `legacy/mod.rs
+const MOVE_RESPONSE = `legacy/mod.txt
 <<<<<<< MOVE
 =======
-crates/parlang/legacy/mod.rs
+crates/parlang/legacy/mod.txt
 >>>>>>> MOVE
 
 legacy/support
@@ -315,19 +318,19 @@ Commit message: feat: create and modify files
 
 ### Step 1: Create file
 
-Create src/lib.rs with a basic module.
+Create src/lib.txt with a basic module.
 
 ### Step 2: Add function
 
-Add a function to src/lib.rs.
+Add a function to src/lib.txt.
 
 ### Step 3: Add tests
 
-Add tests to src/lib.rs.
+Add tests to src/lib.txt.
 `;
 
     const responses = [
-      `src/lib.rs
+      `src/lib.txt
 <<<<<<< SEARCH
 =======
 pub mod utils {
@@ -336,7 +339,7 @@ pub mod utils {
     }
 }
 >>>>>>> REPLACE`,
-      `src/lib.rs
+      `src/lib.txt
 <<<<<<< SEARCH
 pub mod utils {
     pub fn add(a: i32, b: i32) -> i32 {
@@ -354,7 +357,7 @@ pub mod utils {
     }
 }
 >>>>>>> REPLACE`,
-      `src/lib.rs
+      `src/lib.txt
 <<<<<<< SEARCH
 pub mod utils {
     pub fn add(a: i32, b: i32) -> i32 {
@@ -488,13 +491,13 @@ pub mod utils {
 
   it("relocates a file and a directory via a MOVE directive and records a rename commit", async () => {
     // Seed the legacy paths that the plan will relocate.
-    const legacyFile = join(workspace, "legacy", "mod.rs");
+    const legacyFile = join(workspace, "legacy", "mod.txt");
     mkdirSync(join(workspace, "legacy"), { recursive: true });
     writeFileSync(legacyFile, "// legacy module\n", "utf8");
 
     const legacyDir = join(workspace, "legacy", "support");
     mkdirSync(legacyDir, { recursive: true });
-    writeFileSync(join(legacyDir, "helper.rs"), "// legacy helper\n", "utf8");
+    writeFileSync(join(legacyDir, "helper.txt"), "// legacy helper\n", "utf8");
 
     await $`git add -A`.cwd(workspace).quiet();
     await $`git commit -m "seed legacy files"`.cwd(workspace).quiet();
@@ -516,10 +519,10 @@ pub mod utils {
     );
 
     // Old paths are gone; new paths exist with identical content.
-    expect(existsSync(join(workspace, "legacy", "mod.rs"))).toBe(false);
+    expect(existsSync(join(workspace, "legacy", "mod.txt"))).toBe(false);
     expect(existsSync(join(workspace, "legacy", "support"))).toBe(false);
-    expect(existsSync(join(workspace, "crates/parlang/legacy/mod.rs"))).toBe(true);
-    expect(existsSync(join(workspace, "crates/parlang/legacy/support/helper.rs"))).toBe(true);
+    expect(existsSync(join(workspace, "crates/parlang/legacy/mod.txt"))).toBe(true);
+    expect(existsSync(join(workspace, "crates/parlang/legacy/support/helper.txt"))).toBe(true);
 
     // The resulting commit records renames (status "R...") for both paths,
     // with the expected Phase trailer.
