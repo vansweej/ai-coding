@@ -454,6 +454,48 @@ as provably inert: in phase mode, `implementation !== ""` already implies
 `stepCursor === phaseSteps.length`, so that guard would never change behavior. It is
 not part of this change.
 
+### Real gate-output ledger persistence (`onGateOutput`)
+
+Every verification gate — `fmt`/`check`/`clippy`/`test`/`typecheck`/`lint`/etc, run via
+either `createShellStep` or `createNixShellStep` (the latter delegates to the former) —
+now persists a real `gate-output` ledger line per invocation, carrying the gate's
+actual name, exit code, pass/fail status, full stdout/stderr, and duration, correlated
+by `runId` and `phase`. The seam is a single optional callback,
+`onGateOutput?: (name, stdout, stderr, exitCode, durationMs) => void`, fired
+unconditionally in `createShellStep` immediately after execution completes — before
+the `failOnNonZero` branch decision — so it observes the true outcome of every gate
+regardless of pass/fail/soft-gate status.
+
+The callback is threaded six layers deep, always as an optional, additive parameter:
+CLI (`run-pipeline-cli.ts`, where a closure over `ledger`/`runId` calls
+`buildGateOutput` + `ledger.writeGateOutput`) → `RunFeatureOptions`/`RunPhaseOptions`
+→ a per-phase closure built in `runPhase` that curries in `phase.number` →
+`VerifiedImplementStepOptions` → both the palette path
+(`buildPaletteLanguageConfig` → `runUnionVerification`) and the legacy
+fixed-`languageConfig` path (`computeVerificationOrFail`'s `toolchainSteps` call) →
+`DevCycleLanguageConfig.toolchainSteps`/`ToolchainDescriptor.toolchainSteps` (widened
+with a trailing optional parameter) → every `create*PlanConfig` factory's
+`createNixShellStep` calls, across all eight toolchains (Rust, TypeScript, Python,
+C++, Haskell, Julia, Nix, Shell).
+
+This closes the observability gap where a false-green on a real toolchain gate (for
+example, a cross-crate Rust compile break that should have failed `cargo check` but
+didn't) could not be forensically diagnosed after the fact: previously, only
+`test/gates/gate-output-persistence.test.ts`'s hand-built `GateOutput` fixtures ever
+exercised the ledger writer — no real gate's stdout/stderr/exitCode was ever actually
+persisted during a real run. `test/gates/gate-output-e2e.test.ts` proves the wiring
+end-to-end by running a real passing and a real failing `createShellStep` invocation
+and reading the resulting ledger lines back with `parseLedgerLine`.
+
+**`opId` correlation remains deliberately deferred and out of scope.** `mintOpId`/
+`lowerPatchOp` (`src/lower/event-types.ts`) exist but are not yet wired into the real
+patch-apply path (`structured-implement.ts`/`apply-patch-step.ts`), and verification
+currently runs once per phase over the whole touched tree rather than per-op, so there
+is no honest per-op correlation key available yet. A future subplan would need to
+both lower real ops with `lowerPatchOps` AND restructure verification to run per-op
+before an `opId` on a `gate-output` ledger line would be meaningful; today's
+`gate-output` lines carry `phase` but never `opId`.
+
 ---
 
 ## Progress Reporting (`--verbose`)
