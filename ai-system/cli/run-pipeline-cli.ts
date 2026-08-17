@@ -14,7 +14,11 @@ import {
   predictRunShape,
   runShapeToLedgerPayload,
 } from "../core/pipeline/dry-run-shape";
-import { DevShellPaletteError, runFeature } from "../core/pipeline/feature-runner";
+import {
+  DevShellPaletteError,
+  MappedToolchainUnavailableError,
+  runFeature,
+} from "../core/pipeline/feature-runner";
 import { BaselineCheckError } from "../core/pipeline/phase-runner";
 import { parsePlanFile } from "../core/pipeline/plan-parser";
 import type { OnProgress } from "../core/pipeline/progress";
@@ -117,7 +121,9 @@ export function reportFeatureFailure(
   verbose: boolean,
 ): { message: string; exitCode: number } {
   const isEnvironmentError =
-    error instanceof DevShellPaletteError || error instanceof BaselineCheckError;
+    error instanceof DevShellPaletteError ||
+    error instanceof BaselineCheckError ||
+    error instanceof MappedToolchainUnavailableError;
   const exitCode = isEnvironmentError ? EXIT_CODES.ENVIRONMENT_ERROR : EXIT_CODES.RESUMABLE_FAILURE;
 
   const base = `Feature failed: ${error.message}`;

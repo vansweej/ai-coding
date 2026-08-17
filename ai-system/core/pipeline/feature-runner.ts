@@ -37,6 +37,20 @@ export class DevShellPaletteError extends Error {
   }
 }
 
+/**
+ * Error indicating a touched file requires a toolchain whose driver tool is
+ * not present in the workspace's devShell palette. Distinguishes this
+ * specific environment failure (a mapped toolchain being unavailable) from
+ * an ordinary phase failure, so callers can map it to a hard environment-
+ * error exit code, same as `DevShellPaletteError`.
+ */
+export class MappedToolchainUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MappedToolchainUnavailableError";
+  }
+}
+
 /** Parse a plan file and run its phases sequentially, stopping on first failure. */
 export async function runFeature(
   planContent: string,
