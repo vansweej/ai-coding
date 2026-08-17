@@ -169,6 +169,21 @@ export interface VerifiedImplementStepOptions {
   /** Optional progress reporter; silent when omitted. */
   readonly onProgress?: OnProgress;
   readonly onDegrade?: (phaseNumber: number, detail: string) => void;
+  /**
+   * Optional sink for persisting real gate stdout/stderr/exitCode/duration
+   * to the ledger, already curried to this phase's number by the caller
+   * (`runPhase`). Threaded into `buildPaletteLanguageConfig`/the fixed-config
+   * `toolchainSteps` call so every real toolchain gate (cargo/bun/etc, both
+   * `createShellStep` and `createNixShellStep`) persists a real gate-output
+   * ledger line instead of only synthetic unit-test fixtures existing.
+   */
+  readonly onGateOutput?: (
+    name: string,
+    stdout: string,
+    stderr: string,
+    exitCode: number,
+    durationMs: number,
+  ) => void;
 }
 
 /**
@@ -204,6 +219,13 @@ export function buildPaletteLanguageConfig(
   palette: ReadonlySet<string>,
   coverage?: CoverageDirective,
   diff?: string,
+  onGateOutput?: (
+    name: string,
+    stdout: string,
+    stderr: string,
+    exitCode: number,
+    durationMs: number,
+  ) => void,
 ): DevCycleLanguageConfig {
   return {
     name: "typescript",
@@ -211,7 +233,7 @@ export function buildPaletteLanguageConfig(
     implementSystem: composeImplementSystem(palette),
     sourceExtensions: paletteExtensions(palette),
     sourceRoots: ["."],
-    toolchainSteps: (ws: string) => runUnionVerification(ws, palette, coverage, diff),
+    toolchainSteps: (ws: string) => runUnionVerification(ws, palette, coverage, diff, onGateOutput),
   };
 }
 
@@ -546,6 +568,7 @@ export function createVerifiedImplementStep(
           baseOptions.palette,
           baseOptions.coverage,
           baseOptions.diff,
+          baseOptions.onGateOutput,
         );
       } else if (baseOptions.languageConfig) {
         languageConfig = baseOptions.languageConfig;
@@ -582,7 +605,13 @@ export function createVerifiedImplementStep(
       const computeVerificationOrFail = ():
         | { readonly ok: true; readonly steps: readonly PipelineStep<AIRequestEvent>[] }
         | { readonly ok: false; readonly error: Error } => {
-        const steps = options.languageConfig.toolchainSteps(options.workspace);
+        const steps = options.languageConfig.toolchainSteps(
+          options.workspace,
+          options.coverage,
+          options.diff,
+          options.palette,
+          options.onGateOutput,
+        );
         if (steps.length === 0 && phaseSteps !== undefined && options.palette === undefined) {
           const reason =
             "no touched files routed to a verification toolchain — " +

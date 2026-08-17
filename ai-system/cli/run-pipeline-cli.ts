@@ -5,6 +5,7 @@ import type { AIRequestEvent } from "@ai-coding/shared";
 import { $ } from "bun";
 
 import { devShellPalette } from "@ai-coding/pipeline";
+import { buildGateOutput } from "../../src/gates/gate-output";
 import { createLedgerWriter, progressEventToLedgerLine } from "../../src/ledger/ledger-writer";
 import { mintRunId } from "../../src/run/run-id";
 import { resolvePlanRef } from "../core/orchestrator/cerebrum-plan-source";
@@ -300,6 +301,26 @@ async function main(): Promise<void> {
       }
     };
 
+    // Persist real gate stdout/stderr/exitCode to the ledger for every
+    // verification gate, correlated by runId and phase — closes the
+    // observability gap where a false-green on a real toolchain gate (e.g.
+    // a cross-crate Rust compile break) could not be forensically diagnosed
+    // after the fact, since only synthetic unit-test fixtures previously
+    // exercised the gate-output ledger writer. phase is threaded in
+    // per-phase by runPhase (which knows phase.number); this closure only
+    // needs to close over ledger/runId.
+    const onGateOutput = (
+      name: string,
+      stdout: string,
+      stderr: string,
+      exitCode: number,
+      durationMs: number,
+      phase?: number,
+    ): void => {
+      const go = buildGateOutput(name, stdout, stderr, exitCode, durationMs);
+      ledger?.writeGateOutput(go, runId, phase);
+    };
+
     const outcome = await runFeature(planContent, {
       config: configResult.value,
       workspace,
@@ -307,6 +328,7 @@ async function main(): Promise<void> {
       runId,
       retryConfig: { maxLocalRetries: maxRetries },
       onProgress,
+      onGateOutput,
     });
 
     if (!outcome.ok) {

@@ -106,8 +106,28 @@ export interface DevCycleLanguageConfig {
    * (e.g. `nix flake check`, `shellcheck` across all scripts).
    */
   readonly baselineCheck?: boolean;
-  /** Verification steps run once after all implementation steps in a phase. */
-  toolchainSteps(workspace: string): readonly PipelineStep<AIRequestEvent>[];
+  /**
+   * Verification steps run once after all implementation steps in a phase.
+   * `onGateOutput`, when supplied, is forwarded into every constructed
+   * `createShellStep`/`createNixShellStep` so the gate's real
+   * stdout/stderr/exitCode/duration is persisted to the ledger. Optional and
+   * additive -- implementations that don't consume it are unaffected
+   * (method-shorthand interface members are parameter-bivariant in
+   * TypeScript, so existing fixed-arity implementations remain valid).
+   */
+  toolchainSteps(
+    workspace: string,
+    coverage?: CoverageDirective,
+    diff?: string,
+    palette?: ReadonlySet<string>,
+    onGateOutput?: (
+      name: string,
+      stdout: string,
+      stderr: string,
+      exitCode: number,
+      durationMs: number,
+    ) => void,
+  ): readonly PipelineStep<AIRequestEvent>[];
 }
 
 /** TypeScript/Bun verification and implementation rules. */
@@ -197,16 +217,36 @@ export function createRustPlanConfig(
     sourceExtensions: [".rs", ".md"],
     sourceRoots: ["src", "crates", "."],
     implementSystem: buildPatchSystem("Rust", RUST_PLAN_IDIOMS),
-    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => {
+    toolchainSteps: (
+      workspace: string,
+      _coverage?: CoverageDirective,
+      _diff?: string,
+      _palette?: ReadonlySet<string>,
+      onGateOutput?: (
+        name: string,
+        stdout: string,
+        stderr: string,
+        exitCode: number,
+        durationMs: number,
+      ) => void,
+    ): readonly PipelineStep<AIRequestEvent>[] => {
       const baseSteps: PipelineStep<AIRequestEvent>[] = [
-        createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt"], { cwd: workspace }),
+        createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt"], {
+          cwd: workspace,
+          onGateOutput,
+        }),
         createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], {
           cwd: workspace,
+          onGateOutput,
         }),
         createNixShellStep<AIRequestEvent>("clippy", ["cargo", "clippy", "--", "-D", "warnings"], {
           cwd: workspace,
+          onGateOutput,
         }),
-        createNixShellStep<AIRequestEvent>("test", ["cargo", "test"], { cwd: workspace }),
+        createNixShellStep<AIRequestEvent>("test", ["cargo", "test"], {
+          cwd: workspace,
+          onGateOutput,
+        }),
       ];
 
       // When coverage isn't gated (Coverage: skip or auto-exempt), skip the
@@ -229,6 +269,7 @@ export function createRustPlanConfig(
           // Instrumented rebuilds of heavy workspaces can take well over the
           // 60s shell-step default; give gated phases a realistic budget.
           timeoutMs: 900_000,
+          onGateOutput,
         }),
         // Coverage gate is fatal when gated (per-phase directives/auto-exempt
         // already resolved above).
@@ -259,16 +300,31 @@ export function createTsPlanConfig(
     sourceExtensions: [".ts", ".md"],
     sourceRoots: ["src", "."],
     implementSystem: buildPatchSystem("TypeScript", TS_PLAN_IDIOMS),
-    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+    toolchainSteps: (
+      workspace: string,
+      _coverage?: CoverageDirective,
+      _diff?: string,
+      _palette?: ReadonlySet<string>,
+      onGateOutput?: (
+        name: string,
+        stdout: string,
+        stderr: string,
+        exitCode: number,
+        durationMs: number,
+      ) => void,
+    ): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>("typecheck", ["bun", "run", "typecheck"], {
         cwd: workspace,
+        onGateOutput,
       }),
       createNixShellStep<AIRequestEvent>("lint", ["bunx", "biome", "check", "--write", "."], {
         cwd: workspace,
+        onGateOutput,
       }),
       createNixShellStep<AIRequestEvent>("test", ["bun", "test"], {
         cwd: workspace,
         timeoutMs: 300_000,
+        onGateOutput,
       }),
     ],
   };
@@ -293,24 +349,40 @@ export function createPythonPlanConfig(
     sourceExtensions: [".py", ".md"],
     sourceRoots: ["src", "."],
     implementSystem: buildPatchSystem("Python", PYTHON_PLAN_IDIOMS),
-    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+    toolchainSteps: (
+      workspace: string,
+      _coverage?: CoverageDirective,
+      _diff?: string,
+      _palette?: ReadonlySet<string>,
+      onGateOutput?: (
+        name: string,
+        stdout: string,
+        stderr: string,
+        exitCode: number,
+        durationMs: number,
+      ) => void,
+    ): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>("format", ["ruff", "format", "--check", "."], {
         cwd: workspace,
         timeoutMs: 60_000,
+        onGateOutput,
       }),
       createNixShellStep<AIRequestEvent>("lint", ["ruff", "check", "."], {
         cwd: workspace,
         timeoutMs: 60_000,
+        onGateOutput,
       }),
       // Warning-only until the project is fully typed; tighten to fatal later.
       createNixShellStep<AIRequestEvent>("typecheck", ["mypy", "."], {
         cwd: workspace,
         timeoutMs: 120_000,
         failOnNonZero: false,
+        onGateOutput,
       }),
       createNixShellStep<AIRequestEvent>("test", ["pytest", "-q"], {
         cwd: workspace,
         timeoutMs: 300_000,
+        onGateOutput,
       }),
     ],
   };
@@ -335,20 +407,33 @@ export function createCppPlanConfig(
     sourceExtensions: [".cpp", ".h", ".hpp", ".md"],
     sourceRoots: ["src", "include", "."],
     implementSystem: buildPatchSystem("C++", CPP_PLAN_IDIOMS),
-    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+    toolchainSteps: (
+      workspace: string,
+      _coverage?: CoverageDirective,
+      _diff?: string,
+      _palette?: ReadonlySet<string>,
+      onGateOutput?: (
+        name: string,
+        stdout: string,
+        stderr: string,
+        exitCode: number,
+        durationMs: number,
+      ) => void,
+    ): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>(
         "configure",
         ["cmake", "-S", ".", "-B", DEFAULT_CPP_BUILD_DIR],
-        { cwd: workspace, timeoutMs: 120_000 },
+        { cwd: workspace, timeoutMs: 120_000, onGateOutput },
       ),
       createNixShellStep<AIRequestEvent>("build", ["cmake", "--build", DEFAULT_CPP_BUILD_DIR], {
         cwd: workspace,
         timeoutMs: 300_000,
+        onGateOutput,
       }),
       createNixShellStep<AIRequestEvent>(
         "test",
         ["ctest", "--test-dir", DEFAULT_CPP_BUILD_DIR, "--output-on-failure"],
-        { cwd: workspace, timeoutMs: 300_000 },
+        { cwd: workspace, timeoutMs: 300_000, onGateOutput },
       ),
     ],
   };
@@ -373,19 +458,34 @@ export function createHaskellPlanConfig(
     sourceExtensions: [".hs", ".md"],
     sourceRoots: ["src", "app", "."],
     implementSystem: buildPatchSystem("Haskell", HASKELL_PLAN_IDIOMS),
-    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+    toolchainSteps: (
+      workspace: string,
+      _coverage?: CoverageDirective,
+      _diff?: string,
+      _palette?: ReadonlySet<string>,
+      onGateOutput?: (
+        name: string,
+        stdout: string,
+        stderr: string,
+        exitCode: number,
+        durationMs: number,
+      ) => void,
+    ): readonly PipelineStep<AIRequestEvent>[] => [
       // cabal build doubles as the typecheck step for Haskell.
       createNixShellStep<AIRequestEvent>("build", ["cabal", "build"], {
         cwd: workspace,
         timeoutMs: 600_000,
+        onGateOutput,
       }),
       createNixShellStep<AIRequestEvent>("lint", ["hlint", "."], {
         cwd: workspace,
         timeoutMs: 120_000,
+        onGateOutput,
       }),
       createNixShellStep<AIRequestEvent>("test", ["cabal", "test"], {
         cwd: workspace,
         timeoutMs: 600_000,
+        onGateOutput,
       }),
     ],
   };
@@ -412,11 +512,23 @@ export function createJuliaPlanConfig(
     sourceExtensions: [".jl", ".md"],
     sourceRoots: ["src", "."],
     implementSystem: buildPatchSystem("Julia", JULIA_PLAN_IDIOMS),
-    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+    toolchainSteps: (
+      workspace: string,
+      _coverage?: CoverageDirective,
+      _diff?: string,
+      _palette?: ReadonlySet<string>,
+      onGateOutput?: (
+        name: string,
+        stdout: string,
+        stderr: string,
+        exitCode: number,
+        durationMs: number,
+      ) => void,
+    ): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>(
         "test",
         ["julia", "--project", "-e", "using Pkg; Pkg.test()"],
-        { cwd: workspace, timeoutMs: 900_000 },
+        { cwd: workspace, timeoutMs: 900_000, onGateOutput },
       ),
     ],
   };
@@ -446,14 +558,28 @@ export function createNixPlanConfig(
     sourceRoots: ["."],
     baselineCheck: true,
     implementSystem: buildPatchSystem("Nix", NIX_PLAN_IDIOMS),
-    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+    toolchainSteps: (
+      workspace: string,
+      _coverage?: CoverageDirective,
+      _diff?: string,
+      _palette?: ReadonlySet<string>,
+      onGateOutput?: (
+        name: string,
+        stdout: string,
+        stderr: string,
+        exitCode: number,
+        durationMs: number,
+      ) => void,
+    ): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>("format", ["nixpkgs-fmt", "--check", "."], {
         cwd: workspace,
         timeoutMs: 60_000,
+        onGateOutput,
       }),
       createNixShellStep<AIRequestEvent>("check", ["nix", "flake", "check"], {
         cwd: workspace,
         timeoutMs: 900_000,
+        onGateOutput,
       }),
     ],
   };
@@ -484,15 +610,28 @@ export function createShellPlanConfig(
     sourceRoots: ["."],
     baselineCheck: true,
     implementSystem: buildPatchSystem("Shell", SHELL_PLAN_IDIOMS),
-    toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
+    toolchainSteps: (
+      workspace: string,
+      _coverage?: CoverageDirective,
+      _diff?: string,
+      _palette?: ReadonlySet<string>,
+      onGateOutput?: (
+        name: string,
+        stdout: string,
+        stderr: string,
+        exitCode: number,
+        durationMs: number,
+      ) => void,
+    ): readonly PipelineStep<AIRequestEvent>[] => [
       createNixShellStep<AIRequestEvent>("format", ["shfmt", "-d", "."], {
         cwd: workspace,
         timeoutMs: 60_000,
+        onGateOutput,
       }),
       createNixShellStep<AIRequestEvent>(
         "lint",
         ["sh", "-c", 'files=$(git ls-files "*.sh"); [ -z "$files" ] || shellcheck $files'],
-        { cwd: workspace, timeoutMs: 120_000 },
+        { cwd: workspace, timeoutMs: 120_000, onGateOutput },
       ),
     ],
   };
@@ -618,6 +757,13 @@ export interface ToolchainDescriptor {
     coverage?: CoverageDirective,
     diff?: string,
     palette?: ReadonlySet<string>,
+    onGateOutput?: (
+      name: string,
+      stdout: string,
+      stderr: string,
+      exitCode: number,
+      durationMs: number,
+    ) => void,
   ): readonly PipelineStep<AIRequestEvent>[];
 }
 

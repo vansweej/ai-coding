@@ -279,6 +279,13 @@ export function runUnionVerification(
   palette: ReadonlySet<string>,
   coverage?: CoverageDirective,
   diff?: string,
+  onGateOutput?: (
+    name: string,
+    stdout: string,
+    stderr: string,
+    exitCode: number,
+    durationMs: number,
+  ) => void,
 ): readonly PipelineStep<AIRequestEvent>[] {
   const touchedFiles = getTouchedFiles(workspace);
   const stepsByName = new Map<string, PipelineStep<AIRequestEvent>>();
@@ -287,7 +294,13 @@ export function runUnionVerification(
     const descriptor = route(file, palette);
     if (descriptor === null) continue;
 
-    for (const step of descriptor.toolchainSteps(workspace, coverage, diff, palette)) {
+    for (const step of descriptor.toolchainSteps(
+      workspace,
+      coverage,
+      diff,
+      palette,
+      onGateOutput,
+    )) {
       stepsByName.set(step.name, step);
     }
   }

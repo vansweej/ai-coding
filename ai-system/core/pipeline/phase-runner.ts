@@ -75,6 +75,23 @@ export interface RunPhaseOptions {
    */
   readonly onProgress?: OnProgress;
   readonly onDegrade?: (phaseNumber: number, detail: string) => void;
+  /**
+   * Optional sink for persisting real gate stdout/stderr/exitCode/duration
+   * to the ledger, correlated by runId and phase. The `phase` argument is
+   * the plan phase number the gate ran under; `runPhase` curries this in
+   * automatically before threading the callback down to the verified-
+   * implement step, so callers of `runPhase` only need to supply the
+   * 5-arg (name, stdout, stderr, exitCode, durationMs) shape -- see
+   * `VerifiedImplementStepOptions.onGateOutput`.
+   */
+  readonly onGateOutput?: (
+    name: string,
+    stdout: string,
+    stderr: string,
+    exitCode: number,
+    durationMs: number,
+    phase?: number,
+  ) => void;
 }
 
 /** Commit all phase changes with the plan-authored commit message and Phase / Run-Id trailers. */
@@ -343,6 +360,14 @@ export async function runPhase(
     await options.config.memory.remember(phaseContext, 0.8);
   }
 
+  // Curry the phase number into onGateOutput so createVerifiedImplementStep
+  // (and everything it threads the callback into) only needs to supply the
+  // 5-arg (name, stdout, stderr, exitCode, durationMs) shape.
+  const gateOutputForThisPhase = options.onGateOutput
+    ? (name: string, stdout: string, stderr: string, exitCode: number, durationMs: number): void =>
+        options.onGateOutput?.(name, stdout, stderr, exitCode, durationMs, phase.number)
+    : undefined;
+
   const verifiedStep = createVerifiedImplementStep(`phase-${phase.number}`, {
     config: options.config,
     workspace: options.workspace,
@@ -355,6 +380,7 @@ export async function runPhase(
     phaseNumber: phase.number,
     onProgress: options.onProgress,
     onDegrade: options.onDegrade,
+    onGateOutput: gateOutputForThisPhase,
   });
   const result = await verifiedStep.execute({
     event: buildStepEvent(buildPhaseInstruction(phase)),
