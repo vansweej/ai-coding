@@ -51,6 +51,21 @@ export class MappedToolchainUnavailableError extends Error {
   }
 }
 
+/**
+ * Error indicating a resume target commit (the highest `Phase: N` commit)
+ * lacks a `Run-Id:` trailer, so its provenance cannot be verified. Under
+ * `--strict`, resuming onto such a commit is treated as a hard environment
+ * error rather than silently proceeding with an unverified reset target.
+ */
+export class UnverifiedResumeRangeError extends Error {
+  constructor(subject: string) {
+    super(
+      `Resume target commit lacks a Run-Id: trailer and cannot be verified (strict mode): "${subject}"`,
+    );
+    this.name = "UnverifiedResumeRangeError";
+  }
+}
+
 /** Parse a plan file and run its phases sequentially, stopping on first failure. */
 export async function runFeature(
   planContent: string,
@@ -74,10 +89,21 @@ export async function runFeature(
   const palette = paletteResult.value;
 
   // Detect if a resume is needed
+  let unverifiedResumeTarget: string | undefined;
   const resumeState = await detectResumeState(options.workspace);
   let startPhaseIndex = 0;
 
   if (resumeState.needsResume && resumeState.lastPhaseNumber !== undefined) {
+    if (resumeState.unverifiedTargetSubject !== undefined) {
+      if (options.config.strict === true) {
+        return {
+          ok: false,
+          error: new UnverifiedResumeRangeError(resumeState.unverifiedTargetSubject),
+        };
+      }
+      unverifiedResumeTarget = `Resume target commit lacks a Run-Id: trailer and cannot be verified: "${resumeState.unverifiedTargetSubject}"`;
+    }
+
     // Reset to the last completed phase
     const resetResult = await resetToPhaseCommit(options.workspace, resumeState.lastPhaseNumber);
     if (!resetResult.ok) return resetResult;
@@ -90,6 +116,10 @@ export async function runFeature(
   const onDegrade = (phaseNumber: number, detail: string): void => {
     degradations.push(`Phase ${phaseNumber}: ${detail}`);
   };
+
+  if (unverifiedResumeTarget !== undefined) {
+    degradations.push(unverifiedResumeTarget);
+  }
 
   const phaseResults: PhaseRunResult[] = [];
   for (let i = startPhaseIndex; i < parsed.value.phases.length; i++) {
