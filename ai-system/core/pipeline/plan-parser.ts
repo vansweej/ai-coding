@@ -32,6 +32,11 @@ export interface Phase {
   /** Coverage directive: skip, N%, or default (90%). */
   readonly coverage: CoverageDirective;
   /**
+   * When true, the phase runs assertions only, skips the implement/verify
+   * step, and commits nothing.
+   */
+  readonly verifyOnly?: boolean;
+  /**
    * Author-declared structural assertions checked by the runner AFTER
    * verification and BEFORE commit. Optional and backward compatible: plans
    * without any `Assert:` lines parse to an omitted field.
@@ -65,6 +70,7 @@ const PHASE_RE = /^##\s+Phase\s+(\d+):\s*(.+)$/;
 const COMMIT_RE = /^Commit message:\s*(.+)$/;
 const COVERAGE_RE = /^Coverage:\s*(.+)$/;
 const ASSERT_RE = /^Assert:\s*(.+)$/;
+const MODE_RE = /^Mode:\s*(.+)$/;
 const STEP_RE = /^###\s+Step\s+(\d+):\s*(.+)$/;
 
 /**
@@ -111,6 +117,7 @@ export function parsePlanFile(content: string): Result<PlanFile> {
   let currentPhaseTitle: string | undefined;
   let currentCommitMessage: string | undefined;
   let currentCoverage: CoverageDirective = { mode: "default" };
+  let currentVerifyOnly = false;
   const currentSteps: Step[] = [];
   const currentAssertions: PhaseAssertion[] = [];
 
@@ -141,10 +148,18 @@ export function parsePlanFile(content: string): Result<PlanFile> {
         error: new Error(`Phase ${currentPhaseNumber} is missing a "Commit message:" line`),
       };
     }
-    if (currentSteps.length === 0) {
+    if (currentSteps.length === 0 && !currentVerifyOnly) {
       return {
         ok: false,
-        error: new Error(`Phase ${currentPhaseNumber} has no steps`),
+        error: new Error(`Phase ${currentPhaseNumber} has no steps and is not verify-only`),
+      };
+    }
+    if (currentVerifyOnly && currentAssertions.length === 0) {
+      return {
+        ok: false,
+        error: new Error(
+          `Phase ${currentPhaseNumber} is verify-only but declares no "Assert:" lines`,
+        ),
       };
     }
     phases.push({
@@ -153,12 +168,14 @@ export function parsePlanFile(content: string): Result<PlanFile> {
       commitMessage: currentCommitMessage,
       steps: [...currentSteps],
       coverage: currentCoverage,
+      verifyOnly: currentVerifyOnly,
       assertions: [...currentAssertions],
     });
     currentPhaseNumber = undefined;
     currentPhaseTitle = undefined;
     currentCommitMessage = undefined;
     currentCoverage = { mode: "default" };
+    currentVerifyOnly = false;
     currentSteps.length = 0;
     currentAssertions.length = 0;
     return { ok: true, value: undefined };
@@ -226,6 +243,21 @@ export function parsePlanFile(content: string): Result<PlanFile> {
         };
       }
       currentAssertions.push(parsed.value);
+      continue;
+    }
+
+    const modeMatch = MODE_RE.exec(line);
+    if (modeMatch && currentPhaseNumber !== undefined) {
+      const modeValue = modeMatch[1].trim();
+      if (modeValue !== "verify-only") {
+        return {
+          ok: false,
+          error: new Error(
+            `Phase ${currentPhaseNumber} has an invalid Mode directive: "${modeValue}" (must be "verify-only")`,
+          ),
+        };
+      }
+      currentVerifyOnly = true;
       continue;
     }
 
