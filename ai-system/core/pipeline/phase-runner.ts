@@ -360,6 +360,39 @@ export async function runPhase(
     await options.config.memory.remember(phaseContext, 0.8);
   }
 
+  // Verify-only phases run their Assert: lines only. They skip the
+  // implement/verify step and net-change gate, commit nothing, and stamp no
+  // Phase trailer, so they are transparent to resume because they are
+  // idempotent by construction.
+  if (phase.verifyOnly) {
+    if ((phase.assertions ?? []).length === 0) {
+      return phaseHardFail(
+        phase.number,
+        PHASE_FAILURE_REASONS.structuralAssertion,
+        "verify-only phase declared no assertions",
+      );
+    }
+
+    const assertionResult = await checkAssertions(options.workspace, phase.assertions ?? []);
+    if (!assertionResult.ok) {
+      restoreWorkingTree(options.workspace, phase.number, options.onProgress, options.planPath);
+      return phaseHardFail(
+        phase.number,
+        PHASE_FAILURE_REASONS.structuralAssertion,
+        `failed a structural assertion: ${assertionResult.error.message}`,
+      );
+    }
+
+    return {
+      ok: true,
+      value: {
+        phaseNumber: phase.number,
+        stepsCompleted: 0,
+        commitMessage: phase.commitMessage,
+      },
+    };
+  }
+
   // Curry the phase number into onGateOutput so createVerifiedImplementStep
   // (and everything it threads the callback into) only needs to supply the
   // 5-arg (name, stdout, stderr, exitCode, durationMs) shape.
