@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -78,5 +78,43 @@ afterEach(() => {
  * mimicking a resume target commit whose provenance cannot be verified.
  */
 function seedUnverifiedPhaseCommit(): void {
+  mkdirSync(join(workspace, "docs"), { recursive: true });
   writeFileSync(join(workspace, "docs", "index.md"), "", "utf8");
+  runGit(workspace, "add -A");
+  runGit(workspace, 'commit -m "seed unverified phase-1 target" -m "Phase: 1"');
 }
+
+describe("resume unverified-range policy", () => {
+  it("degrades by default when the resume target lacks a Run-Id trailer", async () => {
+    seedUnverifiedPhaseCommit();
+
+    const result = await runFeature(PLAN, {
+      config: createMockConfig(createMockDispatcher(PHASE_2_RESPONSE), false),
+      workspace,
+      runId: "run-resume-unverified-degrade",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(JSON.stringify(result.value)).toContain("seed unverified phase-1 target");
+  });
+
+  it("hard-fails with UnverifiedResumeRangeError under strict mode", async () => {
+    seedUnverifiedPhaseCommit();
+    const headBefore = execSync("git rev-parse HEAD", { cwd: workspace, encoding: "utf8" }).trim();
+
+    const result = await runFeature(PLAN, {
+      config: createMockConfig(createMockDispatcher(PHASE_2_RESPONSE), true),
+      workspace,
+      runId: "run-resume-unverified-strict",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeInstanceOf(UnverifiedResumeRangeError);
+    expect((result.error as Error).message).toContain("seed unverified phase-1 target");
+
+    const headAfter = execSync("git rev-parse HEAD", { cwd: workspace, encoding: "utf8" }).trim();
+    expect(headAfter).toBe(headBefore);
+  });
+});
