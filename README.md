@@ -565,6 +565,8 @@ as `WARN` lines on stdout and the process exits with code `4` instead of `0`. Th
 signal — the feature is complete, but the caller can detect that the structured path was not used
 end to end.
 
+Resuming a branch whose reset-target phase commit was completed by hand degrades the run by default and hard-fails under strict mode, and such a commit is called an `unverified phase commit` because its `Phase:` trailer was typed by a person rather than stamped by the runner.
+
 ## Development
 
 ```bash

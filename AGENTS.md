@@ -250,6 +250,8 @@ structured-patch fell back to the text loop), the CLI exits with code **4**
 rather than 0. All phases committed successfully; the degradation list is
 printed to stdout as `WARN:` lines.
 
+Hand-completing a failed phase is a legitimate, documented recovery workflow, but commits made that way are not gate-verified even when they carry a `Phase:` trailer — resume therefore reports them rather than silently trusting them as having `verified provenance`.
+
 ### `Assert: test <path>` assertion verb
 A phase directive that runs a single test file and fails the phase if the test
 does not pass:

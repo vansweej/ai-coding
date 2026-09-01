@@ -468,6 +468,14 @@ as provably inert: in phase mode, `implementation !== ""` already implies
 `stepCursor === phaseSteps.length`, so that guard would never change behavior. It is
 not part of this change.
 
+### Commit provenance ledger record
+
+On every gate-verified phase commit, the pure progress-to-ledger mapper emits a ledger line whose payload carries the commit `sha`, the `commitMessage`, and the `runId`, so an operator can map any commit SHA back to the run that produced it. The payload's `runId` intentionally duplicates the required top-level `runId` so an extracted standalone provenance payload is self-contained — this must not be deduped by a future cleanup. A verify-only phase emits no such record because it commits nothing.
+
+### Unverified phase commit resume policy
+
+A hand-typed `Phase: N` trailer is indistinguishable from a gate-verified one, so resume inspects ONLY the reset target — the commit carrying the highest `Phase: N`, the commit it would reset to. If that target lacks a `Run-Id` trailer the run degrades by default, surfacing the DEGRADED exit code, and hard-fails only under the existing strict mode. Commits elsewhere in the scanned range are deliberately not inspected, to avoid alarm fatigue. This policy is called `verified-or-degrade`. Known out-of-scope caveat: the exit-code table in `docs/pipeline-tool.md` lists only 0, 2 and 3, so a DEGRADED run currently surfaces to the tool as an unexpected error; this is a pre-existing defect not addressed by this change.
+
 ### Real gate-output ledger persistence (`onGateOutput`)
 
 Every verification gate — `fmt`/`check`/`clippy`/`test`/`typecheck`/`lint`/etc, run via
