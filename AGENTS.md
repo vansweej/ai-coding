@@ -262,7 +262,7 @@ The file is executed with `bun test <path>` inside a `NixShellStep` (respecting
 the workspace's devShell). A missing file, a syntax error, or any failing test
 assertion causes the phase to fail before commit. Useful for encoding a
 machine-checked "this specific test must be green" invariant alongside the
-other structural assertion verbs.
+other structural assertion verbs. A test file that executes zero tests — because it is empty, or contains only skipped or todo tests — is ALSO a failure: the verb requires at least one executed (pass or fail) test, so a truncated or stubbed-out test file can no longer commit green.
 
 ### `Mode: verify-only` phase directive
 Declare `Mode: verify-only` within a phase to run only that phase's `Assert:` lines.

@@ -284,7 +284,7 @@ Each phase is committed separately with a `Phase: N` trailer for resume tracking
 
 A phase may optionally declare `Assert:` directives (alongside `Commit message:`
 and `Coverage:`) to encode machine-checked, author-declared invariants about
-the final state of the workspace. Six grammars are supported:
+the final state of the workspace. Seven grammars are supported:
 
 ```
 Assert: contains <path> :: <needle>
@@ -293,6 +293,7 @@ Assert: exists <path>
 Assert: not-exists <path>
 Assert: matches <path> :: <regex>
 Assert: toml-keys <path> :: <dotted.table> :: key1,key2,key3
+Assert: test <path>
 ```
 
 The ` :: ` separator splits the path from the needle (or regex) for the

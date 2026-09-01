@@ -845,6 +845,7 @@ runs last among all assertion checks, immediately before the phase commits.
 A non-zero exit from `bun test` (test failure, file not found, or any other
 error) is a **FAILURE** — the commit is blocked and the phase is reported as
 failed. A passing test suite is required for the phase to commit.
+A zero-exit run that executed **no tests** (an empty, skip-only, or todo-only file) is ALSO a FAILURE — the assertion parses bun test's summary and requires at least one executed test, closing the false-green hole where a stubbed-out test file satisfied both Assert: exists and Assert: test.
 
 Example — asserting that a newly-written test file passes before the phase
 commits:
