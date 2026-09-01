@@ -8,6 +8,13 @@ import { buildGitCleanArgs } from "./git-clean-args";
 export interface ResumeState {
   readonly needsResume: boolean;
   readonly lastPhaseNumber: number | undefined;
+  /**
+   * Optional diagnostic hint: when the resume target commit (the highest
+   * `Phase: N` commit) lacks a `Run-Id:` trailer, this carries that commit's
+   * subject line (via `classifyResumeScan`). Undefined when the target
+   * commit has a `Run-Id:` trailer, or when no resume target was found.
+   */
+  readonly unverifiedTargetSubject?: string;
 }
 
 /**
@@ -200,12 +207,16 @@ async function findLastPhaseNumber(workspace: string): Promise<number | undefine
  * @returns ResumeState with needsResume flag and last phase number
  */
 export async function detectResumeState(workspace: string): Promise<ResumeState> {
-  const lastPhaseNumber = await findLastPhaseNumber(workspace);
-  if (lastPhaseNumber === undefined) {
+  const scan = await classifyResumeScan(workspace);
+  if (scan.lastPhaseNumber === undefined) {
     return { needsResume: false, lastPhaseNumber: undefined };
   }
 
-  return { needsResume: true, lastPhaseNumber };
+  return {
+    needsResume: true,
+    lastPhaseNumber: scan.lastPhaseNumber,
+    unverifiedTargetSubject: scan.targetSubject,
+  };
 }
 
 /**
