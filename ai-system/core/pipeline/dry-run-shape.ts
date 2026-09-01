@@ -8,6 +8,8 @@ export interface PredictedPhaseShape {
   readonly stepCount: number;
   readonly assertCount: number;
   readonly coverage: string;
+  /** Whether the phase runs assertions only and makes no commit. */
+  readonly verifyOnly: boolean;
   /**
    * Best-effort warning: true when every declared Assert path (if any)
    * routes to no toolchain (the vacuous/floor-only case). This is NOT an
@@ -71,6 +73,7 @@ export function predictRunShape(plan: PlanFile, palette: ReadonlySet<string>): P
     stepCount: phase.steps.length,
     assertCount: (phase.assertions ?? []).length,
     coverage: formatCoverage(phase.coverage),
+    verifyOnly: phase.verifyOnly ?? false,
     vacuousFloorOnlyWarning: isVacuousFloorOnly(phase.assertions, palette),
   }));
 
@@ -97,7 +100,8 @@ export function formatPredictedRunShape(shape: PredictedRunShape): string {
       : "";
     lines.push(
       `  Phase ${phase.phase}: ${phase.title} — ${phase.stepCount} step(s), ` +
-        `${phase.assertCount} assert(s), coverage=${phase.coverage}${warning}`,
+        `${phase.assertCount} assert(s), coverage=${phase.coverage}` +
+        `${phase.verifyOnly ? " [verify-only]" : ""}${warning}`,
     );
   }
 
@@ -121,6 +125,7 @@ export function runShapeToLedgerPayload(shape: PredictedRunShape): Record<string
       stepCount: phase.stepCount,
       assertCount: phase.assertCount,
       coverage: phase.coverage,
+      verifyOnly: phase.verifyOnly,
       vacuousFloorOnlyWarning: phase.vacuousFloorOnlyWarning,
     })),
   };
