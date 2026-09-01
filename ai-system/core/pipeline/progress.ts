@@ -24,7 +24,12 @@ export type ProgressEvent =
       readonly index: number;
       readonly max: number;
     }
-  | { readonly kind: "phase-finish"; readonly phase: number; readonly commitMessage: string }
+  | {
+      readonly kind: "phase-finish";
+      readonly phase: number;
+      readonly commitMessage: string;
+      readonly commitHash?: string;
+    }
   | { readonly kind: "phase-fail"; readonly phase: number; readonly reason: string }
   | {
       readonly kind: "step-start";

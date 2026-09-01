@@ -34,6 +34,8 @@ export interface PhaseRunResult {
   readonly phaseNumber: number;
   readonly stepsCompleted: number;
   readonly commitMessage: string;
+  /** SHA of the phase's commit. Absent for verify-only phases, which commit nothing. */
+  readonly commitHash?: string;
 }
 
 /** Function used to commit a successful phase. */
@@ -94,7 +96,12 @@ export interface RunPhaseOptions {
   ) => void;
 }
 
-/** Commit all phase changes with the plan-authored commit message and Phase / Run-Id trailers. */
+/**
+ * Commit all phase changes with the plan-authored commit message and Phase / Run-Id trailers.
+ *
+ * Returns the resulting commit's SHA (via `git rev-parse HEAD`), not the commit message,
+ * so callers can correlate a completed phase with its exact commit.
+ */
 export async function commitPhaseChanges(
   workspace: string,
   commitMessage: string,
@@ -111,7 +118,8 @@ export async function commitPhaseChanges(
 
     await $`git add -A`.cwd(workspace).quiet();
     await $`git commit -m ${messageWithTrailer}`.cwd(workspace).quiet();
-    return { ok: true, value: commitMessage };
+    const sha = (await $`git rev-parse HEAD`.cwd(workspace).quiet().text()).trim();
+    return { ok: true, value: sha };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
   }
@@ -471,6 +479,7 @@ export async function runPhase(
       phaseNumber: phase.number,
       stepsCompleted: phase.steps.length,
       commitMessage: phase.commitMessage,
+      commitHash: commitResult.value,
     },
   };
 }

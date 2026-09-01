@@ -113,6 +113,7 @@ export async function runFeature(
       kind: "phase-finish",
       phase: phase.number,
       commitMessage: phase.commitMessage,
+      commitHash: result.value.commitHash,
     });
   }
 

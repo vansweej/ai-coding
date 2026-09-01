@@ -133,7 +133,7 @@ describe("runFeature", () => {
       },
       { kind: "step-start", phase: 1, step: 1, title: "Implement one" },
       { kind: "step-finish", phase: 1, step: 1 },
-      { kind: "phase-finish", phase: 1, commitMessage: "feat: one" },
+      { kind: "phase-finish", phase: 1, commitMessage: "feat: one", commitHash: "feat: one" },
       { kind: "phase-start", phase: 2, title: "Two" },
       {
         kind: "patch-path",
