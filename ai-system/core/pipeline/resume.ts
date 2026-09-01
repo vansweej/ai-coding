@@ -55,6 +55,76 @@ async function resolveTrunkMergeBase(workspace: string): Promise<string | undefi
 }
 
 /**
+ * Result of {@link classifyResumeScan}: the last completed phase number (if
+ * any) and, when that reset-target commit LACKS a `Run-Id:` trailer, the
+ * commit subject line to surface as a diagnostic hint.
+ */
+export interface ResumeTargetScan {
+  readonly lastPhaseNumber: number | undefined;
+  readonly targetSubject: string | undefined;
+}
+
+/**
+ * Classify the resume target commit (the commit carrying the highest
+ * `Phase: N` trailer, i.e. the one `resetToPhaseCommit` would reset to).
+ *
+ * Delegates entirely to {@link findLastPhaseNumber} for `lastPhaseNumber` --
+ * never duplicates its regex or git-log logic. When a last phase number is
+ * found, re-runs the SAME bounded `git log` query and the SAME commit-split
+ * regex to locate that specific commit's block, then inspects ONLY that
+ * block (the deliberate narrow trigger: this is not a general commit-history
+ * scan) for a `Run-Id:` trailer. When the trailer is ABSENT, `targetSubject`
+ * is set to that commit's first non-empty line (its subject); otherwise
+ * `targetSubject` is `undefined`.
+ *
+ * Never throws: any git failure degrades to "no signal"
+ * (`{ lastPhaseNumber, targetSubject: undefined }`), mirroring
+ * `findLastPhaseNumber`'s Result-free plain-async convention.
+ *
+ * @param workspace - The workspace directory
+ */
+export async function classifyResumeScan(workspace: string): Promise<ResumeTargetScan> {
+  const lastPhaseNumber = await findLastPhaseNumber(workspace);
+  if (lastPhaseNumber === undefined) {
+    return { lastPhaseNumber: undefined, targetSubject: undefined };
+  }
+
+  try {
+    const mergeBase = await resolveTrunkMergeBase(workspace);
+    const log = mergeBase
+      ? await $`git log --format=%B -n 50 ${mergeBase}..HEAD`.cwd(workspace).text()
+      : await $`git log --format=%B -n 50`.cwd(workspace).text();
+
+    const commits = log.split(
+      /\n\n(?=feat:|fix:|chore:|refactor:|docs:|style:|test:|perf:|ci:|build:)/,
+    );
+
+    for (const commit of commits) {
+      const match = commit.match(/Phase:\s*(\d+)/);
+      if (!match) continue;
+      const phaseNumber = Number.parseInt(match[1], 10);
+      if (phaseNumber !== lastPhaseNumber) continue;
+
+      const hasRunId = /Run-Id:\s*\S+/.test(commit);
+      if (hasRunId) {
+        return { lastPhaseNumber, targetSubject: undefined };
+      }
+
+      const firstNonEmptyLine = commit
+        .split("\n")
+        .map((line) => line.trim())
+        .find((line) => line.length > 0);
+
+      return { lastPhaseNumber, targetSubject: firstNonEmptyLine };
+    }
+
+    return { lastPhaseNumber, targetSubject: undefined };
+  } catch {
+    return { lastPhaseNumber, targetSubject: undefined };
+  }
+}
+
+/**
  * Find the last commit with a "Phase: N" trailer.
  *
  * The search is bounded to commits made since the current branch diverged
