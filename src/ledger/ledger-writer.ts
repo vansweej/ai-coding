@@ -97,9 +97,22 @@ export function createLedgerWriter(runId: RunId): Result<LedgerWriter> {
 /**
  * Map a ProgressEvent kind to a ledger line kind.
  * Phase/step numbers are extracted from the event when present.
+ *
+ * For a `phase-finish` event carrying a `commitHash`, a provenance
+ * `payload` is attached: `{ sha, commitMessage, runId }`. Note that
+ * duplicating `runId` inside this payload alongside the REQUIRED top-level
+ * `LedgerLine.runId` is DELIBERATE -- so an extracted standalone provenance
+ * payload (e.g. copied out of the ledger file for external consumption) is
+ * self-contained. Do not "dedupe" this field.
  */
 export function progressEventToLedgerLine(
-  event: { kind: string; phase?: number; step?: number },
+  event: {
+    kind: string;
+    phase?: number;
+    step?: number;
+    commitHash?: string;
+    commitMessage?: string;
+  },
   runId: RunId,
 ): LedgerLine {
   return {
@@ -109,5 +122,15 @@ export function progressEventToLedgerLine(
     kind: event.kind,
     ...(event.phase !== undefined ? { phase: event.phase } : {}),
     ...(event.step !== undefined ? { step: event.step } : {}),
+    ...(event.kind === "phase-finish" && event.commitHash !== undefined
+      ? {
+          payload: {
+            sha: event.commitHash,
+            commitMessage: event.commitMessage,
+            // Deliberate duplication -- see doc comment above.
+            runId,
+          },
+        }
+      : {}),
   };
 }
