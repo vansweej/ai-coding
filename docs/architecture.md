@@ -386,6 +386,20 @@ plan's structural intent as a machine-checked invariant; the aider-text fallback
 structured-patch apply paths are otherwise unchanged by this hardening. Plans with
 no `Assert:` lines are unaffected (`phase.assertions ?? []` is checked trivially).
 
+#### Verify-only phases
+
+A phase can declare `Mode: verify-only` when it must measure or validate existing
+workspace state rather than make an implementation change. At the top of `runPhase`,
+the runner branches for this mode and calls `checkAssertions` directly:
+
+- The phase must have at least one assertion; an omitted assertion list hard-fails with
+  the `structuralAssertion` reason rather than passing vacuously.
+- It skips both the implement/verify step and the net working-tree change gate.
+- On an assertion violation, it restores the working tree before returning a
+  `structuralAssertion` hard-fail.
+- On success, it returns `stepsCompleted: 0`, creates no commit, and writes no
+  `Phase: N` trailer. It is therefore transparent to resume and safe to repeat.
+
 The assertion vocabulary includes a `matches <path> :: <regex>` verb alongside
 `contains`/`not-contains`/`exists`/`not-exists`: it checks a file's content against
 an anchored-capable regular expression (compiled with `new RegExp`), rather than a
@@ -1312,5 +1326,4 @@ Live end-to-end verification against **Anthropic** is still outstanding
 same shape already proven live for Copilot, but Anthropic's forced
 `tool_choice` behavior has only been confirmed via the plumbing-level dry run,
 not a live call.
-
 

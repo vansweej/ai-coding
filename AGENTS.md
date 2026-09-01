@@ -262,6 +262,14 @@ assertion causes the phase to fail before commit. Useful for encoding a
 machine-checked "this specific test must be green" invariant alongside the
 other structural assertion verbs.
 
+### `Mode: verify-only` phase directive
+Declare `Mode: verify-only` within a phase to run only that phase's `Assert:` lines.
+
+- A verify-only phase must declare at least one `Assert:` line.
+- It skips the implement/verify step and the net-change gate, and commits nothing.
+- It stamps no `Phase: N` trailer, making it transparent to resume; this is safe because
+  verify-only phases are idempotent by construction.
+
 ## Models and Routing
 
 See `docs/architecture.md` for the action → role → model routing table.

@@ -335,6 +335,15 @@ even though the phase's intended edits never actually landed.
 Plans with no `Assert:` lines are entirely unaffected — the feature is fully
 backward compatible.
 
+### Verification-only phases
+
+Use `Mode: verify-only` in a phase that should validate existing state without asking
+the model to edit files. Place it alongside the phase's `Commit message:` and
+`Assert:` directives. The phase must include at least one assertion; it runs those
+assertions only, is exempt from the net-change gate, and creates no commit. Its
+zero-step verification-only shape is visible through `--parse-only`, so plan authors
+can validate it before running the plan.
+
 Worked example — a documentation phase asserting that its own directive name
 made it into the README it just edited:
 
