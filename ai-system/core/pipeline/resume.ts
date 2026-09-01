@@ -162,15 +162,19 @@ async function findLastPhaseNumber(workspace: string): Promise<number | undefine
       /\n\n(?=feat:|fix:|chore:|refactor:|docs:|style:|test:|perf:|ci:|build:)/,
     );
 
+    let highest: number | undefined;
     for (const commit of commits) {
       // Look for Phase: N trailer (can be at end of message)
       const match = commit.match(/Phase:\s*(\d+)/);
       if (match) {
-        return Number.parseInt(match[1], 10);
+        const phaseNumber = Number.parseInt(match[1], 10);
+        if (highest === undefined || phaseNumber > highest) {
+          highest = phaseNumber;
+        }
       }
     }
 
-    return undefined;
+    return highest;
   } catch {
     return undefined;
   }
