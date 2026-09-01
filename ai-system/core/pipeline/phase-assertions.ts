@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import type { Result } from "@ai-coding/pipeline";
 import { createNixShellStep } from "@ai-coding/pipeline";
 import { parse as parseToml } from "smol-toml";
+import { evaluateBunTestOutcome } from "./parse-bun-test-counts";
 
 /**
  * Author-declared, runner-enforced structural invariants for a plan phase.
@@ -400,6 +401,11 @@ export async function checkAssertions(
               `Structural assertion failed: test "${assertion.path}" did not pass: ${testResult.error.message}`,
             ),
           };
+        }
+
+        const outcome = evaluateBunTestOutcome(testResult.value.output, assertion.path);
+        if (!outcome.ok) {
+          return outcome;
         }
         break;
       }
