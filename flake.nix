@@ -56,17 +56,21 @@
             bunNix = ./bun.nix;
           };
 
-          # bun2nix's default isolated linker causes two known issues:
-          #   - On darwin: clonefile fails against nix-store permissions
-          #   - On both:   lancedb's prebuild resolver may fail to find the .node
-          #                addon under an isolated node_modules tree
-          # hoisted linker matches bun's own default since 1.3.2 and avoids both.
-          # copyfile backend is required on darwin because hardlink/symlink also fail
-          # against the store; on linux the default backend is fine.
-          bunInstallFlags =
-            if pkgs.stdenv.hostPlatform.isDarwin
-            then [ "--linker=hoisted" "--backend=copyfile" ]
-            else [ "--linker=hoisted" ];
+          # bun2nix's default isolated linker causes lancedb's prebuild resolver
+          # to fail to find its .node addon under an isolated node_modules tree.
+          # hoisted linker matches bun's own default since 1.3.2 and avoids this.
+          #
+          # Backend: OBSERVED — on a non-sandboxed Linux host (Ubuntu 24.04 VM,
+          # sandbox = false, fs.protected_hardlinks = 1) bun's default hardlink
+          # backend failed with "PermissionDenied: failed copying files from cache
+          # to destination"; copyfile fixed it. On darwin the default clonefile
+          # backend (and hardlink/symlink) fail against the nix store.
+          # LIKELY MECHANISM — hardlinking cache entries whose inodes the build
+          # user does not own is refused under fs.protected_hardlinks
+          # (see oven-sh/bun #43793, #41759).
+          # copyfile is a deliberate safe-over-fast choice: slightly more build
+          # time and disk on Linux, but works on every host.
+          bunInstallFlags = [ "--linker=hoisted" "--backend=copyfile" ];
 
           # ai-coding runs TypeScript source directly via `bun run` — it is not
           # compiled to a binary. Disable bun2nix's default compile + check phases.
