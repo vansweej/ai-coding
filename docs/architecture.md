@@ -10,6 +10,23 @@ the actual model backends.
 
 ---
 
+## Retry prompt context and output budget
+
+`createVerifiedImplementStep` builds every verification-failure retry prompt
+from a **bounded file context** (`steps/prompt-context.ts`): the union of
+touched and instruction-referenced regular files inside the workspace, ordered
+**referenced-first** and capped by a total and per-file character budget.
+Generated/lock artifacts (lockfiles, anything under `node_modules/`) are
+excluded from the touched set unless the instruction names them explicitly. The
+implement/fix output-token budget is resolved by `resolveMaxOutputTokens`
+(`steps/output-budget.ts`) and defaults to 16,384, overridable via the
+`AI_CODING_MAX_OUTPUT_TOKENS` environment variable. On the structured-red
+fallback the prompt carries the real `git diff HEAD` working-tree diff instead
+of a placeholder, and every prompt lists the phase's rendered `Assert:`
+directives.
+
+---
+
 ## Component Layering
 
 ```mermaid
@@ -1369,4 +1386,3 @@ Live end-to-end verification against **Anthropic** is still outstanding
 same shape already proven live for Copilot, but Anthropic's forced
 `tool_choice` behavior has only been confirmed via the plumbing-level dry run,
 not a live call.
-

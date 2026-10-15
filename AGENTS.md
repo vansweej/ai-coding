@@ -37,7 +37,7 @@ ai-coding/
       mode-router/         - source → AIMode ("editor" | "agentic")
       orchestrator/        - Single LLM call lifecycle; CopilotDispatcher (sends the durable GITHUB_COPILOT_TOKEN OAuth token DIRECTLY as the chat Bearer credential — NO copilot_internal/v2/token exchange, which is WAF-blocked for opencode-minted tokens — with an honest User-Agent and X-GitHub-Api-Version: 2026-06-01 mirroring opencode), OllamaDispatcher, AnthropicDispatcher, OpenCodeZenDispatcher; orchestratePatch() (structured-patch facade, see below); patch-contract.ts, patch-capability.ts
       pipeline/
-        steps/             - OrchestratorStep, SkillResolverStep, VerifiedImplementStep, structured-implement.ts (tryStructuredPhase: whole-phase structured patch attempt with transactional apply/rollback, tried ahead of the aider-text retry loop)
+        steps/             - OrchestratorStep, SkillResolverStep, VerifiedImplementStep, structured-implement.ts (tryStructuredPhase: whole-phase structured patch attempt with transactional apply/rollback, tried ahead of the aider-text retry loop); prompt-context.ts (bounded referenced-first retry context), output-budget.ts (implement/fix output-token resolver)
         definitions/       - dev-cycle language configs (interactive), PLAN_CONFIG_FACTORIES
                              toolchain registry for plan-cycle (rust, typescript, python, cpp,
                              haskell, julia, nix, shell), scaffold-*

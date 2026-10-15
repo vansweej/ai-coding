@@ -181,6 +181,40 @@ When verification fails:
    - If successful, continue to next phase
    - If still failing, proceed to escalation
 
+#### Retry prompt contents
+
+Every retry prompt (local loop, escalation, and the structured-red fallback) is
+built by `buildVerificationFailurePrompt` and contains:
+
+- **Explicit preservation rules** — preserve every unchanged line byte-for-byte
+  (including comments and non-ASCII characters) and never substitute placeholder
+  or summary comments.
+- **The phase's `Assert:` directives** — rendered verbatim via `renderAssertion`
+  as a "These assertions must hold after your change" list.
+- **The real working-tree diff** on the structured-red fallback — `git diff HEAD`
+  plus new untracked files (bounded to 40,000 characters with a
+  `[ai-coding: truncated N chars]` marker that contains no ellipsis or comment
+  syntax), replacing the former `<structured whole-phase patch>` placeholder.
+
+#### Bounded file context
+
+Retry prompts no longer dump every source file. The context is the union of
+touched files and files whose repo-relative path appears in the instruction,
+intersected with regular files inside the workspace, under a 120,000-character
+total budget and a per-file cap (truncated with a marker, not dropped). Files
+are ordered **referenced-first** — files named in the instruction come before
+other touched files, so a tight budget is spent on the named files first —
+and generated/lock artifacts (`bun.lock`, `package-lock.json`, `flake.lock`,
+anything under `node_modules/`, etc.) are excluded from the touched set unless
+the instruction names them explicitly. The pipeline falls back to the legacy
+full-tree dump only when the selection is empty.
+
+#### Output budget
+
+The implement/fix output-token budget defaults to 16,384 and can be overridden
+with the `AI_CODING_MAX_OUTPUT_TOKENS` environment variable (a positive integer;
+any invalid value falls back to the default).
+
 2. **Fixer escalation** (if local retries exhausted):
    - Route to the `fixer` role (may be a different, more capable model depending on the
      active profile)

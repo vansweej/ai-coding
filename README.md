@@ -65,6 +65,21 @@ custom tool will return an explicit error message.
 
 ---
 
+### Output token budget (optional)
+
+The implement/fix steps request up to 16,384 output tokens per attempt by
+default. Override this with the `AI_CODING_MAX_OUTPUT_TOKENS` environment
+variable, set to a positive integer:
+
+```bash
+export AI_CODING_MAX_OUTPUT_TOKENS=32000
+```
+
+Any missing, zero, negative, fractional, or non-numeric value falls back to the
+16,384-token default.
+
+---
+
 ## Running pipelines
 
 ```bash
