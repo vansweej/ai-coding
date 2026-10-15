@@ -80,6 +80,26 @@ Any missing, zero, negative, fractional, or non-numeric value falls back to the
 
 ---
 
+### Edit-scope guard (optional opt-out)
+
+When applying a patch, the pipeline runs a conservative apply-time guard that
+rejects a SEARCH/REPLACE edit which would silently destroy existing content:
+an elision placeholder such as `// ... existing code ...`, a non-ASCII comment
+line substituted for an invented placeholder, or an echo of the internal
+`[ai-coding: truncated ...]` retry-context marker. A rejected patch is retried
+with the reason fed back to the model, so correct edits are unaffected.
+
+In the rare case where the guard blocks a legitimate edit and the model cannot
+get past it, disable the entire guard for a run:
+
+```bash
+export AI_CODING_EDIT_SCOPE_GUARD=off
+```
+
+Any other value (including unset) leaves the guard enabled.
+
+---
+
 ## Running pipelines
 
 ```bash

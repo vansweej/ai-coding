@@ -893,7 +893,53 @@ Dispatcher parse failures (both `AnthropicDispatcher.dispatchPatch` and `Copilot
 The `plan-cycle`/`dev-cycle` implement step traditionally asks the model for
 raw **aider-style SEARCH/REPLACE/MOVE patch text** (parsed by
 `parse-patch.ts`'s `parsePatch`), which breaks when a chatty model interleaves
-prose or code fences into the patch body. A **provider-agnostic structured
+prose or code fences into the patch body.
+
+**Patch robustness (P3).** Three guards harden this path:
+
+- `stripStrayFences` (in `parse-patch.ts`) runs after `stripEnclosingFence` in
+  `verified-implement-step.ts`'s `writeImplementation`. It drops fence-only
+  lines appearing OUTSIDE any SEARCH/REPLACE or MOVE block body (tracked by a
+  marker state machine), so stray fences around/between blocks no longer derail
+  parsing. Lines inside a block body are preserved verbatim.
+- A **prose-only reply** (no `<<<<<<< SEARCH` and no `<<<<<<< MOVE` anywhere,
+  including an empty or whitespace-only reply) returns a distinct
+  `PatchParseError` with `prose: true` and an actionable message.
+  `writeImplementation` names it `PatchProseReplyError`, registered in
+  `PATCH_RESPONSE_ERROR_NAMES` so it stays retryable. A near-miss marker such as
+  `<<<<<<< SEARCH:` or `<<<<<<<SEARCH` no longer matches the exact-marker check,
+  so it now yields this prose-reply message (which shows the exact required
+  format) rather than a per-file marker hint.
+- The **edit-scope guard** (`edit-scope-guard.ts`'s `checkEditScope`) runs as a
+  single all-or-nothing PRE-PASS at the top of `applyPatch`, before any edit is
+  written, over every modification edit (not a move, not a create). Because the
+  whole patch is rejected before the first write, the non-transactional text
+  loop never leaves a partially-applied batch. It rejects (R1) a REPLACE that
+  introduces a phrase-level elision-placeholder comment absent from SEARCH, (R2)
+  a non-ASCII SEARCH comment line that is dropped and REPLACED by a new
+  same-comment-token-family line (plain deletions and different-family rewrites
+  are allowed; comment tokens are compared by FAMILY -- the `//` family covers
+  `//`, `///`, `//!`; the block family covers `/*`, `/**`, `*`, `*/`; and `#`,
+  `--`, `<!--` are each their own family), and (R3) a REPLACE that echoes the P2
+  prompt-context truncation marker `[ai-coding: truncated ...]` not already
+  present in SEARCH. R1 and R2 are skipped for prose files (`.md`, `.mdx`,
+  `.markdown`, `.txt`); R3 applies everywhere. The whole pre-pass is disabled
+  when `AI_CODING_EDIT_SCOPE_GUARD` is set to `off`. A violation is a
+  `PatchApplyError` with `reason: "scope-violation"`.
+
+**How a scope-violation flows.** In the aider-text loop, `applyPatch` returns
+`reason: "scope-violation"`; `writeImplementation` wraps it as an `Error` named
+`PatchApplyError`, which `PATCH_RESPONSE_ERROR_NAMES` exempts from the
+logic-error fast-fail gate, so the step retries with the violation message fed
+back as corrective context. On the structured path, `structured-implement.ts`
+collapses every non-`anchor-unexpandable` apply failure to an `apply-failed`
+decline, which falls back to the aider-text loop (including under `--strict`,
+since `apply-failed` is not in the strict hard-fail set). A scope-violation is
+therefore retryable and never fast-failed as a logic error; if the model keeps
+producing violating patches the phase can still exhaust its retries, which is
+when the `AI_CODING_EDIT_SCOPE_GUARD=off` opt-out applies.
+
+A **provider-agnostic structured
 patch output contract** was added as a parallel, preferred path for backends
 that can *guarantee* valid structured output — with the aider-text path
 **always retained as the fallback**, so no backend is ever hard-excluded.
