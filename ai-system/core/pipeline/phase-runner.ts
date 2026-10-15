@@ -437,6 +437,7 @@ export async function runPhase(
     retryConfig: options.retryConfig,
     steps: phase.steps,
     assertionLines: (phase.assertions ?? []).map(renderAssertion),
+    runId: options.runId,
     phaseNumber: phase.number,
     onProgress: options.onProgress,
     onDegrade: options.onDegrade,

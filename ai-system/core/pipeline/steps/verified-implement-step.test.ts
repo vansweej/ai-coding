@@ -782,6 +782,127 @@ describe("createVerifiedImplementStep (structured whole-phase dual path)", () =>
       detail: "compile error 1",
     });
   });
+
+  it("short-circuits converged local verification failures into escalation", async () => {
+    const dispatcher = sequenceDispatcher([
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 1;\n>>>>>>> REPLACE",
+      "src/index.ts\n<<<<<<< SEARCH\nexport const value = 1;\n=======\nexport const value = 2;\n>>>>>>> REPLACE",
+      "src/index.ts\n<<<<<<< SEARCH\nexport const value = 2;\n=======\nexport const value = 3;\n>>>>>>> REPLACE",
+    ]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const events: ProgressEvent[] = [];
+    const constantFailStep = (): PipelineStep<AIRequestEvent> => ({
+      name: "verify",
+      execute: async (): Promise<Result<StepResult>> => ({
+        ok: false,
+        error: new Error("compile error"),
+      }),
+    });
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(constantFailStep()),
+      retryConfig: { maxLocalRetries: 3, maxEscalationRetries: 1 },
+      onProgress: (event) => events.push(event),
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(dispatcher.prompts).toHaveLength(3);
+    const convergence = events.find((event) => event.kind === "convergence");
+    expect(convergence).toBeDefined();
+    expect(convergence?.kind === "convergence" && convergence.attempt).toBe(1);
+    expect(events.some((event) => event.kind === "revert-to-best")).toBe(false);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected failure");
+    expect(result.error.message).toContain("failed after 2 local attempt");
+  });
+
+  it("reverts a locally regressed git tree before an escalation fix", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vis-revert-"));
+    try {
+      await $`git init`.cwd(dir).quiet();
+      await $`git config user.email "test@example.com"`.cwd(dir).quiet();
+      await $`git config user.name "Test User"`.cwd(dir).quiet();
+      mkdirSync(join(dir, "src"), { recursive: true });
+      writeFileSync(join(dir, "src/index.ts"), 'export const value = "base";\n');
+      await $`git add -A`.cwd(dir).quiet();
+      await $`git commit -q -m baseline`.cwd(dir).quiet();
+
+      const verificationConfig: DevCycleLanguageConfig = {
+        name: "typescript",
+        implementSystem: "system prompt",
+        languageHint: "TypeScript",
+        sourceExtensions: [".ts"],
+        sourceRoots: ["src"],
+        toolchainSteps: (): readonly PipelineStep<AIRequestEvent>[] => [
+          {
+            name: "typecheck",
+            execute: async (): Promise<Result<StepResult>> =>
+              readFileSync(join(dir, "src/index.ts"), "utf8").includes("BROKEN")
+                ? { ok: false, error: new Error("typecheck saw BROKEN") }
+                : { ok: true, value: { stepName: "typecheck", output: "ok", durationMs: 0 } },
+          },
+          {
+            name: "test",
+            execute: async (): Promise<Result<StepResult>> =>
+              readFileSync(join(dir, "src/index.ts"), "utf8").includes("GOOD")
+                ? { ok: true, value: { stepName: "test", output: "ok", durationMs: 0 } }
+                : { ok: false, error: new Error("test wants GOOD") },
+          },
+        ],
+      };
+      const dispatcher = sequenceDispatcher([
+        'src/index.ts\n<<<<<<< SEARCH\nexport const value = "base";\n=======\nexport const value = "partial";\n>>>>>>> REPLACE',
+        'src/index.ts\n<<<<<<< SEARCH\nexport const value = "partial";\n=======\nexport const value = "BROKEN";\n>>>>>>> REPLACE',
+        'src/index.ts\n<<<<<<< SEARCH\nexport const value = "partial";\n=======\nexport const value = "GOOD";\n>>>>>>> REPLACE',
+      ]);
+      const config: OrchestratorConfig = {
+        profile: LOCAL_PROFILE,
+        dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      };
+      const events: ProgressEvent[] = [];
+      const step = createVerifiedImplementStep("verified", {
+        config,
+        workspace: dir,
+        languageConfig: verificationConfig,
+        runId: "test-run",
+        retryConfig: { maxLocalRetries: 1, maxEscalationRetries: 1 },
+        onProgress: (event) => events.push(event),
+      });
+
+      const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+      expect(result.ok).toBe(true);
+      expect(
+        events.some(
+          (event) =>
+            event.kind === "snapshot" &&
+            event.label === "worse-local-1" &&
+            event.treeSha !== undefined,
+        ),
+      ).toBe(true);
+      expect(
+        events.some(
+          (event) =>
+            event.kind === "revert-to-best" &&
+            event.fromAttempt === 1 &&
+            event.fromBand === "local" &&
+            event.toAttempt === 0 &&
+            event.toBand === "local",
+        ),
+      ).toBe(true);
+      expect(readFileSync(join(dir, "src/index.ts"), "utf8")).toContain("GOOD");
+      expect((await $`git diff --cached --name-only`.cwd(dir).quiet().text()).trim()).toBe("");
+      expect(dispatcher.prompts[2]).toContain("test wants GOOD");
+      expect(dispatcher.prompts[2]).not.toContain("typecheck saw BROKEN");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("buildPaletteLanguageConfig", () => {

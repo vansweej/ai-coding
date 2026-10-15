@@ -256,3 +256,45 @@ describe("formatProgressEvent (patch-path)", () => {
     expect(line.endsWith(event.detail ?? "")).toBe(true);
   });
 });
+
+describe("formatProgressEvent (retry-discipline kinds)", () => {
+  const plain = buildTheme(false);
+  const color = buildTheme(true);
+  const revert: ProgressEvent = {
+    kind: "revert-to-best",
+    phase: 1,
+    fromAttempt: 1,
+    fromBand: "local",
+    toAttempt: 0,
+    toBand: "local",
+  };
+
+  it("formats a plain revert-to-best event", () => {
+    expect(formatProgressEvent(revert, plain)).toBe(
+      "< Phase 1  reverted local attempt 1 -> best (local attempt 0)",
+    );
+  });
+
+  it("formats a colored revert-to-best event", () => {
+    expect(formatProgressEvent(revert, color)).toBe(
+      "\x1b[33m↩\x1b[0m Phase 1  reverted local attempt 1 -> best (local attempt 0)",
+    );
+  });
+
+  it("formats a convergence event", () => {
+    expect(
+      formatProgressEvent(
+        { kind: "convergence", phase: 2, attempt: 1, fingerprint: "verify|2|compile error" },
+        plain,
+      ),
+    ).toBe("C Phase 2  converged at local attempt 1; escalating: verify|2|compile error");
+  });
+
+  it("limits rendered convergence fingerprints to 200 characters", () => {
+    const line = formatProgressEvent(
+      { kind: "convergence", phase: 2, attempt: 1, fingerprint: "x".repeat(300) },
+      plain,
+    );
+    expect(line).not.toContain("x".repeat(201));
+  });
+});

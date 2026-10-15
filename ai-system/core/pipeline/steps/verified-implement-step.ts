@@ -20,10 +20,16 @@ import {
   runUnionVerification,
 } from "../routing/route";
 import { applyPatch } from "./apply-patch-step";
+import type { BestSoFar } from "./best-so-far";
+import { recordAttempt, revertToBest } from "./best-so-far";
+import { fingerprintFailure, hasConverged } from "./convergence";
 import { resolveMaxOutputTokens } from "./output-budget";
 import { parsePatch, stripEnclosingFence, stripStrayFences } from "./parse-patch";
+import { compareProgress, scoreFailure } from "./progress-score";
 import { renderBoundedFileContents } from "./prompt-context";
 import { tryStructuredPhase } from "./structured-implement";
+import type { VerificationFailure } from "./verification-failure";
+import { classifyVerificationFailure } from "./verification-failure";
 
 const IMPLEMENT_RESULT_NAME = "verified-implement-output";
 
@@ -175,6 +181,8 @@ export interface VerifiedImplementStepOptions {
   readonly retryConfig?: RetryConfig;
   /** Phase number this step belongs to, used to tag emitted progress events. */
   readonly phaseNumber?: number;
+  /** Correlation id used to capture snapshots before best-tree reverts. */
+  readonly runId?: string;
   /** Optional progress reporter; silent when omitted. */
   readonly onProgress?: OnProgress;
   readonly onDegrade?: (phaseNumber: number, detail: string) => void;
@@ -467,11 +475,18 @@ async function writeImplementation(
 async function runVerification(
   ctx: PipelineContext<AIRequestEvent>,
   steps: readonly PipelineStep<AIRequestEvent>[],
+  onGateFailure?: (failure: VerificationFailure) => void,
 ): Promise<Result<readonly StepResult[]>> {
   const completed: StepResult[] = [];
-  for (const step of steps) {
+  const gateNames = steps.map((step) => step.name);
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
+    if (step === undefined) continue;
     const result = await step.execute(ctx);
-    if (!result.ok) return result;
+    if (!result.ok) {
+      onGateFailure?.(classifyVerificationFailure(gateNames, index, result.error));
+      return result;
+    }
     ctx.results.set(step.name, result.value);
     completed.push(result.value);
   }
@@ -695,10 +710,12 @@ export function createVerifiedImplementStep(
        * legacy vacuous-pass check (computeVerificationOrFail), and finally
        * runs verification itself.
        */
+      let lastVerificationFailure: VerificationFailure | undefined;
       const verifyOrFail = async (): Promise<
         | { readonly ok: true; readonly value: readonly StepResult[] }
         | { readonly ok: false; readonly error: Error }
       > => {
+        lastVerificationFailure = undefined;
         if (options.palette !== undefined) {
           const mappedUnavailable = hasMappedButUnavailableTouchedFile(
             options.workspace,
@@ -717,7 +734,9 @@ export function createVerifiedImplementStep(
         const verificationCheck = computeVerificationOrFail();
         if (!verificationCheck.ok) return verificationCheck;
 
-        return runVerification(ctx, verificationCheck.steps);
+        return runVerification(ctx, verificationCheck.steps, (failure) => {
+          lastVerificationFailure = failure;
+        });
       };
 
       const baselineContext = buildBaselineContext(options.workspace, options.languageConfig);
@@ -732,6 +751,67 @@ export function createVerifiedImplementStep(
       // A value less than steps.length means a retry should resume from
       // exactly that step rather than re-sending already-applied steps.
       let stepCursor = 0;
+      let bestSoFar: BestSoFar | undefined;
+      let previousFingerprint: string | undefined;
+      let localAttemptsRun = 1 + maxLocalRetries;
+
+      /** Record a verification failure and restore a prior better tree on regression. */
+      const onVerificationFailed = (
+        attempt: number,
+        band: "local" | "escalation",
+        error: Error,
+      ): string | undefined => {
+        if (lastVerificationFailure === undefined) return undefined;
+        const score = scoreFailure(lastVerificationFailure);
+        const fingerprint = fingerprintFailure(lastVerificationFailure);
+        if (bestSoFar !== undefined && compareProgress(bestSoFar.score, score) === "worse") {
+          const outcome = revertToBest({
+            workspace: options.workspace,
+            runId: options.runId,
+            phase: options.phaseNumber ?? 0,
+            planPath: options.planPath,
+            attempt,
+            band,
+            best: bestSoFar,
+            current: score,
+          });
+          if (outcome.snapshot !== undefined) {
+            const snapshot = outcome.snapshot;
+            const label = `worse-${band}-${attempt}`;
+            options.onProgress?.(
+              snapshot.ok
+                ? {
+                    kind: "snapshot",
+                    phase: options.phaseNumber ?? 0,
+                    label,
+                    dir: snapshot.dir,
+                    treeSha: snapshot.treeSha,
+                  }
+                : {
+                    kind: "snapshot",
+                    phase: options.phaseNumber ?? 0,
+                    label,
+                    reason: snapshot.reason,
+                  },
+            );
+          }
+          if (outcome.reverted) {
+            options.onProgress?.({
+              kind: "revert-to-best",
+              phase: options.phaseNumber ?? 0,
+              fromAttempt: attempt,
+              fromBand: band,
+              toAttempt: bestSoFar.attempt,
+              toBand: bestSoFar.band,
+            });
+            implementation = computeWorkingTreeDiff(options.workspace);
+            lastError = bestSoFar.error;
+          }
+        }
+        bestSoFar = recordAttempt(options.workspace, score, error, attempt, band, bestSoFar);
+        lastVerificationFailure = undefined;
+        return fingerprint;
+      };
 
       // Try the WHOLE-PHASE structured patch path first, ahead of the
       // incremental text loop below. `tryStructuredPhase` is a no-op for any
@@ -791,6 +871,7 @@ export function createVerifiedImplementStep(
         lastError = verificationResult.error;
         stepCursor = phaseSteps?.length ?? 0;
         attemptNumber = 1;
+        previousFingerprint = onVerificationFailed(0, "local", verificationResult.error);
 
         options.onProgress?.({
           kind: "attempt-result",
@@ -990,6 +1071,22 @@ export function createVerifiedImplementStep(
             };
           }
           lastError = verificationResult.error;
+          const fingerprint = onVerificationFailed(
+            attemptNumber,
+            "local",
+            verificationResult.error,
+          );
+          if (fingerprint !== undefined && hasConverged(previousFingerprint, fingerprint)) {
+            options.onProgress?.({
+              kind: "convergence",
+              phase: options.phaseNumber ?? 0,
+              attempt: attemptNumber,
+              fingerprint,
+            });
+            localAttemptsRun = attemptNumber + 1;
+            break;
+          }
+          previousFingerprint = fingerprint;
         } else if (isNonRetryableLogicError(implementResult.error)) {
           // Logic (deterministic) failures are not retry-eligible: fail fast
           // rather than burning the local retry budget on an error that will
@@ -1037,6 +1134,7 @@ export function createVerifiedImplementStep(
             }
           }
           lastError = implementResult.error;
+          previousFingerprint = undefined;
         }
 
         // Refresh current file contents on each retry for accurate SEARCH anchor matching
@@ -1154,6 +1252,7 @@ export function createVerifiedImplementStep(
             };
           }
           lastError = verificationResult.error;
+          onVerificationFailed(escalationAttempt + 1, "escalation", verificationResult.error);
         } else if (isNonRetryableLogicError(fixResult.error)) {
           // Same fast-fail reasoning as the local retry loop above.
           return {
@@ -1195,7 +1294,7 @@ export function createVerifiedImplementStep(
       return {
         ok: false,
         error: new Error(
-          `Verified implement step "${name}" failed after ${totalImplementerAttempts} local attempt(s) and ${maxEscalationRetries} escalation attempt(s): ${lastError?.message ?? "unknown error"}`,
+          `Verified implement step "${name}" failed after ${localAttemptsRun} local attempt(s) and ${maxEscalationRetries} escalation attempt(s): ${lastError?.message ?? "unknown error"}`,
         ),
       };
     },

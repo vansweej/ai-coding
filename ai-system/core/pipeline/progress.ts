@@ -87,6 +87,20 @@ export type ProgressEvent =
       readonly ok: boolean;
       readonly error?: string;
     }
+  | {
+      readonly kind: "revert-to-best";
+      readonly phase: number;
+      readonly fromAttempt: number;
+      readonly fromBand: "local" | "escalation";
+      readonly toAttempt: number;
+      readonly toBand: "local" | "escalation";
+    }
+  | {
+      readonly kind: "convergence";
+      readonly phase: number;
+      readonly attempt: number;
+      readonly fingerprint: string;
+    }
   | RestoreFailedProgressEvent;
 
 /** Callback invoked with each `ProgressEvent` as a plan-cycle run progresses. */
@@ -115,6 +129,8 @@ const NERD_GLYPHS: Readonly<Record<ProgressEvent["kind"], string>> = {
   "vacuous-pass": "⊘",
   snapshot: "⧉",
   "attempt-result": "◆",
+  "revert-to-best": "↩",
+  convergence: "≡",
 };
 
 /** ASCII fallback glyphs used when color/Unicode is not appropriate. */
@@ -132,6 +148,8 @@ const ASCII_GLYPHS: Readonly<Record<ProgressEvent["kind"], string>> = {
   "vacuous-pass": "0",
   snapshot: "S",
   "attempt-result": "A",
+  "revert-to-best": "<",
+  convergence: "C",
 };
 
 /** ANSI SGR codes used to color each event kind's glyph. */
@@ -149,6 +167,8 @@ const SGR: Readonly<Record<ProgressEvent["kind"], string>> = {
   "vacuous-pass": "\x1b[31m", // red
   snapshot: "\x1b[36m", // cyan
   "attempt-result": "\x1b[35m", // magenta
+  "revert-to-best": "\x1b[33m", // yellow
+  convergence: "\x1b[33m", // yellow
 };
 
 const SGR_RESET = "\x1b[0m";
@@ -199,6 +219,10 @@ function buildLabel(event: ProgressEvent): string {
         : `Phase ${event.phase}  snapshot (${event.label}) FAILED: ${event.reason ?? "unknown"}`;
     case "attempt-result":
       return `Phase ${event.phase}  attempt ${event.attempt} (${event.retry}): ${event.ok ? "ok" : "fail"}`;
+    case "revert-to-best":
+      return `Phase ${event.phase}  reverted ${event.fromBand} attempt ${event.fromAttempt} -> best (${event.toBand} attempt ${event.toAttempt})`;
+    case "convergence":
+      return `Phase ${event.phase}  converged at local attempt ${event.attempt}; escalating: ${event.fingerprint.slice(0, 200)}`;
     case "patch-path": {
       const base =
         event.path === "structured-applied"
