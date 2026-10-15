@@ -21,6 +21,7 @@ import {
 } from "../routing/route";
 import { applyPatch } from "./apply-patch-step";
 import { parsePatch, stripEnclosingFence } from "./parse-patch";
+import { renderBoundedFileContents } from "./prompt-context";
 import { tryStructuredPhase } from "./structured-implement";
 
 const IMPLEMENT_RESULT_NAME = "verified-implement-output";
@@ -520,11 +521,18 @@ async function implementPhaseSteps(
 }
 
 /**
- * Read the current on-disk content of all source files in the workspace.
- * Used to refresh file contents on each retry so the model can compute
- * SEARCH anchors against the present state.
+ * Read instruction-scoped current file contents for retries, preferring the
+ * bounded referenced-first selection and falling back to the full source tree
+ * only when that selection is empty.
  */
-function readCurrentFileContents(workspace: string, config: DevCycleLanguageConfig): string {
+function readCurrentFileContents(
+  workspace: string,
+  config: DevCycleLanguageConfig,
+  instruction: string,
+): string {
+  const bounded = renderBoundedFileContents(workspace, instruction);
+  if (bounded !== "") return bounded;
+
   const roots = config.sourceRoots ?? ["."];
   const files = discoverSourceFiles(workspace, roots, config.sourceExtensions);
 
@@ -753,6 +761,7 @@ export function createVerifiedImplementStep(
         const currentFileContents = readCurrentFileContents(
           options.workspace,
           options.languageConfig,
+          originalInstruction,
         );
         prompt = buildVerificationFailurePrompt(
           phaseSteps === undefined ? originalInstruction : formatPhaseInstruction(phaseSteps),
@@ -850,6 +859,7 @@ export function createVerifiedImplementStep(
           const currentFileContents = readCurrentFileContents(
             options.workspace,
             options.languageConfig,
+            originalInstruction,
           );
           const errorMessage = lastError?.message ?? "Implementation failed without diagnostics";
           const phaseResult = await implementPhaseSteps(
@@ -981,6 +991,7 @@ export function createVerifiedImplementStep(
         const currentFileContents = readCurrentFileContents(
           options.workspace,
           options.languageConfig,
+          originalInstruction,
         );
         prompt = buildVerificationFailurePrompt(
           phaseSteps === undefined ? originalInstruction : formatPhaseInstruction(phaseSteps),
@@ -999,6 +1010,7 @@ export function createVerifiedImplementStep(
         const currentFileContents = readCurrentFileContents(
           options.workspace,
           options.languageConfig,
+          originalInstruction,
         );
         const errorMessage = lastError?.message ?? "Verification failed without diagnostics";
 
