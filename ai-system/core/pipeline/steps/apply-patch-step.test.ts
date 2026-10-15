@@ -15,6 +15,87 @@ describe("applyPatch", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
+  it("returns a scope-violation when REPLACE substitutes a non-ASCII comment line", async () => {
+    const filePath = join(tempDir, "scheme.rs");
+    const original = "/// Type scheme: ∀α.τ\npub struct Scheme;";
+    writeFileSync(filePath, original, "utf8");
+    const edits: PatchEdit[] = [
+      {
+        filePath: "scheme.rs",
+        search: original,
+        replace: "/// placeholder_marker_removed\npub struct Scheme;",
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+    const result = await applyPatch(tempDir, edits);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected error");
+    expect(result.error.reason).toBe("scope-violation");
+    expect(readFileSync(filePath, "utf8")).toBe(original);
+  });
+
+  it("applies NO edits when a later edit in the batch violates scope", async () => {
+    const aPath = join(tempDir, "a.ts");
+    const bPath = join(tempDir, "b.ts");
+    const aOriginal = "const a = 1;\nconst a2 = 2;";
+    const bOriginal = "const b = 1;\nconst b2 = 2;";
+    writeFileSync(aPath, aOriginal, "utf8");
+    writeFileSync(bPath, bOriginal, "utf8");
+    const edits: PatchEdit[] = [
+      {
+        filePath: "a.ts",
+        search: aOriginal,
+        replace: "const a = 10;\nconst a2 = 2;",
+        isCreate: false,
+        isMove: false,
+      },
+      {
+        filePath: "b.ts",
+        search: bOriginal,
+        replace: "const b = 1;\n// ... existing code ...",
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+    const result = await applyPatch(tempDir, edits);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected error");
+    expect(result.error.reason).toBe("scope-violation");
+    // Pre-pass rejected the whole patch: the FIRST edit's file is untouched.
+    expect(readFileSync(aPath, "utf8")).toBe(aOriginal);
+    expect(readFileSync(bPath, "utf8")).toBe(bOriginal);
+  });
+
+  it("applies a violating edit when AI_CODING_EDIT_SCOPE_GUARD=off", async () => {
+    const previous = process.env.AI_CODING_EDIT_SCOPE_GUARD;
+    process.env.AI_CODING_EDIT_SCOPE_GUARD = "off";
+    try {
+      const filePath = join(tempDir, "scheme.rs");
+      const original = "/// Type scheme: ∀α.τ\npub struct Scheme;";
+      const replacement = "/// placeholder_marker_removed\npub struct Scheme;";
+      writeFileSync(filePath, original, "utf8");
+      const edits: PatchEdit[] = [
+        {
+          filePath: "scheme.rs",
+          search: original,
+          replace: replacement,
+          isCreate: false,
+          isMove: false,
+        },
+      ];
+      const result = await applyPatch(tempDir, edits);
+      expect(result.ok).toBe(true);
+      expect(readFileSync(filePath, "utf8")).toBe(replacement);
+    } finally {
+      if (previous === undefined) {
+        Reflect.deleteProperty(process.env, "AI_CODING_EDIT_SCOPE_GUARD");
+      } else {
+        process.env.AI_CODING_EDIT_SCOPE_GUARD = previous;
+      }
+    }
+  });
+
   it("modifies an existing file", async () => {
     // Setup: create a file with initial content
     const filePath = join(tempDir, "test.ts");

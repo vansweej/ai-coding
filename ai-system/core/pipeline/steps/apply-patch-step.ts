@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname } from "node:path";
 
 import { computeHypothesisHint } from "./compute-hypothesis-hint";
+import { checkEditScope, isEditScopeGuardEnabled } from "./edit-scope-guard";
 import { expandTableHeaderAnchorAgainstContent } from "./expand-table-anchor";
 import type { PatchEdit } from "./parse-patch";
 import { type PathSafetyError, assertInsideWorkspace } from "./patch-path-guard";
@@ -20,7 +21,13 @@ export interface AppliedFile {
  */
 export interface PatchApplyError {
   readonly filePath: string;
-  readonly reason: "not-found" | "ambiguous" | "exists" | "io" | "anchor-unexpandable";
+  readonly reason:
+    | "not-found"
+    | "ambiguous"
+    | "exists"
+    | "io"
+    | "anchor-unexpandable"
+    | "scope-violation";
   readonly message: string;
 }
 
@@ -96,6 +103,33 @@ export async function applyPatch(
   options?: ApplyPatchOptions,
 ): Promise<{ ok: true; value: AppliedFile[] } | { ok: false; error: PatchApplyError }> {
   const applied: AppliedFile[] = [];
+
+  // Scope pre-pass: reject the WHOLE patch before writing anything if any
+  // modification edit (not a move, not a create) would silently elide or
+  // substitute existing content. Running this as an all-or-nothing pre-pass --
+  // rather than per-splice-site -- means the non-transactional text loop never
+  // leaves a partially-applied patch on a rejected multi-edit batch. Raw
+  // edit.search/replace reflect model intent; table-anchor expansion adds
+  // identical rows to both sides, so it cannot change the verdict. The guard is
+  // skipped entirely when AI_CODING_EDIT_SCOPE_GUARD=off. `isCreate` already
+  // covers whitespace-only SEARCH bodies (parsePatch sets it when
+  // search.trim() === "").
+  if (isEditScopeGuardEnabled(process.env)) {
+    for (const edit of edits) {
+      if (edit.isMove || edit.isCreate) continue;
+      const scope = checkEditScope(edit.search, edit.replace, edit.filePath);
+      if (!scope.ok) {
+        return {
+          ok: false,
+          error: {
+            filePath: edit.filePath,
+            reason: "scope-violation",
+            message: scope.error.message,
+          },
+        };
+      }
+    }
+  }
 
   for (const edit of edits) {
     // Validate and resolve the path
