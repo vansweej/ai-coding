@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import type { PipelineContext, PipelineStep, Result, StepResult } from "@ai-coding/pipeline";
@@ -20,6 +20,7 @@ import {
   runUnionVerification,
 } from "../routing/route";
 import { applyPatch } from "./apply-patch-step";
+import { resolveMaxOutputTokens } from "./output-budget";
 import { parsePatch, stripEnclosingFence } from "./parse-patch";
 import { renderBoundedFileContents } from "./prompt-context";
 import { tryStructuredPhase } from "./structured-implement";
@@ -164,6 +165,12 @@ export interface VerifiedImplementStepOptions {
    */
   readonly diff?: string;
   readonly steps?: readonly Step[];
+  /**
+   * The phase's declared `Assert:` directives, rendered to canonical text and
+   * surfaced in every retry prompt so the model knows which structural
+   * invariants must hold. Optional for backward compatibility.
+   */
+  readonly assertionLines?: readonly string[];
   readonly retryConfig?: RetryConfig;
   /** Phase number this step belongs to, used to tag emitted progress events. */
   readonly phaseNumber?: number;
@@ -255,8 +262,8 @@ interface AttemptInfo {
 /**
  * Build the retry prompt used when verification fails.
  *
- * Includes the current on-disk content of all files touched by the phase,
- * so the model computes SEARCH anchors against the file's present state
+ * Includes the bounded, referenced-first instruction-scoped current file
+ * contents so the model computes SEARCH anchors against the present state
  * (not the original bytes). This is critical for patch anchoring to work
  * correctly across multiple retry attempts.
  */
@@ -265,10 +272,16 @@ export function buildVerificationFailurePrompt(
   writtenCode: string,
   errorOutput: string,
   currentFileContents?: string,
+  assertionLines?: readonly string[],
 ): string {
   const parts = [
     "Fix the implementation so verification passes.",
     "Output ONLY aider-style SEARCH/REPLACE patches for files that need changes.",
+    "",
+    "Rules:",
+    "Preserve every existing line you were not asked to change byte-for-byte, including comments and non-ASCII characters.",
+    "Never replace content with placeholder or summary comments.",
+    "Change only what the instruction and the error require.",
     "",
     "Original instruction:",
     originalInstruction,
@@ -277,6 +290,12 @@ export function buildVerificationFailurePrompt(
     writtenCode,
     "",
   ];
+
+  if (assertionLines && assertionLines.length > 0) {
+    parts.push("These assertions must hold after your change:");
+    for (const line of assertionLines) parts.push(line);
+    parts.push("");
+  }
 
   if (currentFileContents) {
     parts.push("Current file contents:");
@@ -356,6 +375,36 @@ export function buildBaselineContext(workspace: string, config: DevCycleLanguage
   return parts.length > 0 ? parts.join("\n\n---\n\n") : "";
 }
 
+/**
+ * Compute the real working-tree diff versus HEAD plus a list of untracked new
+ * files, bounded to `maxChars` with a non-comment truncation marker.
+ * Non-throwing: returns an empty string when git is unavailable or there is no
+ * diff, so the retry prompt degrades gracefully. Uses argv arrays
+ * (`execFileSync`) rather than a shell string.
+ */
+export function computeWorkingTreeDiff(workspace: string, maxChars = 40_000): string {
+  const sections: string[] = [];
+  try {
+    const diff = execFileSync("git", ["diff", "HEAD"], { cwd: workspace, encoding: "utf8" });
+    if (diff.trim()) sections.push(diff);
+  } catch {
+    // git unavailable or no HEAD; fall through.
+  }
+  try {
+    const untracked = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
+      cwd: workspace,
+      encoding: "utf8",
+    });
+    if (untracked.trim()) sections.push(`New untracked files:\n${untracked.trim()}`);
+  } catch {
+    // git unavailable; fall through.
+  }
+  const joined = sections.join("\n\n");
+  if (joined.length <= maxChars) return joined;
+  const dropped = joined.length - maxChars;
+  return `${joined.slice(0, maxChars)}\n[ai-coding: truncated ${dropped} chars]`;
+}
+
 async function runImplementAttempt(
   ctx: PipelineContext<AIRequestEvent>,
   options: ResolvedVerifiedImplementStepOptions,
@@ -365,7 +414,7 @@ async function runImplementAttempt(
   const llmOptions: LLMOptions = {
     system: options.languageConfig.implementSystem,
     temperature: action === "fix" ? 0.2 : 0.4,
-    maxTokens: 8192,
+    maxTokens: resolveMaxOutputTokens(process.env),
   };
   const result = await orchestrate(makeEvent(ctx, action, prompt), options.config, llmOptions);
   if (!result.ok) return result;
@@ -737,7 +786,7 @@ export function createVerifiedImplementStep(
           };
         }
 
-        implementation = "<structured whole-phase patch>";
+        implementation = computeWorkingTreeDiff(options.workspace);
         lastError = verificationResult.error;
         stepCursor = phaseSteps?.length ?? 0;
         attemptNumber = 1;
@@ -768,6 +817,7 @@ export function createVerifiedImplementStep(
           implementation,
           lastError.message,
           currentFileContents,
+          options.assertionLines,
         );
       } else {
         // Only `anchor-unexpandable` — the well-understood
@@ -875,6 +925,7 @@ export function createVerifiedImplementStep(
                   "",
                   errorMessage,
                   currentFileContents,
+                  options.assertionLines,
                 ),
               ),
             { kind: "local", index: attemptNumber, max: maxLocalRetries },
@@ -998,6 +1049,7 @@ export function createVerifiedImplementStep(
           implementation,
           lastError.message,
           currentFileContents,
+          options.assertionLines,
         );
       }
 
@@ -1034,6 +1086,7 @@ export function createVerifiedImplementStep(
                   "",
                   errorMessage,
                   currentFileContents,
+                  options.assertionLines,
                 ),
               ),
             { kind: "escalation", index: escalationAttempt + 1, max: maxEscalationRetries },
@@ -1052,6 +1105,7 @@ export function createVerifiedImplementStep(
             implementation,
             errorMessage,
             currentFileContents,
+            options.assertionLines,
           );
           options.onProgress?.({
             kind: "phase-attempt",

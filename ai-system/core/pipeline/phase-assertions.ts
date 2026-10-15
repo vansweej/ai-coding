@@ -44,6 +44,30 @@ import { evaluateBunTestOutcome } from "./parse-bun-test-counts";
  * is empty) is out of scope -- expressing "this table exists and has no
  * keys" is not supported by this grammar.
  */
+/**
+ * Render a parsed {@link PhaseAssertion} back into its canonical `Assert:`
+ * directive text. Pure and total over the union. Used to feed a phase's
+ * declared assertions into retry prompts.
+ */
+export function renderAssertion(assertion: PhaseAssertion): string {
+  switch (assertion.kind) {
+    case "contains":
+      return `Assert: contains ${assertion.path} :: ${assertion.needle}`;
+    case "not-contains":
+      return `Assert: not-contains ${assertion.path} :: ${assertion.needle}`;
+    case "exists":
+      return `Assert: exists ${assertion.path}`;
+    case "not-exists":
+      return `Assert: not-exists ${assertion.path}`;
+    case "matches":
+      return `Assert: matches ${assertion.path} :: ${assertion.pattern}`;
+    case "toml-keys":
+      return `Assert: toml-keys ${assertion.path} :: ${assertion.table} :: ${assertion.keys.join(",")}`;
+    case "test-passes":
+      return `Assert: test ${assertion.path}`;
+  }
+}
+
 export type PhaseAssertion =
   | { readonly kind: "contains"; readonly path: string; readonly needle: string }
   | { readonly kind: "not-contains"; readonly path: string; readonly needle: string }

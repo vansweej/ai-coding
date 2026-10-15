@@ -24,6 +24,7 @@ import {
   buildBaselineContext,
   buildPaletteLanguageConfig,
   buildVerificationFailurePrompt,
+  computeWorkingTreeDiff,
   createVerifiedImplementStep,
 } from "./verified-implement-step";
 
@@ -843,6 +844,55 @@ describe("buildVerificationFailurePrompt", () => {
     expect(prompt).toContain("do it");
     expect(prompt).toContain("code");
     expect(prompt).toContain("error");
+  });
+
+  it("includes the byte-for-byte preservation rules", () => {
+    const prompt = buildVerificationFailurePrompt("do it", "code", "error");
+    expect(prompt).toContain("Preserve every existing line you were not asked to change");
+    expect(prompt).toContain("Never replace content with placeholder or summary comments.");
+  });
+
+  it("lists supplied assertion lines under the invariants header", () => {
+    const prompt = buildVerificationFailurePrompt("do it", "code", "error", undefined, [
+      "Assert: exists README.md",
+    ]);
+    expect(prompt).toContain("These assertions must hold after your change:");
+    expect(prompt).toContain("Assert: exists README.md");
+  });
+
+  it("omits the assertions header when no assertion lines are supplied", () => {
+    const prompt = buildVerificationFailurePrompt("do it", "code", "error", undefined, []);
+    expect(prompt).not.toContain("These assertions must hold after your change:");
+  });
+});
+
+describe("computeWorkingTreeDiff", () => {
+  it("captures a modification, lists untracked files, truncates, and is empty off-git", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "cwtd-"));
+    const nonGit = mkdtempSync(join(tmpdir(), "cwtd-nogit-"));
+    try {
+      await $`git init -q`.cwd(repo).quiet();
+      await $`git config user.email test@example.com`.cwd(repo).quiet();
+      await $`git config user.name Test`.cwd(repo).quiet();
+      writeFileSync(join(repo, "tracked.txt"), "original\n");
+      await $`git add tracked.txt`.cwd(repo).quiet();
+      await $`git commit -q -m init`.cwd(repo).quiet();
+      writeFileSync(join(repo, "tracked.txt"), "modified\n");
+      writeFileSync(join(repo, "untracked.txt"), "new\n");
+
+      const diff = computeWorkingTreeDiff(repo);
+      expect(diff).toContain("modified");
+      expect(diff).toContain("New untracked files:");
+      expect(diff).toContain("untracked.txt");
+
+      const truncated = computeWorkingTreeDiff(repo, 10);
+      expect(truncated).toContain("[ai-coding: truncated");
+
+      expect(computeWorkingTreeDiff(nonGit)).toBe("");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(nonGit, { recursive: true, force: true });
+    }
   });
 });
 

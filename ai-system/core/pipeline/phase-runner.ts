@@ -8,7 +8,7 @@ import type { OrchestratorConfig } from "../orchestrator/orchestrate";
 import type { ToolchainDescriptor } from "./definitions/language-configs";
 
 import { buildGitCleanArgs } from "./git-clean-args";
-import { checkAssertions } from "./phase-assertions";
+import { checkAssertions, renderAssertion } from "./phase-assertions";
 import { PHASE_FAILURE_REASONS, phaseHardFail } from "./phase-hard-fail";
 import type { Phase } from "./plan-parser";
 import type { OnProgress } from "./progress";
@@ -436,6 +436,7 @@ export async function runPhase(
     diff: safeGitDiff(options.workspace),
     retryConfig: options.retryConfig,
     steps: phase.steps,
+    assertionLines: (phase.assertions ?? []).map(renderAssertion),
     phaseNumber: phase.number,
     onProgress: options.onProgress,
     onDegrade: options.onDegrade,
