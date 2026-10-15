@@ -74,15 +74,16 @@ function emitTransientRetryDiagnosis(
   reason: string,
   model: string,
   errorMessage: string,
+  runId = "unknown-run-id",
 ): void {
   try {
     const record = makeDiagnosis(
-      "unknown-run-id",
+      runId,
       "transient-retry",
       "Retrying after a transient dispatch failure",
       `Attempt ${attemptIndex} for model "${model}" failed transiently (${reason}): ${errorMessage}`,
     );
-    const ledgerResult = createLedgerWriter("unknown-run-id");
+    const ledgerResult = createLedgerWriter(runId);
     if (ledgerResult.ok) {
       ledgerResult.value.write(diagnosisToLedgerLine(record));
     }
@@ -174,7 +175,13 @@ export async function orchestrate(
   if (!result.ok) {
     const classification = classifyError(result.error);
     if (classification.kind === "transient") {
-      emitTransientRetryDiagnosis(1, classification.reason, model, result.error.message);
+      emitTransientRetryDiagnosis(
+        1,
+        classification.reason,
+        model,
+        result.error.message,
+        config.runId,
+      );
       transientAttempts++;
       result = await dispatcher.dispatch(dispatchRequest);
     }
@@ -184,13 +191,13 @@ export async function orchestrate(
     const classification = classifyError(result.error);
     if (classification.kind === "transient") {
       const record = makeDiagnosis(
-        "unknown-run-id",
+        config.runId ?? "unknown-run-id",
         "transient-exhaustion",
         "Transient-eligible retry budget exhausted",
         `Dispatch failed after ${transientAttempts} attempt(s) for model "${model}": ${result.error.message}`,
       );
       try {
-        const ledgerResult = createLedgerWriter("unknown-run-id");
+        const ledgerResult = createLedgerWriter(config.runId ?? "unknown-run-id");
         if (ledgerResult.ok) {
           ledgerResult.value.write(diagnosisToLedgerLine(record));
         }

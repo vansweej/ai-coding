@@ -148,6 +148,7 @@ describe("runPhase", () => {
       },
       { kind: "step-start", phase: 1, step: 1, title: "Step" },
       { kind: "step-finish", phase: 1, step: 1 },
+      { kind: "attempt-result", phase: 1, attempt: 0, retry: "local", ok: true },
     ]);
   });
 

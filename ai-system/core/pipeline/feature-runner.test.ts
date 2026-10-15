@@ -133,6 +133,7 @@ describe("runFeature", () => {
       },
       { kind: "step-start", phase: 1, step: 1, title: "Implement one" },
       { kind: "step-finish", phase: 1, step: 1 },
+      { kind: "attempt-result", phase: 1, attempt: 0, retry: "local", ok: true },
       { kind: "phase-finish", phase: 1, commitMessage: "feat: one", commitHash: "feat: one" },
       { kind: "phase-start", phase: 2, title: "Two" },
       {
@@ -144,6 +145,7 @@ describe("runFeature", () => {
       },
       { kind: "step-start", phase: 2, step: 1, title: "Implement two" },
       { kind: "step-finish", phase: 2, step: 1 },
+      { kind: "attempt-result", phase: 2, attempt: 0, retry: "local", ok: true },
       { kind: "phase-fail", phase: 2, reason: "commit failed" },
     ]);
   });

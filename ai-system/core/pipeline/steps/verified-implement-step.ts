@@ -707,6 +707,13 @@ export function createVerifiedImplementStep(
         }
         if (verificationResult.ok) {
           options.onProgress?.({
+            kind: "attempt-result",
+            phase: options.phaseNumber ?? 0,
+            attempt: 0,
+            retry: "structured",
+            ok: true,
+          });
+          options.onProgress?.({
             kind: "patch-path",
             phase: options.phaseNumber ?? 0,
             path: "structured-applied",
@@ -728,10 +735,19 @@ export function createVerifiedImplementStep(
         attemptNumber = 1;
 
         options.onProgress?.({
+          kind: "attempt-result",
+          phase: options.phaseNumber ?? 0,
+          attempt: 0,
+          retry: "structured",
+          ok: false,
+          error: verificationResult.error.message.slice(0, 4000),
+        });
+        options.onProgress?.({
           kind: "patch-path",
           phase: options.phaseNumber ?? 0,
           path: "fell-back-to-text",
           reason: "verification-red-after-structured",
+          detail: verificationResult.error.message.slice(0, 4000),
         });
 
         const currentFileContents = readCurrentFileContents(
@@ -891,6 +907,16 @@ export function createVerifiedImplementStep(
           ) {
             return verificationResult;
           }
+          options.onProgress?.({
+            kind: "attempt-result",
+            phase: options.phaseNumber ?? 0,
+            attempt: attemptNumber,
+            retry: "local",
+            ok: verificationResult.ok,
+            ...(verificationResult.ok
+              ? {}
+              : { error: verificationResult.error.message.slice(0, 4000) }),
+          });
           if (verificationResult.ok) {
             return {
               ok: true,
@@ -1040,6 +1066,16 @@ export function createVerifiedImplementStep(
           ) {
             return verificationResult;
           }
+          options.onProgress?.({
+            kind: "attempt-result",
+            phase: options.phaseNumber ?? 0,
+            attempt: escalationAttempt + 1,
+            retry: "escalation",
+            ok: verificationResult.ok,
+            ...(verificationResult.ok
+              ? {}
+              : { error: verificationResult.error.message.slice(0, 4000) }),
+          });
           if (verificationResult.ok) {
             return {
               ok: true,

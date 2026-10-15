@@ -345,6 +345,7 @@ describe("createVerifiedImplementStep", () => {
       { kind: "step-finish", phase: 3, step: 1 },
       { kind: "step-start", phase: 3, step: 2, title: "Create b.ts" },
       { kind: "step-finish", phase: 3, step: 2 },
+      { kind: "attempt-result", phase: 3, attempt: 0, retry: "local", ok: true },
     ]);
   });
 
@@ -775,6 +776,7 @@ describe("createVerifiedImplementStep (structured whole-phase dual path)", () =>
       phase: 11,
       path: "fell-back-to-text",
       reason: "verification-red-after-structured",
+      detail: "compile error 1",
     });
   });
 });
