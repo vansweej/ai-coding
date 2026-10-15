@@ -21,7 +21,7 @@ import {
 } from "../routing/route";
 import { applyPatch } from "./apply-patch-step";
 import { resolveMaxOutputTokens } from "./output-budget";
-import { parsePatch, stripEnclosingFence } from "./parse-patch";
+import { parsePatch, stripEnclosingFence, stripStrayFences } from "./parse-patch";
 import { renderBoundedFileContents } from "./prompt-context";
 import { tryStructuredPhase } from "./structured-implement";
 
@@ -41,6 +41,7 @@ const IMPLEMENT_RESULT_NAME = "verified-implement-output";
  */
 const PATCH_RESPONSE_ERROR_NAMES: ReadonlySet<string> = new Set([
   "PatchParseError",
+  "PatchProseReplyError",
   "PatchApplyError",
 ]);
 
@@ -51,7 +52,7 @@ const PATCH_RESPONSE_ERROR_NAMES: ReadonlySet<string> = new Set([
  * regardless of their (deterministic-looking but not actually so) message
  * content.
  */
-function isNonRetryableLogicError(error: Error): boolean {
+export function isNonRetryableLogicError(error: Error): boolean {
   if (PATCH_RESPONSE_ERROR_NAMES.has(error.name)) return false;
   return classifyError(error).kind === "logic";
 }
@@ -429,20 +430,20 @@ async function writeImplementation(
   // enclosing code fence (e.g. ```bash ... ```) that some models wrap their
   // output in -- stripping it here keeps parsePatch's grammar strict while
   // absorbing this common weak-model failure mode before it reaches parsing.
-  const parseResult = parsePatch(stripEnclosingFence(implementation));
+  // Tolerate a single enclosing fence AND stray out-of-block fence lines that
+  // chatty models interleave around/between aider blocks, before parsing.
+  const parseResult = parsePatch(stripStrayFences(stripEnclosingFence(implementation)));
   if (!parseResult.ok) {
     const error = new Error(`Failed to parse patches: ${parseResult.error.message}`);
     // Named distinctly so callers can exempt this failure mode from
     // classifyError's transient/logic gate (see PATCH_RESPONSE_ERROR_NAMES):
-    // a chatty or malformed patch RESPONSE is a retryable model-quality
-    // issue, not a deterministic logic error -- retrying with the parse
-    // error fed back as corrective context is the pipeline's primary,
-    // load-bearing recovery mechanism for weak/chatty models and predates
-    // classifyError entirely. Without this exemption, classifyError's broad
-    // "parse"/"unexpected" logic markers (intended for genuine dispatch/
-    // schema failures) would incorrectly fast-fail every chatty-model
-    // response on the first attempt.
-    error.name = "PatchParseError";
+    // a chatty/malformed/prose patch RESPONSE is a retryable model-quality
+    // issue, not a deterministic logic error -- retrying with the error fed
+    // back as corrective context is the pipeline's primary, load-bearing
+    // recovery mechanism for weak/chatty models and predates classifyError
+    // entirely. A prose-only reply is named distinctly but is equally
+    // retryable (both names are in PATCH_RESPONSE_ERROR_NAMES).
+    error.name = parseResult.error.prose ? "PatchProseReplyError" : "PatchParseError";
     return { ok: false, error };
   }
 

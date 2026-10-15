@@ -26,6 +26,7 @@ import {
   buildVerificationFailurePrompt,
   computeWorkingTreeDiff,
   createVerifiedImplementStep,
+  isNonRetryableLogicError,
 } from "./verified-implement-step";
 
 function makeEvent(input: string): AIRequestEvent {
@@ -864,6 +865,27 @@ describe("buildVerificationFailurePrompt", () => {
   it("omits the assertions header when no assertion lines are supplied", () => {
     const prompt = buildVerificationFailurePrompt("do it", "code", "error", undefined, []);
     expect(prompt).not.toContain("These assertions must hold after your change:");
+  });
+});
+
+describe("isNonRetryableLogicError patch-response exemptions", () => {
+  it("treats a PatchProseReplyError as retryable", () => {
+    const error = new Error("Failed to parse patches: No edit blocks were found.");
+    error.name = "PatchProseReplyError";
+    expect(isNonRetryableLogicError(error)).toBe(false);
+  });
+
+  it("treats a PatchApplyError (incl. scope-violation) as retryable", () => {
+    const error = new Error('Failed to apply patch to "x.rs": scope violation');
+    error.name = "PatchApplyError";
+    expect(isNonRetryableLogicError(error)).toBe(false);
+  });
+
+  it("treats an ordinary logic error as non-retryable", () => {
+    // Classified as a logic error by the `unexpected` marker in the message
+    // (classify-error.ts), NOT by the error name.
+    const error = new Error("unexpected token in expression");
+    expect(isNonRetryableLogicError(error)).toBe(true);
   });
 });
 
