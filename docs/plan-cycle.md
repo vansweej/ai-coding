@@ -215,6 +215,24 @@ The implement/fix output-token budget defaults to 16,384 and can be overridden
 with the `AI_CODING_MAX_OUTPUT_TOKENS` environment variable (a positive integer;
 any invalid value falls back to the default).
 
+#### Retry discipline
+
+During local and escalation retries the verified-implement step keeps the best
+working tree it has seen so far. Each failing verification attempt is classified
+(which gate failed, its position in the gate list, exit code, timeout) and
+scored by the index of its first failing gate only: an attempt that progresses
+through more gates before failing scores better. Palette-mode runs whose gate
+lists differ between attempts are treated as incomparable and never mis-ranked.
+The best kept is the most recent attempt that did not regress to an earlier
+gate. When a later attempt fails at an EARLIER gate than the best, the tree is
+reverted to the best (a forensic snapshot labelled `worse-<band>-<attempt>` is
+captured first when a run id is present), surfaced as a `revert-to-best` event.
+The revert leaves the real git index at HEAD, so best-only files reappear
+untracked, and both `plans/` and the active plan path are preserved by the
+clean. When two consecutive local attempts fail identically (same normalized
+fingerprint), the loop detects convergence, emits a `convergence` event, and
+escalates early instead of burning the remaining local retries.
+
 2. **Fixer escalation** (if local retries exhausted):
    - Route to the `fixer` role (may be a different, more capable model depending on the
      active profile)

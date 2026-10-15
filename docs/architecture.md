@@ -1087,6 +1087,19 @@ unchanged. On ANY structured failure (not-capable, dispatch error, conversion
 error, or apply failure), nothing is touched and the loop runs exactly as it
 does today.
 
+Within that text loop, each failing verification attempt is classified and
+scored by first-failing-gate index (`verification-failure.ts`,
+`progress-score.ts`); the most recent non-regressed tree is retained
+(`best-so-far.ts`), and an attempt that fails at an earlier gate than the best
+is reverted back to it before the next prompt is built. The revert leaves the
+real git index at HEAD so best-only files reappear untracked, while `plans/` and
+the active plan path are preserved by the clean. Two consecutive identical
+failures are detected via a normalized fingerprint (`convergence.ts`) and
+short-circuit the remaining local retries into escalation, which keeps its full
+budget. Reverts and convergence are reported as `revert-to-best` and
+`convergence` progress events; neither fires on a green path, so all-green event
+sequences are unchanged.
+
 ### Deterministic create→edit coercion and structured-patch prompt guidance
 
 Two defense-in-depth mitigations close a run-to-run instability observed when
