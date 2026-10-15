@@ -122,6 +122,13 @@ Target **90% code coverage**. Exclude untestable code with:
 /* v8 ignore stop */
 ```
 
+`bunfig.toml` preloads `test/setup/sandbox-home.ts` for every `bun test` run.
+The preload redirects `HOME` to a temporary directory before test modules load,
+so tests must never write ledger or forensic-snapshot files into the real
+`~/.local/share/ai-coding`. Individual tests may temporarily override and
+restore `process.env.HOME` in `beforeEach`/`afterEach` when they need to assert
+the exact snapshot location.
+
 ---
 
 ## Agent Workflow Rules

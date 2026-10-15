@@ -545,6 +545,12 @@ bun run pipeline plan-cycle ./my-project --plan ./plans/feature.md
 # Exit code: 0 (if successful) or 2 (if another phase fails)
 ```
 
+A failed phase now leaves a durable forensic snapshot (a binary diff plus a porcelain
+`git status`) under the ledger's `snapshots/<runId>/` tree before the working tree is
+reset, and `attempt-result` ledger lines record the ok/fail outcome of each
+structured/local/escalation verification attempt — so a morning-after failure is
+diagnosable without re-running the pipeline.
+
 ### Exit Code 3 (Environment Error)
 
 An input or environment error occurred. Examples:

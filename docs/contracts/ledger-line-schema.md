@@ -106,6 +106,39 @@ parameters. Useful for dry-run predictions.
 | `phases`      | int      | Total number of phases in the plan.                |
 | `dryRun`      | boolean  | Whether the run is in dry-run mode.                |
 
+### `snapshot`
+
+Emitted immediately before a destructive working-tree reset
+(`restoreWorkingTree` / `resetToPhaseCommit`), when a `runId` is present, to
+record a durable forensic snapshot of the about-to-be-discarded tree.
+
+| Payload field | Type     | Description                                                      |
+|---------------|----------|-------------------------------------------------------------------|
+| `label`       | string   | Restore-site label, e.g. `"verification-failed"`, `"resume-reset"`. |
+| `dir`         | string?  | Absolute snapshot directory. Present on a successful capture.    |
+| `treeSha`     | string?  | Git tree object SHA for the captured state. Present on success.  |
+| `reason`      | string?  | Failure reason. Present only when the capture failed.            |
+
+### `attempt-result`
+
+Emitted after every structured, local, or escalation verification attempt in
+`verified-implement-step.ts`, recording the ok/fail outcome of that attempt.
+
+| Payload field | Type    | Description                                                    |
+|---------------|---------|------------------------------------------------------------------|
+| `attempt`     | int     | 0-based (structured) or 1-based (local/escalation) attempt index. |
+| `retry`       | string  | `"structured"`, `"local"`, or `"escalation"`.                    |
+| `ok`          | boolean | Whether this attempt's verification passed.                      |
+| `error`       | string? | Truncated (4000 chars) verification error. Present only on failure. |
+
+**General payload-collection rule.** For every kind other than `phase-finish`,
+`progressEventToLedgerLine` collects all event fields other than `kind`,
+`phase`, and `step` (when their value is defined) into `payload` — so a new
+`ProgressEvent` variant's extra fields are recorded automatically without a
+matching ledger-writer change. The `phase-finish` provenance payload `{ sha,
+commitMessage, runId }` is unchanged and continues to require an explicit
+`commitHash` on the source event.
+
 ---
 
 ## Stdout Locator Line

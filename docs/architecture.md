@@ -468,6 +468,41 @@ as provably inert: in phase mode, `implementation !== ""` already implies
 `stepCursor === phaseSteps.length`, so that guard would never change behavior. It is
 not part of this change.
 
+### Forensic snapshots before working-tree reset
+
+Every `restoreWorkingTree` call site in `runPhase` (`phase-runner.ts`) — the
+verify-only assertion failure, the verification failure, the no-net-change
+gate, and the (non-verify-only) structural assertion gate — and
+`resetToPhaseCommit` (`resume.ts`) capture a durable forensic snapshot of the
+working tree immediately BEFORE the destructive `git reset --hard` / `git
+clean`, whenever a `runId` is present (tests that omit `runId` skip snapshot
+capture entirely, so unit tests exercising restore behavior in isolation are
+unaffected).
+
+Mechanism (`ai-system/core/pipeline/snapshot.ts`): `writeWorkingTreeObject`
+copies the real git index into a throwaway temp-dir copy (`mkdtempSync` under
+`tmpdir()`, never inside the workspace) and runs `git add -A` + `git
+write-tree` against that copy via `GIT_INDEX_FILE`, producing a tree SHA for
+the CURRENT working-tree state (including untracked, `.gitignore`-respecting
+files) WITHOUT touching the real index or working tree. `captureSnapshot`
+then writes `git diff --binary HEAD <tree>` to `changes.patch` and `git
+status --porcelain=v1` to `status.txt`. Both functions never throw; a
+failure (e.g. a non-git workspace) is returned as data (`{ ok: false, reason
+}`) and surfaced as a `snapshot` progress event carrying the reason instead
+of a `dir`/`treeSha`.
+
+Directory layout: `~/.local/share/ai-coding/ledger/snapshots/<runId>/phase-<N>-<label>/`,
+with `<label>` one of `verification-failed`, `no-net-change`,
+`assertion-failed`, `verify-only-assertion-failed` (all from
+`phase-runner.ts`), and `resume-reset` (from `resetToPhaseCommit`). Every one
+of these restore sites — now including `resetToPhaseCommit` — honors the
+plan-file exclusion contract described above (`plans/` plus the active
+`--plan` path excluded from `git clean`).
+
+`writeWorkingTreeObject` is reused, unchanged, by a later plan's best-so-far
+restore mechanism — it is the general-purpose "capture the current tree as a
+git object without disturbing anything" primitive, not snapshot-specific.
+
 ### Commit provenance ledger record
 
 On every gate-verified phase commit, the pure progress-to-ledger mapper emits a ledger line whose payload carries the commit `sha`, the `commitMessage`, and the `runId`, so an operator can map any commit SHA back to the run that produced it. The payload's `runId` intentionally duplicates the required top-level `runId` so an extracted standalone provenance payload is self-contained — this must not be deduped by a future cleanup. A verify-only phase emits no such record because it commits nothing.
