@@ -1,5 +1,97 @@
 import { describe, expect, it } from "bun:test";
-import { parsePatch, stripEnclosingFence } from "./parse-patch";
+import { parsePatch, stripEnclosingFence, stripStrayFences } from "./parse-patch";
+
+const FENCE = "`".repeat(3);
+
+describe("stripStrayFences", () => {
+  it("drops fence-only lines outside blocks and parses the result", () => {
+    const raw = [
+      FENCE,
+      "src/main.ts",
+      "<<<<<<< SEARCH",
+      "const x = 1;",
+      "=======",
+      "const x = 2;",
+      ">>>>>>> REPLACE",
+      FENCE,
+    ].join("\n");
+    const result = parsePatch(stripStrayFences(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected ok result");
+    expect(result.value[0]?.search).toBe("const x = 1;");
+  });
+
+  it("drops stray fences between consecutive edits", () => {
+    const raw = [
+      "src/a.ts",
+      "<<<<<<< SEARCH",
+      "old a",
+      "=======",
+      "new a",
+      ">>>>>>> REPLACE",
+      `${FENCE}ts`,
+      "src/b.ts",
+      "<<<<<<< SEARCH",
+      "old b",
+      "=======",
+      "new b",
+      ">>>>>>> REPLACE",
+    ].join("\n");
+    const result = parsePatch(stripStrayFences(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected ok result");
+    expect(result.value).toHaveLength(2);
+  });
+
+  it("preserves a fence line inside a REPLACE body", () => {
+    const raw = [
+      "src/a.ts",
+      "<<<<<<< SEARCH",
+      "old",
+      "=======",
+      FENCE,
+      "new",
+      FENCE,
+      ">>>>>>> REPLACE",
+    ].join("\n");
+    const result = parsePatch(stripStrayFences(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected ok result");
+    expect(result.value[0]?.replace).toBe([FENCE, "new", FENCE].join("\n"));
+  });
+
+  it("leaves already-valid input unchanged", () => {
+    const raw = ["src/a.ts", "<<<<<<< SEARCH", "old", "=======", "new", ">>>>>>> REPLACE"].join(
+      "\n",
+    );
+    expect(stripStrayFences(raw)).toBe(raw);
+  });
+});
+
+describe("parsePatch prose-only reply", () => {
+  it("returns a prose error when no SEARCH marker or MOVE block is present", () => {
+    const result = parsePatch("No changes are needed for this step; the file is fine.");
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected error result");
+    expect(result.error.prose).toBe(true);
+    expect(result.error.message).toContain("No edit blocks were found");
+    expect(result.error.message).toContain("SEARCH/REPLACE");
+  });
+
+  it("returns a prose error for an empty reply", () => {
+    const result = parsePatch("");
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected error result");
+    expect(result.error.prose).toBe(true);
+  });
+
+  it("returns a prose error for a whitespace-only reply", () => {
+    const result = parsePatch("   \n\t\n  ");
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected error result");
+    expect(result.error.prose).toBe(true);
+  });
+});
 
 describe("parsePatch", () => {
   it("parses a single well-formed edit", () => {

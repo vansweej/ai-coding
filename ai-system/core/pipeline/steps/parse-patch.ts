@@ -88,11 +88,59 @@ export function stripEnclosingFence(raw: string): string {
 }
 
 /**
+ * Remove stray code-fence lines that chatty models interleave AROUND or
+ * BETWEEN aider blocks, while never touching bytes inside a block body.
+ *
+ * A "fence-only" line is one whose trimmed form is three backticks optionally
+ * followed by a language tag. Such a line is dropped ONLY when it occurs
+ * outside any SEARCH/REPLACE or MOVE block body -- tracked by a small state
+ * machine over the `<<<<<<< SEARCH`, `<<<<<<< MOVE`, `>>>>>>> REPLACE`, and
+ * `>>>>>>> MOVE` markers. Inside a body every line (including a fence line) is
+ * preserved verbatim, so already-valid input is returned unchanged.
+ *
+ * @param raw - Raw model output, possibly containing stray fence lines.
+ * @returns The input with out-of-block fence-only lines removed.
+ */
+export function stripStrayFences(raw: string): string {
+  const fenceOnly = /^`{3}[a-zA-Z0-9_-]*$/;
+  const lines = raw.split("\n");
+  const kept: string[] = [];
+  let inBlock = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === "<<<<<<< SEARCH" || trimmed === "<<<<<<< MOVE") {
+      inBlock = true;
+      kept.push(line);
+      continue;
+    }
+    if (trimmed === ">>>>>>> REPLACE" || trimmed === ">>>>>>> MOVE") {
+      inBlock = false;
+      kept.push(line);
+      continue;
+    }
+    if (!inBlock && fenceOnly.test(trimmed)) {
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept.join("\n");
+}
+
+/**
  * Error details when patch parsing fails.
  */
 export interface PatchParseError {
   readonly message: string;
-  readonly fragment: string;
+  /**
+   * The offending fragment. Absent on a prose-only reply, which has no single
+   * offending line -- the whole reply is non-patch prose.
+   */
+  readonly fragment?: string;
+  /**
+   * `true` ONLY on the prose-only reply error (no SEARCH marker and no MOVE
+   * block anywhere). Retryable, like every other parse error.
+   */
+  readonly prose?: boolean;
 }
 
 /**
@@ -123,6 +171,21 @@ export interface PatchParseError {
 export function parsePatch(
   raw: string,
 ): { ok: true; value: PatchEdit[] } | { ok: false; error: PatchParseError } {
+  // A reply with no SEARCH marker and no MOVE block at all is prose, not a
+  // patch (this also captures empty/whitespace-only replies). Surface a
+  // distinct, actionable message instead of the misleading per-file "missing
+  // SEARCH marker" error.
+  if (!raw.includes("<<<<<<< SEARCH") && !raw.includes("<<<<<<< MOVE")) {
+    const fence = "`".repeat(3);
+    return {
+      ok: false,
+      error: {
+        message: `No edit blocks were found. Every step requires at least one SEARCH/REPLACE edit block in this exact format:\n${fence}\n<file-path>\n<<<<<<< SEARCH\n<exact anchor text>\n=======\n<replacement text>\n>>>>>>> REPLACE\n${fence}`,
+        prose: true,
+      },
+    };
+  }
+
   const edits: PatchEdit[] = [];
   const lines = raw.split("\n");
   let i = 0;

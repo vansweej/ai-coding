@@ -232,8 +232,9 @@ describe("createVerifiedImplementStep", () => {
 
     expect(result.ok).toBe(true);
     expect(readFileSync(join(workspace, "src/index.ts"), "utf8")).toBe("export const value = 1;");
-    // The corrective re-prompt must carry the parse failure back to the model.
-    expect(dispatcher.prompts[1]).toContain("is missing");
+    // The corrective re-prompt must carry the prose-reply failure back to the
+    // model (a prose first reply now yields the distinct "No edit blocks" error).
+    expect(dispatcher.prompts[1]).toContain("No edit blocks were found");
     expect(dispatcher.prompts[1]).toContain("SEARCH");
   });
 
