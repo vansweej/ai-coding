@@ -322,7 +322,7 @@ async function main(): Promise<void> {
     };
 
     const outcome = await runFeature(planContent, {
-      config: configResult.value,
+      config: { ...configResult.value, runId },
       workspace,
       planPath,
       runId,

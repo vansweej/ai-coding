@@ -13,6 +13,7 @@ import { PHASE_FAILURE_REASONS, phaseHardFail } from "./phase-hard-fail";
 import type { Phase } from "./plan-parser";
 import type { OnProgress } from "./progress";
 import { getTouchedFiles, route } from "./routing/route";
+import { captureSnapshot } from "./snapshot";
 import type { RetryConfig } from "./steps/verified-implement-step";
 import { createVerifiedImplementStep } from "./steps/verified-implement-step";
 
@@ -206,7 +207,17 @@ export function restoreWorkingTree(
   phase: number,
   onProgress?: OnProgress,
   planPath?: string,
+  runId?: string,
+  label = "restore",
 ): void {
+  if (runId !== undefined) {
+    const snap = captureSnapshot({ workspace, runId, phase, label });
+    onProgress?.(
+      snap.ok
+        ? { kind: "snapshot", phase, label, dir: snap.dir, treeSha: snap.treeSha }
+        : { kind: "snapshot", phase, label, reason: snap.reason },
+    );
+  }
   try {
     execSync("git reset --hard HEAD", { cwd: workspace, encoding: "utf8" });
     execFileSync("git", buildGitCleanArgs(workspace, planPath), {
@@ -383,7 +394,14 @@ export async function runPhase(
 
     const assertionResult = await checkAssertions(options.workspace, phase.assertions ?? []);
     if (!assertionResult.ok) {
-      restoreWorkingTree(options.workspace, phase.number, options.onProgress, options.planPath);
+      restoreWorkingTree(
+        options.workspace,
+        phase.number,
+        options.onProgress,
+        options.planPath,
+        options.runId,
+        "verify-only-assertion-failed",
+      );
       return phaseHardFail(
         phase.number,
         PHASE_FAILURE_REASONS.structuralAssertion,
@@ -429,12 +447,26 @@ export async function runPhase(
   });
   if (!result.ok) {
     const attributed = await attributePhaseFailure(options.workspace, options.palette, result);
-    restoreWorkingTree(options.workspace, phase.number, options.onProgress, options.planPath);
+    restoreWorkingTree(
+      options.workspace,
+      phase.number,
+      options.onProgress,
+      options.planPath,
+      options.runId,
+      "verification-failed",
+    );
     return attributed;
   }
 
   if (!hasNetWorkingTreeChange(options.workspace)) {
-    restoreWorkingTree(options.workspace, phase.number, options.onProgress);
+    restoreWorkingTree(
+      options.workspace,
+      phase.number,
+      options.onProgress,
+      options.planPath,
+      options.runId,
+      "no-net-change",
+    );
     return phaseHardFail(
       phase.number,
       PHASE_FAILURE_REASONS.noNetChange,
@@ -444,7 +476,14 @@ export async function runPhase(
 
   const assertionResult = await checkAssertions(options.workspace, phase.assertions ?? []);
   if (!assertionResult.ok) {
-    restoreWorkingTree(options.workspace, phase.number, options.onProgress);
+    restoreWorkingTree(
+      options.workspace,
+      phase.number,
+      options.onProgress,
+      options.planPath,
+      options.runId,
+      "assertion-failed",
+    );
     return phaseHardFail(
       phase.number,
       PHASE_FAILURE_REASONS.structuralAssertion,

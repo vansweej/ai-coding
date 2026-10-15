@@ -3,6 +3,7 @@ import { $ } from "bun";
 import type { Result } from "@ai-coding/pipeline";
 
 import { buildGitCleanArgs } from "./git-clean-args";
+import { captureSnapshot } from "./snapshot";
 
 /** Resume state: the last completed phase number and whether a resume is needed. */
 export interface ResumeState {
@@ -229,6 +230,8 @@ export async function detectResumeState(workspace: string): Promise<ResumeState>
 export async function resetToPhaseCommit(
   workspace: string,
   phaseNumber: number,
+  planPath?: string,
+  runId?: string,
 ): Promise<Result<string>> {
   try {
     // Find the commit with Phase: N trailer using git log
@@ -258,11 +261,14 @@ export async function resetToPhaseCommit(
       };
     }
 
-    // Reset to that commit and clean up. `resetToPhaseCommit` does not
-    // receive a `--plan` path, so `buildGitCleanArgs` applies the blanket
-    // `plans/` exclusion only (see git-clean-args.ts).
+    // Capture a forensic snapshot of the pre-resume tree before the
+    // destructive reset, then exclude the active `--plan` path (plus the
+    // blanket `plans/` guard) from `git clean`.
+    if (runId !== undefined) {
+      captureSnapshot({ workspace, runId, phase: phaseNumber, label: "resume-reset" });
+    }
     await $`git reset --hard ${targetCommitHash}`.cwd(workspace).quiet();
-    const cleanArgs = buildGitCleanArgs(workspace);
+    const cleanArgs = buildGitCleanArgs(workspace, planPath);
     await $`git ${cleanArgs}`.cwd(workspace).quiet();
 
     return { ok: true, value: targetCommitHash };

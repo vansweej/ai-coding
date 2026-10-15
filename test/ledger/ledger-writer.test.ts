@@ -116,4 +116,42 @@ describe("progressEventToLedgerLine", () => {
     expect(line.phase).toBe(1);
     expect(line.step).toBe(3);
   });
+
+  it("maps a snapshot event's extra fields into payload (no kind/phase)", () => {
+    const runId = "run-test-map-003";
+    const event = {
+      kind: "snapshot",
+      phase: 1,
+      label: "verification-failed",
+      dir: "/tmp/ai-coding/ledger/snapshots/run-test-map-003/phase-1-verification-failed",
+      treeSha: "abc123",
+    };
+    const line = progressEventToLedgerLine(event, runId);
+
+    expect(line.payload).toEqual({
+      label: "verification-failed",
+      dir: "/tmp/ai-coding/ledger/snapshots/run-test-map-003/phase-1-verification-failed",
+      treeSha: "abc123",
+    });
+  });
+
+  it("maps an attempt-result event's extra fields into payload", () => {
+    const runId = "run-test-map-004";
+    const event = {
+      kind: "attempt-result",
+      phase: 2,
+      attempt: 1,
+      retry: "local",
+      ok: false,
+      error: "verification failed",
+    };
+    const line = progressEventToLedgerLine(event, runId);
+
+    expect(line.payload).toEqual({
+      attempt: 1,
+      retry: "local",
+      ok: false,
+      error: "verification failed",
+    });
+  });
 });

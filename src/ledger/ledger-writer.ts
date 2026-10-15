@@ -119,32 +119,46 @@ export function createLedgerWriter(runId: RunId): Result<LedgerWriter> {
  * payload (e.g. copied out of the ledger file for external consumption) is
  * self-contained. Do not "dedupe" this field.
  */
-export function progressEventToLedgerLine(
-  event: {
-    kind: string;
-    phase?: number;
-    step?: number;
-    commitHash?: string;
-    commitMessage?: string;
+export function progressEventToLedgerLine<
+  E extends {
+    readonly kind: string;
+    readonly phase?: number;
+    readonly step?: number;
+    readonly commitHash?: string;
+    readonly commitMessage?: string;
   },
-  runId: RunId,
-): LedgerLine {
+>(event: E, runId: RunId): LedgerLine {
+  if (event.kind === "phase-finish" && event.commitHash !== undefined) {
+    return {
+      schema_version: 1,
+      runId,
+      ts: new Date().toISOString(),
+      kind: event.kind,
+      ...(event.phase !== undefined ? { phase: event.phase } : {}),
+      ...(event.step !== undefined ? { step: event.step } : {}),
+      payload: {
+        sha: event.commitHash,
+        commitMessage: event.commitMessage,
+        // Deliberate duplication -- see doc comment above.
+        runId,
+      },
+    };
+  }
+
+  // `commitHash`/`commitMessage` are excluded from the generic "extra" bucket
+  // below even when no payload was attached above (e.g. a `phase-finish`
+  // event with no `commitHash`): those two fields are reserved for the
+  // provenance payload shape and must never leak into another kind's
+  // payload as an undocumented side effect of a missing `commitHash`.
+  const { kind, phase, step, commitHash, commitMessage, ...rest } = event;
+  const extra = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
   return {
     schema_version: 1,
     runId,
     ts: new Date().toISOString(),
-    kind: event.kind,
-    ...(event.phase !== undefined ? { phase: event.phase } : {}),
-    ...(event.step !== undefined ? { step: event.step } : {}),
-    ...(event.kind === "phase-finish" && event.commitHash !== undefined
-      ? {
-          payload: {
-            sha: event.commitHash,
-            commitMessage: event.commitMessage,
-            // Deliberate duplication -- see doc comment above.
-            runId,
-          },
-        }
-      : {}),
+    kind,
+    ...(phase !== undefined ? { phase } : {}),
+    ...(step !== undefined ? { step } : {}),
+    ...(Object.keys(extra).length > 0 ? { payload: extra } : {}),
   };
 }

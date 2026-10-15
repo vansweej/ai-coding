@@ -105,7 +105,12 @@ export async function runFeature(
     }
 
     // Reset to the last completed phase
-    const resetResult = await resetToPhaseCommit(options.workspace, resumeState.lastPhaseNumber);
+    const resetResult = await resetToPhaseCommit(
+      options.workspace,
+      resumeState.lastPhaseNumber,
+      options.planPath,
+      options.runId,
+    );
     if (!resetResult.ok) return resetResult;
 
     // Skip phases up to and including the last completed phase

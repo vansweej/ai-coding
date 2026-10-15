@@ -71,6 +71,22 @@ export type ProgressEvent =
        */
       readonly detail?: string;
     }
+  | {
+      readonly kind: "snapshot";
+      readonly phase: number;
+      readonly label: string;
+      readonly dir?: string;
+      readonly treeSha?: string;
+      readonly reason?: string;
+    }
+  | {
+      readonly kind: "attempt-result";
+      readonly phase: number;
+      readonly attempt: number;
+      readonly retry: "structured" | "local" | "escalation";
+      readonly ok: boolean;
+      readonly error?: string;
+    }
   | RestoreFailedProgressEvent;
 
 /** Callback invoked with each `ProgressEvent` as a plan-cycle run progresses. */
@@ -97,6 +113,8 @@ const NERD_GLYPHS: Readonly<Record<ProgressEvent["kind"], string>> = {
   "patch-path": "⇄",
   "restore-failed": "⚠",
   "vacuous-pass": "⊘",
+  snapshot: "⧉",
+  "attempt-result": "◆",
 };
 
 /** ASCII fallback glyphs used when color/Unicode is not appropriate. */
@@ -112,6 +130,8 @@ const ASCII_GLYPHS: Readonly<Record<ProgressEvent["kind"], string>> = {
   "patch-path": "=",
   "restore-failed": "!",
   "vacuous-pass": "0",
+  snapshot: "S",
+  "attempt-result": "A",
 };
 
 /** ANSI SGR codes used to color each event kind's glyph. */
@@ -127,6 +147,8 @@ const SGR: Readonly<Record<ProgressEvent["kind"], string>> = {
   "patch-path": "\x1b[35m", // magenta
   "restore-failed": "\x1b[31m", // red
   "vacuous-pass": "\x1b[31m", // red
+  snapshot: "\x1b[36m", // cyan
+  "attempt-result": "\x1b[35m", // magenta
 };
 
 const SGR_RESET = "\x1b[0m";
@@ -171,6 +193,12 @@ function buildLabel(event: ProgressEvent): string {
       return `Phase ${event.phase}  working-tree restore FAILED: ${event.reason}`;
     case "vacuous-pass":
       return `Phase ${event.phase}  VACUOUS PASS blocked: ${event.reason}`;
+    case "snapshot":
+      return event.dir !== undefined
+        ? `Phase ${event.phase}  snapshot (${event.label}) -> ${event.dir}`
+        : `Phase ${event.phase}  snapshot (${event.label}) FAILED: ${event.reason ?? "unknown"}`;
+    case "attempt-result":
+      return `Phase ${event.phase}  attempt ${event.attempt} (${event.retry}): ${event.ok ? "ok" : "fail"}`;
     case "patch-path": {
       const base =
         event.path === "structured-applied"

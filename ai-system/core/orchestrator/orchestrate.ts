@@ -37,6 +37,12 @@ export interface OrchestratorConfig {
    * stricter validation is enforced across pipeline steps.
    */
   readonly strict?: boolean;
+  /**
+   * Correlation id for this plan-cycle run. When present, transient-diagnosis
+   * ledger lines are written to the run's own ledger file instead of the
+   * `"unknown-run-id"` fallback.
+   */
+  readonly runId?: string;
 }
 
 /** Optional LLM-level parameters forwarded to the dispatcher. */
