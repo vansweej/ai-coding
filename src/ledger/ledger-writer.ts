@@ -27,11 +27,25 @@ export interface LedgerWriter {
 }
 
 /**
+ * Absolute directory holding the per-run ledger files and their snapshots tree.
+ *
+ * Prefers `process.env.HOME` over `node:os`'s `homedir()` because Bun's
+ * `homedir()` binding caches the home directory once at process startup and
+ * does not observe later mutations to `process.env.HOME` -- a live JS
+ * property read does. In normal operation `HOME` and `homedir()` agree;
+ * this only matters for test isolation (overriding `HOME` in `beforeEach`
+ * so ledger/snapshot writes never land under the real home directory).
+ */
+export function resolveLedgerDir(): string {
+  return join(process.env.HOME ?? homedir(), ".local", "share", "ai-coding", "ledger");
+}
+
+/**
  * Resolve the per-run ledger path.
  * Location: `~/.local/share/ai-coding/ledger/<runId>.jsonl`
  */
 function resolveLedgerPath(runId: RunId): string {
-  return join(homedir(), ".local", "share", "ai-coding", "ledger", `${runId}.jsonl`);
+  return join(resolveLedgerDir(), `${runId}.jsonl`);
 }
 
 /**
@@ -41,7 +55,7 @@ function resolveLedgerPath(runId: RunId): string {
 export function createLedgerWriter(runId: RunId): Result<LedgerWriter> {
   const path = resolveLedgerPath(runId);
   try {
-    mkdirSync(join(homedir(), ".local", "share", "ai-coding", "ledger"), { recursive: true });
+    mkdirSync(resolveLedgerDir(), { recursive: true });
   } catch (err) {
     return {
       ok: false,
