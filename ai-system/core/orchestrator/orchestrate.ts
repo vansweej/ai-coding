@@ -10,6 +10,8 @@ import type {
 import { diagnosisToLedgerLine, makeDiagnosis } from "../../../src/diagnosis/diagnosis-record";
 import { classifyError } from "../../../src/errors/classify-error";
 import { createLedgerWriter } from "../../../src/ledger/ledger-writer";
+import { computeBackoffMs } from "../../../src/retry/backoff";
+import { resolveDispatchTimeoutMs, withAbortableDeadline } from "../../../src/retry/timeouts";
 import type { ModelProfile } from "../../config/model-profiles";
 import { resolveModelForRole } from "../../config/model-profiles";
 import { resolveMode } from "../mode-router/resolve-mode";
@@ -43,6 +45,17 @@ export interface OrchestratorConfig {
    * `"unknown-run-id"` fallback.
    */
   readonly runId?: string;
+  /**
+   * Explicit per-dispatch deadline (ms). When set, beats both the
+   * `AI_CODING_DISPATCH_TIMEOUT_SECONDS` env override and the dispatcher's
+   * own default. Primarily a test/caller seam.
+   */
+  readonly dispatchTimeoutMs?: number;
+  /**
+   * Injectable sleep awaited before the single transient retry. Defaults to a
+   * real `setTimeout`-based sleep; tests pass a no-op to avoid real delays.
+   */
+  readonly retrySleep?: (ms: number) => Promise<void>;
 }
 
 /** Optional LLM-level parameters forwarded to the dispatcher. */
@@ -63,8 +76,9 @@ export interface LLMOptions {
  */
 /**
  * Emit a lightweight `diagnosis` ledger line for a single retried transient
- * failure (attempt index + classification reason), BEFORE the backoff sleep
- * that precedes the next dispatch attempt. Distinct from the terminal
+ * failure (attempt index + classification reason), BEFORE the full-jitter
+ * backoff sleep (`computeBackoffMs(0, { baseMs: 1000 })`) that now precedes
+ * the single transient retry dispatch attempt. Distinct from the terminal
  * `transient-exhaustion` record: this fires on every retried attempt, not
  * only when the retry budget is exhausted. Never throws -- a ledger-write
  * failure must never mask or interrupt the original dispatch flow.
@@ -169,7 +183,15 @@ export async function orchestrate(
     maxTokens: llmOptions?.maxTokens,
     context: event.context,
   };
-  let result = await dispatcher.dispatch(dispatchRequest);
+  const timeoutMs =
+    config.dispatchTimeoutMs ?? resolveDispatchTimeoutMs(dispatcher.defaultTimeoutMs);
+  const retrySleep =
+    config.retrySleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let result = await withAbortableDeadline(
+    (signal) => dispatcher.dispatch({ ...dispatchRequest, signal }),
+    timeoutMs,
+    `${model} dispatch`,
+  );
   let transientAttempts = 1;
 
   if (!result.ok) {
@@ -183,7 +205,12 @@ export async function orchestrate(
         config.runId,
       );
       transientAttempts++;
-      result = await dispatcher.dispatch(dispatchRequest);
+      await retrySleep(computeBackoffMs(0, { baseMs: 1000 }));
+      result = await withAbortableDeadline(
+        (signal) => dispatcher.dispatch({ ...dispatchRequest, signal }),
+        timeoutMs,
+        `${model} dispatch`,
+      );
     }
   }
 
@@ -298,7 +325,14 @@ export async function orchestratePatch(
     context: event.context,
   };
 
-  const result = await dispatcher.dispatchPatch(dispatchRequest);
+  const timeoutMs =
+    config.dispatchTimeoutMs ?? resolveDispatchTimeoutMs(dispatcher.defaultTimeoutMs);
+  const dispatchPatch = dispatcher.dispatchPatch.bind(dispatcher);
+  const result = await withAbortableDeadline(
+    (signal) => dispatchPatch({ ...dispatchRequest, signal }),
+    timeoutMs,
+    `${model} dispatchPatch`,
+  );
   if (!result.ok) {
     return result;
   }

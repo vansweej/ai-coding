@@ -51,6 +51,7 @@ describe("per-retry transient diagnosis", () => {
     const dispatcher = flakyThenSucceedsDispatcher();
     const config: OrchestratorConfig = {
       dispatchers: { "gemma4:26b": dispatcher },
+      retrySleep: async () => {},
     };
 
     const runId = mintRunId();

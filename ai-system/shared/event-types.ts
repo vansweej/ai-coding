@@ -61,6 +61,14 @@ export interface DispatchRequest {
   /** Maximum number of tokens to generate. Provider default is used when omitted. */
   readonly maxTokens?: number;
   readonly context?: Record<string, unknown>;
+  /**
+   * Optional abort signal for the dispatch attempt. Set centrally by
+   * `orchestrate()`/`orchestratePatch()` so a dispatch that exceeds its
+   * deadline is aborted. Dispatchers forward it to their transport (fetch
+   * `signal` / SDK `abortSignal`). `AbortSignal` is a global type, so adding
+   * this field keeps this zero-import root import-free.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -69,6 +77,13 @@ export interface DispatchRequest {
  */
 export interface ModelDispatcher {
   dispatch(request: DispatchRequest): Promise<Result<string>>;
+  /**
+   * Optional per-dispatcher default deadline (ms) used when no explicit
+   * override or `AI_CODING_DISPATCH_TIMEOUT_SECONDS` env value is present.
+   * Local backends (Ollama) set a long default; cloud backends leave this
+   * undefined to inherit the network default.
+   */
+  readonly defaultTimeoutMs?: number;
   /**
    * Optional structured-output channel. Present only on backends that can
    * guarantee valid structured data (native tool-use, OpenAI tool_calls,

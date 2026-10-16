@@ -98,6 +98,7 @@ export class CopilotDispatcher implements ModelDispatcher {
           "x-initiator": "user",
         },
         body: JSON.stringify(body),
+        signal: request.signal,
       });
 
       if (!response.ok) {
@@ -185,6 +186,7 @@ export class CopilotDispatcher implements ModelDispatcher {
           "x-initiator": "user",
         },
         body: JSON.stringify(body),
+        signal: request.signal,
       });
 
       if (!response.ok) {

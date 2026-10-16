@@ -437,3 +437,33 @@ describe("OpenCodeZenDispatcher", () => {
     }
   });
 });
+
+describe("OpenCodeZenDispatcher signal forwarding", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("forwards request.signal to fetch on dispatch", async () => {
+    let seen: AbortSignal | undefined;
+    global.fetch = (async (_url: unknown, options: unknown) => {
+      seen = (options as RequestInit).signal ?? undefined;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "x" } }] }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const dispatcher = new OpenCodeZenDispatcher("test-key", "deepseek-v4-flash-free");
+    const controller = new AbortController();
+    await dispatcher.dispatch({
+      model: "deepseek-v4-flash-free",
+      prompt: "hi",
+      signal: controller.signal,
+    });
+
+    expect(seen).toBe(controller.signal);
+  });
+});

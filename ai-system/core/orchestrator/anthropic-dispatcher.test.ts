@@ -633,3 +633,39 @@ describe("AnthropicDispatcher.dispatchPatch", () => {
     }
   });
 });
+
+describe("AnthropicDispatcher signal forwarding", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("forwards request.signal to fetch on both dispatch and dispatchPatch", async () => {
+    const seen: Array<AbortSignal | undefined> = [];
+    let call = 0;
+    global.fetch = (async (_url: unknown, options: unknown) => {
+      seen.push((options as RequestInit).signal ?? undefined);
+      const body =
+        call === 0
+          ? { content: [{ type: "text", text: "x" }] }
+          : { content: [{ type: "tool_use", name: "emit_patch", input: { ops: [] } }] };
+      call++;
+      return { ok: true, status: 200, json: async () => body } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const dispatcher = new AnthropicDispatcher("test-key");
+    const controller = new AbortController();
+    const req: DispatchRequest = {
+      model: "claude-sonnet-5",
+      prompt: "hi",
+      signal: controller.signal,
+    };
+
+    await dispatcher.dispatch(req);
+    await dispatcher.dispatchPatch(req);
+
+    expect(seen[0]).toBe(controller.signal);
+    expect(seen[1]).toBe(controller.signal);
+  });
+});

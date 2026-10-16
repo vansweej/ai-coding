@@ -695,3 +695,37 @@ describe("CopilotDispatcher.dispatchPatch", () => {
     }
   });
 });
+
+describe("CopilotDispatcher signal forwarding", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("forwards request.signal to fetch on both dispatch and dispatchPatch", async () => {
+    const seen: Array<AbortSignal | undefined> = [];
+    global.fetch = (async (_url: unknown, options: unknown) => {
+      seen.push((options as RequestInit).signal ?? undefined);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "x", tool_calls: [] } }] }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const dispatcher = new CopilotDispatcher("test-token");
+    const controller = new AbortController();
+    const req: DispatchRequest = {
+      model: "copilot/claude-sonnet-5",
+      prompt: "hi",
+      signal: controller.signal,
+    };
+
+    await dispatcher.dispatch(req);
+    await dispatcher.dispatchPatch(req);
+
+    expect(seen[0]).toBe(controller.signal);
+    expect(seen[1]).toBe(controller.signal);
+  });
+});

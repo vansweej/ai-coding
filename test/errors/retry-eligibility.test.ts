@@ -27,7 +27,11 @@ describe("retry eligibility gating (classifyError)", () => {
   }
 
   function makeConfig(dispatcher: ModelDispatcher): OrchestratorConfig {
-    return { profile: LOCAL_PROFILE, dispatchers: { "gemma4:26b": dispatcher } };
+    return {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher },
+      retrySleep: async () => {},
+    };
   }
 
   it("does not retry when the dispatcher returns a logic (validation) error", async () => {

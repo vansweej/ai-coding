@@ -71,6 +71,7 @@ export class AnthropicDispatcher implements ModelDispatcher {
           "User-Agent": "ai-coding-os/1.0.0",
         },
         body: JSON.stringify(body),
+        signal: request.signal,
       });
 
       if (!response.ok) {
@@ -137,6 +138,7 @@ export class AnthropicDispatcher implements ModelDispatcher {
           "User-Agent": "ai-coding-os/1.0.0",
         },
         body: JSON.stringify(body),
+        signal: request.signal,
       });
 
       if (!response.ok) {

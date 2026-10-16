@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 
 import type { DispatchRequest } from "@ai-coding/shared";
 
@@ -113,5 +113,35 @@ describe("OllamaDispatcher", () => {
     } finally {
       globalThis.fetch = origFetch;
     }
+  });
+});
+
+describe("OllamaDispatcher signal forwarding", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("forwards request.signal to fetch on dispatch", async () => {
+    let seen: AbortSignal | undefined;
+    global.fetch = (async (_url: unknown, options: unknown) => {
+      seen = (options as RequestInit).signal ?? undefined;
+      return new Response(JSON.stringify({ response: "x" }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const dispatcher = new OllamaDispatcher();
+    const controller = new AbortController();
+    await dispatcher.dispatch({
+      model: "gemma4:26b",
+      prompt: "hi",
+      signal: controller.signal,
+    });
+
+    expect(seen).toBe(controller.signal);
+  });
+
+  it("sets a 15-minute default deadline", () => {
+    expect(new OllamaDispatcher().defaultTimeoutMs).toBe(900_000);
   });
 });

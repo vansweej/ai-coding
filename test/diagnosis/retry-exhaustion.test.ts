@@ -84,6 +84,7 @@ describe("transient retry exhaustion diagnosis", () => {
     const dispatcher = alwaysTransientDispatcher(callCounter);
     const config: OrchestratorConfig = {
       dispatchers: { "gemma4:26b": dispatcher },
+      retrySleep: async () => {},
     };
 
     const result = await orchestrate(
@@ -105,6 +106,7 @@ describe("transient retry exhaustion diagnosis", () => {
     const dispatcher = singleLogicFailureDispatcher(callCounter);
     const config: OrchestratorConfig = {
       dispatchers: { "gemma4:26b": dispatcher },
+      retrySleep: async () => {},
     };
 
     const result = await orchestrate(

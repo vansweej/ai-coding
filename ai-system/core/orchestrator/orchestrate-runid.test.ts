@@ -31,6 +31,7 @@ function makeConfig(runId?: string): OrchestratorConfig {
       "deepseek-coder-v2": timeoutDispatcher(),
       "gemma4:26b": timeoutDispatcher(),
     },
+    retrySleep: async () => {},
     ...(runId !== undefined ? { runId } : {}),
   };
 }

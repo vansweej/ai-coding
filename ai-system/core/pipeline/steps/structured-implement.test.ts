@@ -687,11 +687,9 @@ describe("tryStructuredPhase", () => {
   });
 
   it("never throws when the dispatcher rejects (honors the never-throws contract)", async () => {
-    // The only test that reaches tryStructuredPhase's top-level catch: a
-    // rejecting dispatchPatch is a real, reachable production path -- it
-    // propagates through orchestratePatch (which does not itself guard
-    // against a throwing dispatcher) and must be converted into an error
-    // Result rather than crashing the pipeline.
+    // A rejecting dispatchPatch is a real, reachable production path. The
+    // central dispatch deadline converts it to an error Result so the
+    // structured path reports a dispatch error rather than crashing.
     const config: OrchestratorConfig = {
       profile: CLAUDE_SONNET_PROFILE,
       dispatchers: {
@@ -702,7 +700,7 @@ describe("tryStructuredPhase", () => {
     const result = await tryStructuredPhase(makeEvent(), config, workspace);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.reason).toBe("threw");
+      expect(result.error.reason).toBe("dispatch-error");
     }
   });
 

@@ -75,6 +75,7 @@ export class OpenCodeZenDispatcher implements ModelDispatcher {
         method: "POST",
         headers,
         body: JSON.stringify(body),
+        signal: request.signal,
       });
 
       if (!response.ok) {

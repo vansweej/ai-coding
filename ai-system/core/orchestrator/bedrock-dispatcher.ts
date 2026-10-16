@@ -28,7 +28,10 @@ interface AnthropicMessageResponse {
 
 /** Minimal shape of the Bedrock client this dispatcher depends on (testable seam). */
 export interface BedrockInvoker {
-  send(command: InvokeModelCommand): Promise<{ body: Uint8Array }>;
+  send(
+    command: InvokeModelCommand,
+    options?: { abortSignal?: AbortSignal },
+  ): Promise<{ body: Uint8Array }>;
 }
 
 /**
@@ -116,7 +119,7 @@ export class BedrockDispatcher implements ModelDispatcher {
         body: JSON.stringify(body),
       });
 
-      const response = await this.client.send(command);
+      const response = await this.client.send(command, { abortSignal: request.signal });
       const decoded = new TextDecoder().decode(response.body);
       const data = JSON.parse(decoded) as AnthropicMessageResponse;
       const content = data.content[0]?.text;

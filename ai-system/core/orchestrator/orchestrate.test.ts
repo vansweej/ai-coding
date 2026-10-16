@@ -1,9 +1,16 @@
 import { describe, expect, it } from "bun:test";
 
-import type { AIRequestEvent, DispatchRequest, ModelDispatcher, Result } from "@ai-coding/shared";
+import type {
+  AIRequestEvent,
+  DispatchRequest,
+  ModelDispatcher,
+  PatchOp,
+  Result,
+} from "@ai-coding/shared";
 
+import { COPILOT_DEFAULT_PROFILE } from "../../config/model-profiles";
 import type { LLMOptions, OrchestratorConfig } from "./orchestrate";
-import { orchestrate } from "./orchestrate";
+import { orchestrate, orchestratePatch } from "./orchestrate";
 
 /** Creates a mock dispatcher that returns a fixed response. */
 function mockDispatcher(response: string): ModelDispatcher {
@@ -46,6 +53,7 @@ function makeConfig(overrides?: Partial<OrchestratorConfig["dispatchers"]>): Orc
       "gemma4:26b": mockDispatcher("default-response"),
       ...overrides,
     },
+    retrySleep: async () => {},
   };
 }
 
@@ -183,5 +191,113 @@ describe("orchestrate", () => {
     expect(capturedRequest?.system).toBeUndefined();
     expect(capturedRequest?.temperature).toBeUndefined();
     expect(capturedRequest?.maxTokens).toBeUndefined();
+  });
+});
+
+/** Dispatcher whose dispatch hangs until its abort signal fires, then fails. */
+function signalHonouringHangingDispatcher(captured: { signal?: AbortSignal }): ModelDispatcher {
+  return {
+    dispatch: (req: DispatchRequest): Promise<Result<string>> => {
+      captured.signal = req.signal;
+      return new Promise<Result<string>>((resolve) => {
+        req.signal?.addEventListener("abort", () => {
+          resolve({ ok: false, error: new Error("aborted") });
+        });
+      });
+    },
+  };
+}
+
+/** Dispatcher whose dispatch never settles and ignores the abort signal. */
+function signalIgnoringHangingDispatcher(): ModelDispatcher {
+  return {
+    dispatch: (_req: DispatchRequest): Promise<Result<string>> =>
+      new Promise<Result<string>>(() => {}),
+  };
+}
+
+describe("orchestrate dispatch timeouts", () => {
+  it("times out a signal-honouring dispatch, retries once, and sleeps a bounded backoff", async () => {
+    const captured: { signal?: AbortSignal } = {};
+    const dispatcher = signalHonouringHangingDispatcher(captured);
+    let dispatchEntries = 0;
+    const countingDispatcher: ModelDispatcher = {
+      dispatch: (req: DispatchRequest): Promise<Result<string>> => {
+        dispatchEntries++;
+        return dispatcher.dispatch(req);
+      },
+    };
+    const sleeps: number[] = [];
+    const result = await orchestrate(
+      makeEvent({ source: "cli", action: "edit", payload: { input: "hi" } }),
+      {
+        dispatchers: { "gemma4:26b": countingDispatcher },
+        dispatchTimeoutMs: 20,
+        retrySleep: async (ms: number) => {
+          sleeps.push(ms);
+        },
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.name).toBe("TimeoutError");
+    expect(dispatchEntries).toBe(2);
+    expect(sleeps).toHaveLength(1);
+    expect(sleeps[0]).toBeGreaterThanOrEqual(0);
+    expect(sleeps[0]).toBeLessThan(1000);
+    expect(captured.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("backstops a signal-ignoring dispatch with a TimeoutError", async () => {
+    const result = await orchestrate(
+      makeEvent({ source: "cli", action: "edit", payload: { input: "hi" } }),
+      {
+        dispatchers: { "gemma4:26b": signalIgnoringHangingDispatcher() },
+        dispatchTimeoutMs: 20,
+        retrySleep: async () => {},
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.name).toBe("TimeoutError");
+  });
+
+  it("times out orchestratePatch on a signal-honouring dispatchPatch", async () => {
+    const dispatcher: ModelDispatcher = {
+      dispatch: async (_req: DispatchRequest): Promise<Result<string>> => ({
+        ok: true,
+        value: "unused",
+      }),
+      dispatchPatch: (req: DispatchRequest) =>
+        new Promise<Result<readonly PatchOp[]>>((resolve) => {
+          req.signal?.addEventListener("abort", () => {
+            resolve({ ok: false, error: new Error("aborted") });
+          });
+        }),
+    };
+    const result = await orchestratePatch(
+      makeEvent({ source: "cli", action: "edit", payload: { input: "hi" } }),
+      {
+        profile: COPILOT_DEFAULT_PROFILE,
+        dispatchers: { "copilot/claude-sonnet-5": dispatcher },
+        dispatchTimeoutMs: 20,
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.name).toBe("TimeoutError");
+  });
+
+  it("passes an AbortSignal through DispatchRequest.signal to the dispatcher", async () => {
+    const captured: { signal?: AbortSignal } = {};
+    const recordingDispatcher: ModelDispatcher = {
+      dispatch: async (req: DispatchRequest): Promise<Result<string>> => {
+        captured.signal = req.signal;
+        return { ok: true, value: "ok" };
+      },
+    };
+    await orchestrate(makeEvent({ source: "cli", action: "edit", payload: { input: "hi" } }), {
+      dispatchers: { "gemma4:26b": recordingDispatcher },
+      dispatchTimeoutMs: 1000,
+      retrySleep: async () => {},
+    });
+    expect(captured.signal).toBeInstanceOf(AbortSignal);
   });
 });

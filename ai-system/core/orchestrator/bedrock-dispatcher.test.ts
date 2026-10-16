@@ -26,11 +26,11 @@ function encodeResponseBody(payload: unknown): Uint8Array {
 /** Create a fake BedrockInvoker that captures the last command and returns a fixed body. */
 function makeFakeInvoker(
   responseBody: Uint8Array,
-  onSend?: (command: InvokeModelCommand) => void,
+  onSend?: (command: InvokeModelCommand, options?: { abortSignal?: AbortSignal }) => void,
 ): BedrockInvoker {
   return {
-    send: async (command: InvokeModelCommand) => {
-      onSend?.(command);
+    send: async (command: InvokeModelCommand, options?: { abortSignal?: AbortSignal }) => {
+      onSend?.(command, options);
       return { body: responseBody };
     },
   };
@@ -85,6 +85,25 @@ describe("BedrockDispatcher", () => {
     if (result.ok) {
       expect(result.value).toBe("Hello, world!");
     }
+  });
+
+  it("forwards request.signal to the Bedrock invoker abortSignal option", async () => {
+    let seenOptions: { abortSignal?: AbortSignal } | undefined;
+    const body = new TextEncoder().encode(
+      JSON.stringify({ content: [{ type: "text", text: "x" }] }),
+    );
+    const dispatcher = new BedrockDispatcher(
+      TEST_ARN,
+      "eu-west-1",
+      makeFakeInvoker(body, (_command, options) => {
+        seenOptions = options;
+      }),
+    );
+    const controller = new AbortController();
+
+    await dispatcher.dispatch(makeRequest({ signal: controller.signal }));
+
+    expect(seenOptions?.abortSignal).toBe(controller.signal);
   });
 
   it("invokes the constructor-provided inference profile ARN, ignoring request.model", async () => {

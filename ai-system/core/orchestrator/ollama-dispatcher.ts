@@ -8,6 +8,8 @@ interface OllamaGenerateResponse {
 
 /** Dispatcher that sends prompts to a local Ollama instance. */
 export class OllamaDispatcher implements ModelDispatcher {
+  /** Local models are slow; allow 15 minutes before the central deadline fires. */
+  readonly defaultTimeoutMs = 900_000;
   private readonly baseUrl: string;
 
   constructor(baseUrl: string = DEFAULT_OLLAMA_URL) {
@@ -37,6 +39,7 @@ export class OllamaDispatcher implements ModelDispatcher {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: request.signal,
       });
 
       if (!response.ok) {
