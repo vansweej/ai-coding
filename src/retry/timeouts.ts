@@ -81,6 +81,88 @@ export const DEFAULT_TIMEOUTS = {
   runMs: 21_600_000,
 } as const;
 
+/** Environment variable name overriding the per-dispatch deadline, in positive integer seconds. */
+export const DISPATCH_TIMEOUT_ENV = "AI_CODING_DISPATCH_TIMEOUT_SECONDS";
+
+/**
+ * Network-dispatch default deadline (ms). P2 raised the implement/fix output
+ * budget to 16,384 tokens, so a full-budget cloud completion can legitimately
+ * take minutes; 300s avoids aborting slow-but-healthy completions. This is a
+ * new constant kept separate from `DEFAULT_TIMEOUTS.dispatchMs` so the existing
+ * layered-timeout budgets are untouched.
+ */
+export const DEFAULT_NETWORK_DISPATCH_TIMEOUT_MS = 300_000;
+
+/**
+ * Resolve the per-dispatch deadline (ms). An `AI_CODING_DISPATCH_TIMEOUT_SECONDS`
+ * value that parses to a positive integer wins (× 1000). Otherwise the
+ * provider-specific default is used, falling back to the network default when
+ * no provider default is supplied. Pure: reads the injected `env` object only.
+ *
+ * @param providerDefaultMs - The dispatcher's own default deadline, if any.
+ * @param env - Environment map; defaults to `process.env`.
+ */
+export function resolveDispatchTimeoutMs(
+  providerDefaultMs: number | undefined,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env[DISPATCH_TIMEOUT_ENV];
+  if (raw !== undefined) {
+    const seconds = Number(raw);
+    if (Number.isInteger(seconds) && seconds > 0) {
+      return seconds * 1000;
+    }
+  }
+  return providerDefaultMs ?? DEFAULT_NETWORK_DISPATCH_TIMEOUT_MS;
+}
+
+/**
+ * Run a dispatch-shaped call (returns a `Result`, never throws) under an
+ * abortable deadline. An `AbortController` is created and its `signal` is
+ * passed to `call`; dispatchers that honour it abort their in-flight fetch on
+ * expiry. As a backstop for dispatchers that ignore the signal, the timer also
+ * resolves the race with a `TimeoutError` Result, so a hung dispatch can never
+ * stall the run. If `call` settles first the timer is cleared; if the deadline
+ * fires first, the timeout wins and any late result from the aborted call is
+ * ignored. Never throws: rejections are caught and returned as an error
+ * `Result`. Timers are injectable so tests run on a fake clock.
+ *
+ * @param call - Invoked with the abort signal; returns a `Result`.
+ * @param timeoutMs - The deadline in milliseconds.
+ * @param label - Human-readable scope embedded in the timeout message.
+ * @param timers - Injectable timer primitives; defaults to the real globals.
+ */
+export async function withAbortableDeadline<T>(
+  call: (signal: AbortSignal) => Promise<{ ok: true; value: T } | { ok: false; error: Error }>,
+  timeoutMs: number,
+  label: string,
+  timers: TimerLike = REAL_TIMERS,
+): Promise<{ ok: true; value: T } | { ok: false; error: Error }> {
+  const controller = new AbortController();
+  let timeoutHandle: unknown;
+  const timeoutError = new TimeoutError(
+    `${label} timed out after ${Math.round(timeoutMs / 1000)}s`,
+  );
+
+  const timeoutPromise = new Promise<{ ok: false; error: Error }>((resolve) => {
+    timeoutHandle = timers.setTimeout(() => {
+      controller.abort(timeoutError);
+      resolve({ ok: false, error: timeoutError });
+    }, timeoutMs);
+  });
+
+  const callPromise = call(controller.signal).catch((error: unknown) => ({
+    ok: false as const,
+    error: error instanceof Error ? error : new Error(String(error)),
+  }));
+
+  try {
+    return await Promise.race([callPromise, timeoutPromise]);
+  } finally {
+    timers.clearTimeout(timeoutHandle);
+  }
+}
+
 /**
  * Wrap a `ModelDispatcher.dispatch`/`dispatchPatch`-shaped call (returns a
  * `Result<T>`, never throws) with a dispatch-scoped timeout. On timeout,

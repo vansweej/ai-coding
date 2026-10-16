@@ -3,8 +3,11 @@ import { describe, expect, it } from "bun:test";
 import { classifyError } from "../../src/errors/classify-error";
 import type { TimerLike } from "../../src/retry/timeouts";
 import {
+  DEFAULT_NETWORK_DISPATCH_TIMEOUT_MS,
   DEFAULT_TIMEOUTS,
   TimeoutError,
+  resolveDispatchTimeoutMs,
+  withAbortableDeadline,
   withDispatchTimeout,
   withPhaseTimeout,
   withRunTimeout,
@@ -208,5 +211,103 @@ describe("withRunTimeout", () => {
 
   it("uses DEFAULT_TIMEOUTS.runMs when no explicit timeout is provided", () => {
     expect(DEFAULT_TIMEOUTS.runMs).toBeGreaterThan(0);
+  });
+});
+
+describe("resolveDispatchTimeoutMs", () => {
+  it("uses a valid positive integer env value in seconds (× 1000)", () => {
+    const ms = resolveDispatchTimeoutMs(900_000, { AI_CODING_DISPATCH_TIMEOUT_SECONDS: "30" });
+    expect(ms).toBe(30_000);
+  });
+
+  it("ignores a non-integer or non-positive env value and uses the provider default", () => {
+    expect(resolveDispatchTimeoutMs(900_000, { AI_CODING_DISPATCH_TIMEOUT_SECONDS: "0" })).toBe(
+      900_000,
+    );
+    expect(resolveDispatchTimeoutMs(900_000, { AI_CODING_DISPATCH_TIMEOUT_SECONDS: "1.5" })).toBe(
+      900_000,
+    );
+    expect(resolveDispatchTimeoutMs(900_000, { AI_CODING_DISPATCH_TIMEOUT_SECONDS: "nope" })).toBe(
+      900_000,
+    );
+  });
+
+  it("falls back to the network default when no env value and no provider default", () => {
+    expect(resolveDispatchTimeoutMs(undefined, {})).toBe(DEFAULT_NETWORK_DISPATCH_TIMEOUT_MS);
+  });
+});
+
+describe("withAbortableDeadline", () => {
+  it("returns the call value and clears the timer when the call wins", async () => {
+    const timer = makeFakeTimer();
+    const result = await withAbortableDeadline(
+      async (_signal) => ({ ok: true as const, value: "ok" }),
+      1000,
+      "model dispatch",
+      timer,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe("ok");
+    expect(timer.cleared).toBe(true);
+  });
+
+  it("fires the deadline: TimeoutError result, signal aborted, message in seconds", async () => {
+    const timer = makeFakeTimer();
+    let seenSignal: AbortSignal | undefined;
+    const promise = withAbortableDeadline(
+      (signal) => {
+        seenSignal = signal;
+        return hangingOperation<{ ok: true; value: string }>();
+      },
+      2000,
+      "model dispatch",
+      timer,
+    );
+    timer.fire();
+    const result = await promise;
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(TimeoutError);
+      expect(result.error.message).toBe("model dispatch timed out after 2s");
+    }
+    expect(seenSignal?.aborted).toBe(true);
+    expect(timer.cleared).toBe(true);
+  });
+
+  it("returns the TimeoutError even when the call resolves its own error on abort", async () => {
+    const timer = makeFakeTimer();
+    const promise = withAbortableDeadline(
+      (signal) =>
+        new Promise<{ ok: false; error: Error }>((resolve) => {
+          signal.addEventListener("abort", () => {
+            resolve({ ok: false, error: new Error("fetch aborted") });
+          });
+        }),
+      1000,
+      "model dispatch",
+      timer,
+    );
+    timer.fire();
+    const result = await promise;
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(TimeoutError);
+      expect(result.error.message).toBe("model dispatch timed out after 1s");
+    }
+  });
+
+  it("converts a rejected call into an error Result instead of throwing", async () => {
+    const timer = makeFakeTimer();
+    const result = await withAbortableDeadline(
+      async (_signal) => {
+        throw new Error("boom");
+      },
+      1000,
+      "model dispatch",
+      timer,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toBe("boom");
+    expect(timer.cleared).toBe(true);
   });
 });
