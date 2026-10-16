@@ -47,7 +47,6 @@ const TRANSIENT_MESSAGE_MARKERS: readonly string[] = [
   "rate exceeded",
   "too many requests",
   "throttl",
-  "fetch not mobbed", // never matches; placeholder guarded intentionally removed below
 ];
 
 /** Lowercase substrings that indicate a deterministic/logic failure. */

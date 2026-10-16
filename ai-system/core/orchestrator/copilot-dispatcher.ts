@@ -25,6 +25,7 @@ export function toCopilotWireModel(modelId: string): string {
 }
 
 interface CopilotChoice {
+  readonly finish_reason?: string;
   readonly message: {
     readonly content: string;
     readonly tool_calls?: readonly CopilotToolCall[];
@@ -43,6 +44,42 @@ interface CopilotToolCall {
 
 interface CopilotChatResponse {
   readonly choices: readonly CopilotChoice[];
+}
+
+/** Thrown when Copilot stops a completion because its content filter tripped. */
+export class ContentFilterError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ContentFilterError";
+  }
+}
+
+/** Thrown when Copilot truncates a completion at the output-token limit. */
+export class OutputTruncatedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OutputTruncatedError";
+  }
+}
+
+/**
+ * Map a Copilot `finish_reason` to the corresponding named error, or
+ * `undefined` when the completion stopped normally. `content_filter` is a
+ * deterministic logic failure (fail fast); `length` means the output hit the
+ * token ceiling and is retryable with a larger budget.
+ *
+ * @param finishReason - The `finish_reason` from the first choice, if any.
+ */
+function finishReasonError(finishReason: string | undefined): Error | undefined {
+  if (finishReason === "content_filter") {
+    return new ContentFilterError("Copilot stopped the completion: content filter triggered");
+  }
+  if (finishReason === "length") {
+    return new OutputTruncatedError(
+      "Copilot truncated the completion at the output-token limit; raise AI_CODING_MAX_OUTPUT_TOKENS and retry",
+    );
+  }
+  return undefined;
 }
 
 /** Dispatcher that sends prompts to GitHub Copilot's chat completions API. */
@@ -109,6 +146,10 @@ export class CopilotDispatcher implements ModelDispatcher {
       }
 
       const data = (await response.json()) as CopilotChatResponse;
+      const finishError = finishReasonError(data.choices[0]?.finish_reason);
+      if (finishError !== undefined) {
+        return { ok: false, error: finishError };
+      }
       const content = data.choices[0]?.message.content;
 
       if (content === undefined) {
@@ -197,6 +238,11 @@ export class CopilotDispatcher implements ModelDispatcher {
       }
 
       const data = (await response.json()) as CopilotChatResponse;
+      const finishError = finishReasonError(data.choices[0]?.finish_reason);
+      if (finishError !== undefined) {
+        return { ok: false, error: finishError };
+      }
+
       const toolCall = data.choices[0]?.message.tool_calls?.find(
         (call) => call.function.name === PATCH_TOOL_NAME,
       );

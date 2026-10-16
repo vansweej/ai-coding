@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import type { DispatchRequest } from "@ai-coding/shared";
-import { CopilotDispatcher, toCopilotWireModel } from "./copilot-dispatcher";
+import { classifyError } from "../../../src/errors/classify-error";
+import {
+  ContentFilterError,
+  CopilotDispatcher,
+  OutputTruncatedError,
+  toCopilotWireModel,
+} from "./copilot-dispatcher";
 
 describe("CopilotDispatcher", () => {
   const originalFetch = global.fetch;
@@ -47,6 +53,26 @@ describe("CopilotDispatcher", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value).toBe("Hello, world!");
+    }
+  });
+
+  it("returns OutputTruncatedError when finish_reason is length", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ finish_reason: "length", message: { content: "Partial response" } }],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new CopilotDispatcher("test-token");
+    const result = await dispatcher.dispatch({ model: "claude-sonnet-4.6", prompt: "Say hello" });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error instanceof OutputTruncatedError).toBe(true);
+      expect(result.error.message).toContain("AI_CODING_MAX_OUTPUT_TOKENS");
     }
   });
 
@@ -623,6 +649,46 @@ describe("CopilotDispatcher.dispatchPatch", () => {
     }
   });
 
+  it("returns OutputTruncatedError when tool arguments are truncated at length", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "length",
+              message: {
+                content: "",
+                tool_calls: [
+                  {
+                    id: "call_1",
+                    type: "function",
+                    function: {
+                      name: "emit_patch",
+                      arguments: '{"ops": [{"kind": "create"',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const dispatcher = new CopilotDispatcher("test-token");
+    const result = await dispatcher.dispatchPatch({
+      model: "claude-sonnet-4.6",
+      prompt: "implement it",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error instanceof OutputTruncatedError).toBe(true);
+      expect(result.error.message).toContain("AI_CODING_MAX_OUTPUT_TOKENS");
+    }
+  });
+
   it("returns error when arguments parses to a schema-violating object", async () => {
     global.fetch = (async () =>
       ({
@@ -727,5 +793,67 @@ describe("CopilotDispatcher signal forwarding", () => {
 
     expect(seen[0]).toBe(controller.signal);
     expect(seen[1]).toBe(controller.signal);
+  });
+});
+
+describe("CopilotDispatcher finish_reason classification", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("returns a logic ContentFilterError from dispatch", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: { content: "", tool_calls: [] },
+              finish_reason: "content_filter",
+            },
+          ],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const result = await new CopilotDispatcher("test-token").dispatch({
+      model: "copilot/claude-sonnet-5",
+      prompt: "hi",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error instanceof ContentFilterError).toBe(true);
+      expect(classifyError(result.error).kind).toBe("logic");
+    }
+  });
+
+  it("returns a logic ContentFilterError from dispatchPatch", async () => {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: { content: "", tool_calls: [] },
+              finish_reason: "content_filter",
+            },
+          ],
+        }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+    const result = await new CopilotDispatcher("test-token").dispatchPatch({
+      model: "copilot/claude-sonnet-5",
+      prompt: "hi",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error instanceof ContentFilterError).toBe(true);
+      expect(classifyError(result.error).kind).toBe("logic");
+    }
   });
 });

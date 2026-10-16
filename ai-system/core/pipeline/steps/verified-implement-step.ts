@@ -34,26 +34,26 @@ import { classifyVerificationFailure } from "./verification-failure";
 const IMPLEMENT_RESULT_NAME = "verified-implement-output";
 
 /**
- * Error names produced by `writeImplementation` for a chatty/malformed patch
- * RESPONSE (parse failure) or a stale/mismatched SEARCH anchor (apply
- * failure). Both are retryable model-quality issues -- refreshed file
- * contents and the error message are fed back on the next attempt -- NOT
- * deterministic logic errors, and must be exempted from classifyError's
- * transient/logic fast-fail gate (see `isNonRetryableLogicError` below).
- * classifyError's broad "parse"/"unexpected" logic markers are intended for
- * genuine dispatch/schema failures, not for this pipeline's own patch
- * parsing/anchor-matching, whose retry-with-correction loop predates
- * classifyError and is load-bearing for weak/chatty models.
+ * Error names for retryable patch-response failures: a chatty/malformed patch
+ * RESPONSE (parse failure), a stale/mismatched SEARCH anchor (apply failure),
+ * or a response truncated at the provider output limit. They are model-quality
+ * issues -- refreshed file contents and the error message are fed back on the
+ * next attempt -- NOT deterministic logic errors, and must be exempted from
+ * classifyError's transient/logic fast-fail gate (see
+ * `isNonRetryableLogicError` below). classifyError's broad
+ * "parse"/"unexpected" logic markers are intended for genuine
+ * dispatch/schema failures, not for this pipeline's own patch recovery loop.
  */
 const PATCH_RESPONSE_ERROR_NAMES: ReadonlySet<string> = new Set([
   "PatchParseError",
   "PatchProseReplyError",
   "PatchApplyError",
+  "OutputTruncatedError",
 ]);
 
 /**
  * Whether an implement/fix attempt's error should fast-fail the retry loop
- * as a non-retryable logic error, per classifyError -- EXCEPT for the two
+ * as a non-retryable logic error, per classifyError -- EXCEPT for the
  * patch-response error modes above, which always remain retry-eligible
  * regardless of their (deterministic-looking but not actually so) message
  * content.
