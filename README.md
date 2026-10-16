@@ -7,7 +7,8 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
 
 - **Model profiles** -- named configurations mapping semantic roles (planner, implementer,
   debugger, fixer…) to model IDs. Default: `copilot-default` (all roles → GitHub Copilot's
-  Claude Sonnet 5, internal id `copilot/claude-sonnet-5`). Other built-in profiles: `local` (all roles → `gemma4:26b` via local
+  Claude Sonnet 5, internal id `copilot/claude-sonnet-5`; the `fixer` role escalates to the more
+  capable `copilot/claude-sonnet-5.5`). Other built-in profiles: `local` (all roles → `gemma4:26b` via local
   Ollama; no cloud dependencies or API tokens required), `hybrid` (mixes Copilot and Ollama per
   role), `anthropic-sonnet` (all roles → `claude-sonnet-5` via the native Anthropic Messages
   API; requires `ANTHROPIC_API_KEY`), `bedrock-sonnet` (all roles → Claude Sonnet on Amazon
@@ -77,6 +78,25 @@ export AI_CODING_MAX_OUTPUT_TOKENS=32000
 
 Any missing, zero, negative, fractional, or non-numeric value falls back to the
 16,384-token default.
+
+---
+
+### Dispatch timeouts (optional)
+
+Each model dispatch attempt (including the single transient retry and the
+structured-patch attempt) runs under a deadline. On expiry the attempt is
+aborted and surfaced as a transient `TimeoutError`. Local Ollama dispatches
+default to 15 minutes; cloud dispatches default to 5 minutes. Override the
+deadline for all providers with `AI_CODING_DISPATCH_TIMEOUT_SECONDS`, a
+positive integer number of seconds:
+
+```bash
+export AI_CODING_DISPATCH_TIMEOUT_SECONDS=120
+```
+
+Any missing, zero, negative, fractional, or non-numeric value falls back to the
+per-provider default. Before the transient retry, a full-jitter backoff of up
+to one second is awaited.
 
 ---
 

@@ -831,7 +831,8 @@ built by `load-config.ts` is provider-agnostic, binding each model-ID string to
 its dispatcher (`claude-sonnet-5` → Anthropic native, `copilot/claude-sonnet-5`
 → Copilot-served Sonnet 5 (namespaced to stay distinct from the Anthropic-native
 bare id; the CopilotDispatcher strips the `copilot/` prefix on the wire),
-`claude-sonnet-4.6` → Copilot, `gemma4:26b` → Ollama). The CopilotDispatcher
+`claude-sonnet-4.6` → Copilot, `gemma4:26b` → Ollama, `copilot/claude-sonnet-5.5`
+→ Copilot (the `fixer`-role escalation target under `copilot-default`)). The CopilotDispatcher
 sends the durable GitHub OAuth token from `GITHUB_COPILOT_TOKEN` DIRECTLY to
 `https://api.githubcopilot.com/chat/completions` as the `Authorization: Bearer`
 credential — there is NO `copilot_internal/v2/token` exchange, because that
@@ -844,6 +845,16 @@ opencode's own observed behaviour at the time of writing; `Copilot-Integration-I
 and `Editor-Version` are deliberately NOT sent (those belong to the VS Code editor profile). There is no separate
 model-override flag; adding a new
 provider mix is pure data — define another `ModelProfile` and register it.
+
+Every dispatch attempt in `orchestrate()`/`orchestratePatch()` is wrapped in a
+central abortable deadline (`withAbortableDeadline` in `src/retry/timeouts.ts`):
+a fresh `AbortSignal` is passed through `DispatchRequest.signal` to each
+dispatcher's transport (fetch `signal` / Bedrock `abortSignal`), and on expiry a
+transient `TimeoutError` is returned even if a dispatcher ignores the signal.
+The deadline resolves from `AI_CODING_DISPATCH_TIMEOUT_SECONDS`, then the
+dispatcher's `defaultTimeoutMs` (Ollama 15 min), then the 5-minute network
+default. Before the single transient retry, a full-jitter backoff
+(`computeBackoffMs(0, { baseMs: 1000 })`) is awaited.
 
 ### Legacy fallback
 

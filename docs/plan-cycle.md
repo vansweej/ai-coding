@@ -235,7 +235,12 @@ escalates early instead of burning the remaining local retries.
 
 2. **Fixer escalation** (if local retries exhausted):
    - Route to the `fixer` role (may be a different, more capable model depending on the
-     active profile)
+     active profile; under `copilot-default` the `fixer` role escalates to
+     `copilot/claude-sonnet-5.5`)
+   - Every dispatch attempt runs under a deadline (5 minutes for cloud, 15 for
+     local Ollama; override with `AI_CODING_DISPATCH_TIMEOUT_SECONDS`), and a
+     full-jitter backoff of up to one second is awaited before the single
+     transient retry
    - Provide full context (error, code, diagnostics)
    - Attempt one final fix
    - If successful, continue to next phase
