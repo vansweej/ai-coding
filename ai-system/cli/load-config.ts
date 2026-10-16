@@ -14,7 +14,11 @@ import { OpenCodeZenDispatcher } from "../core/orchestrator/opencode-zen-dispatc
 import type { OrchestratorConfig } from "../core/orchestrator/orchestrate";
 
 /** Model IDs that indicate Copilot/cloud models (not local Ollama). */
-const COPILOT_MODEL_IDS = new Set(["claude-sonnet-4.6", "copilot/claude-sonnet-5"]);
+const COPILOT_MODEL_IDS = new Set([
+  "claude-sonnet-4.6",
+  "copilot/claude-sonnet-5",
+  "copilot/claude-sonnet-5.5",
+]);
 
 /** Model IDs that indicate native Anthropic (Claude Messages API) models. */
 const ANTHROPIC_MODEL_IDS = new Set(["claude-sonnet-5"]);

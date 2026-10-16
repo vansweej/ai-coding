@@ -48,11 +48,23 @@ describe("COPILOT_DEFAULT_PROFILE", () => {
     expect(COPILOT_DEFAULT_PROFILE.name).toBe("copilot-default");
   });
 
-  it("maps all roles to copilot/claude-sonnet-5", () => {
-    const roles = Object.values(COPILOT_DEFAULT_PROFILE.roles);
-    for (const model of roles) {
-      expect(model).toBe("copilot/claude-sonnet-5");
+  it("maps every role except fixer to copilot/claude-sonnet-5 and fixer to -5.5", () => {
+    for (const [role, model] of Object.entries(COPILOT_DEFAULT_PROFILE.roles)) {
+      if (role === "fixer") {
+        expect(model).toBe("copilot/claude-sonnet-5.5");
+      } else {
+        expect(model).toBe("copilot/claude-sonnet-5");
+      }
     }
+  });
+
+  it("resolveModelForRole falls back to the default role value for an unknown role", () => {
+    const unknownRole = "nonexistent-role" as unknown as Parameters<typeof resolveModelForRole>[0];
+    const resolved = resolveModelForRole(unknownRole, {
+      name: "t",
+      roles: { ...COPILOT_DEFAULT_PROFILE.roles },
+    });
+    expect(resolved).toBe(COPILOT_DEFAULT_PROFILE.roles.default);
   });
 
   it("has all nine roles defined", () => {

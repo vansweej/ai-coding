@@ -82,6 +82,9 @@ describe("loadConfig", () => {
       const copilotBound = result.value.dispatchers["copilot/claude-sonnet-5"];
       expect(copilotBound).toBeDefined();
       expect(copilotBound?.constructor.name).toBe("CopilotDispatcher");
+      expect(result.value.dispatchers["copilot/claude-sonnet-5.5"]?.constructor.name).toBe(
+        "CopilotDispatcher",
+      );
     }
   });
 

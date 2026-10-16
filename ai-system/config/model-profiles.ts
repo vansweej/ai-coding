@@ -50,7 +50,7 @@ export const COPILOT_DEFAULT_PROFILE: ModelProfile = {
     planner: "copilot/claude-sonnet-5",
     implementer: "copilot/claude-sonnet-5",
     debugger: "copilot/claude-sonnet-5",
-    fixer: "copilot/claude-sonnet-5",
+    fixer: "copilot/claude-sonnet-5.5",
     reviewer: "copilot/claude-sonnet-5",
     tester: "copilot/claude-sonnet-5",
     scaffolder: "copilot/claude-sonnet-5",
@@ -181,7 +181,7 @@ export const DEFAULT_PROFILE_NAME = "copilot-default";
  * @param profile - The profile to resolve against.
  */
 export function resolveModelForRole(role: ModelRole, profile: ModelProfile): string {
-  return profile.roles[role];
+  return profile.roles[role] ?? profile.roles.default;
 }
 
 /**
