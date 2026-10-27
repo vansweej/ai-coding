@@ -101,6 +101,12 @@ export type ProgressEvent =
       readonly attempt: number;
       readonly fingerprint: string;
     }
+  | {
+      readonly kind: "preflight";
+      readonly errors: number;
+      readonly warnings: number;
+      readonly violations: readonly string[];
+    }
   | RestoreFailedProgressEvent;
 
 /** Callback invoked with each `ProgressEvent` as a plan-cycle run progresses. */
@@ -131,6 +137,7 @@ const NERD_GLYPHS: Readonly<Record<ProgressEvent["kind"], string>> = {
   "attempt-result": "◆",
   "revert-to-best": "↩",
   convergence: "≡",
+  preflight: "⚑",
 };
 
 /** ASCII fallback glyphs used when color/Unicode is not appropriate. */
@@ -150,6 +157,7 @@ const ASCII_GLYPHS: Readonly<Record<ProgressEvent["kind"], string>> = {
   "attempt-result": "A",
   "revert-to-best": "<",
   convergence: "C",
+  preflight: "#",
 };
 
 /** ANSI SGR codes used to color each event kind's glyph. */
@@ -169,6 +177,7 @@ const SGR: Readonly<Record<ProgressEvent["kind"], string>> = {
   "attempt-result": "\x1b[35m", // magenta
   "revert-to-best": "\x1b[33m", // yellow
   convergence: "\x1b[33m", // yellow
+  preflight: "\x1b[36m", // cyan
 };
 
 const SGR_RESET = "\x1b[0m";
@@ -223,6 +232,8 @@ function buildLabel(event: ProgressEvent): string {
       return `Phase ${event.phase}  reverted ${event.fromBand} attempt ${event.fromAttempt} -> best (${event.toBand} attempt ${event.toAttempt})`;
     case "convergence":
       return `Phase ${event.phase}  converged at local attempt ${event.attempt}; escalating: ${event.fingerprint.slice(0, 200)}`;
+    case "preflight":
+      return `Preflight  ${event.errors} error(s), ${event.warnings} warning(s)`;
     case "patch-path": {
       const base =
         event.path === "structured-applied"

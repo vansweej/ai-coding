@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { runPipeline } from "@ai-coding/pipeline";
 import type { AIRequestEvent } from "@ai-coding/shared";
@@ -22,12 +23,14 @@ import {
 } from "../core/pipeline/feature-runner";
 import { BaselineCheckError } from "../core/pipeline/phase-runner";
 import { parsePlanFile } from "../core/pipeline/plan-parser";
+import { runPreflight } from "../core/pipeline/preflight";
 import type { OnProgress } from "../core/pipeline/progress";
 import { buildTheme, formatProgressEvent } from "../core/pipeline/progress";
 import { detectResumeState } from "../core/pipeline/resume";
 import { loadConfig } from "./load-config";
 import { parseArgs } from "./parse-args";
 import { reportParseOnly } from "./parse-only";
+import { reportPreflight } from "./report-preflight";
 import { selectPipeline } from "./select-pipeline";
 
 const PREVIEW_MAX_CHARS = 200;
@@ -259,6 +262,20 @@ async function main(): Promise<void> {
       const predictedShape = predictRunShape(parseResult.value, paletteResult.value);
       console.log(formatPredictedRunShape(predictedShape));
 
+      const dryRunPreflight = runPreflight({
+        plan: parseResult.value,
+        planText: planContent,
+        fileExists: (p) => existsSync(resolve(workspace, p)),
+      });
+      const dryRunReport = reportPreflight(dryRunPreflight, strict === true);
+      for (const line of dryRunReport.lines) {
+        console.log(line);
+      }
+      if (dryRunReport.abort) {
+        process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+        return;
+      }
+
       const shapeRunId = mintRunId();
       const shapeLedgerResult = createLedgerWriter(shapeRunId);
       if (shapeLedgerResult.ok) {
@@ -320,6 +337,29 @@ async function main(): Promise<void> {
       const go = buildGateOutput(name, stdout, stderr, exitCode, durationMs);
       ledger?.writeGateOutput(go, runId, phase);
     };
+
+    const preflightParse = parsePlanFile(planContent);
+    if (preflightParse.ok) {
+      const preflightReport = runPreflight({
+        plan: preflightParse.value,
+        planText: planContent,
+        fileExists: (p) => existsSync(resolve(workspace, p)),
+      });
+      const rendered = reportPreflight(preflightReport, strict === true);
+      onProgress({
+        kind: "preflight",
+        errors: rendered.errorCount,
+        warnings: rendered.warnCount,
+        violations: preflightReport.violations.map((v) => `${v.rule}: ${v.message}`),
+      });
+      for (const line of rendered.lines) {
+        console.error(line);
+      }
+      if (rendered.abort) {
+        process.exit(EXIT_CODES.ENVIRONMENT_ERROR);
+        return;
+      }
+    }
 
     const outcome = await runFeature(planContent, {
       config: { ...configResult.value, runId },
