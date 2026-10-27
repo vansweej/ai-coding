@@ -311,3 +311,20 @@ describe("withAbortableDeadline", () => {
     expect(timer.cleared).toBe(true);
   });
 });
+
+describe("withAbortableDeadline synchronous throw", () => {
+  it("converts a synchronous throw into an error Result and clears the timer", async () => {
+    const timer = makeFakeTimer();
+    const result = await withAbortableDeadline(
+      (_signal) => {
+        throw new Error("sync boom");
+      },
+      1000,
+      "model dispatch",
+      timer,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toBe("sync boom");
+    expect(timer.cleared).toBe(true);
+  });
+});

@@ -124,8 +124,9 @@ export function resolveDispatchTimeoutMs(
  * resolves the race with a `TimeoutError` Result, so a hung dispatch can never
  * stall the run. If `call` settles first the timer is cleared; if the deadline
  * fires first, the timeout wins and any late result from the aborted call is
- * ignored. Never throws: rejections are caught and returned as an error
- * `Result`. Timers are injectable so tests run on a fake clock.
+ * ignored. Never throws: rejections and synchronous throws from `call` are
+ * caught and returned as an error `Result`. Timers are injectable so tests run
+ * on a fake clock.
  *
  * @param call - Invoked with the abort signal; returns a `Result`.
  * @param timeoutMs - The deadline in milliseconds.
@@ -151,10 +152,16 @@ export async function withAbortableDeadline<T>(
     }, timeoutMs);
   });
 
-  const callPromise = call(controller.signal).catch((error: unknown) => ({
-    ok: false as const,
+  const toErrorResult = (error: unknown): { ok: false; error: Error } => ({
+    ok: false,
     error: error instanceof Error ? error : new Error(String(error)),
-  }));
+  });
+  let callPromise: Promise<{ ok: true; value: T } | { ok: false; error: Error }>;
+  try {
+    callPromise = call(controller.signal).catch(toErrorResult);
+  } catch (error) {
+    callPromise = Promise.resolve(toErrorResult(error));
+  }
 
   try {
     return await Promise.race([callPromise, timeoutPromise]);
