@@ -27,6 +27,13 @@ export interface Phase {
   readonly title: string;
   /** Conventional commit message authored by the planning session. */
   readonly commitMessage: string;
+  /**
+   * True when `normalizeCommitMessage` stripped a surrounding matching
+   * delimiter pair (backtick, double, or single quote) from the raw
+   * `Commit message:` value. Optional and backward compatible: a plan whose
+   * commit messages were already clean parses to an omitted field.
+   */
+  readonly commitMessageNormalized?: boolean;
   /** Ordered list of steps to execute in this phase. */
   readonly steps: readonly Step[];
   /** Coverage directive: skip, N%, or default (90%). */
@@ -68,6 +75,32 @@ export interface PlanFile {
 const FEATURE_RE = /^#\s+Feature:\s*(.+)$/;
 const PHASE_RE = /^##\s+Phase\s+(\d+):\s*(.+)$/;
 const COMMIT_RE = /^Commit message:\s*(.+)$/;
+
+/**
+ * Normalize a raw `Commit message:` value by stripping ONE surrounding pair
+ * of matching delimiters (backtick, double quote, or single quote) and
+ * re-trimming. A value whose length is 2 and consists solely of a matching
+ * delimiter pair normalizes to the empty string (so an empty quote pair
+ * becomes an empty, invalid message). Pure and total; never throws.
+ *
+ * @param raw - The already-trimmed text captured after `Commit message:`.
+ * @returns The normalized message and whether a delimiter pair was stripped.
+ */
+export function normalizeCommitMessage(raw: string): {
+  readonly message: string;
+  readonly normalized: boolean;
+} {
+  const trimmed = raw.trim();
+  const first = trimmed.charAt(0);
+  const isDelimiter = first === "`" || first === '"' || first === "'";
+  if (isDelimiter && trimmed.length === 2 && trimmed.charAt(1) === first) {
+    return { message: "", normalized: true };
+  }
+  if (isDelimiter && trimmed.length > 2 && trimmed.charAt(trimmed.length - 1) === first) {
+    return { message: trimmed.slice(1, -1).trim(), normalized: true };
+  }
+  return { message: trimmed, normalized: false };
+}
 const COVERAGE_RE = /^Coverage:\s*(.+)$/;
 const ASSERT_RE = /^Assert:\s*(.+)$/;
 const MODE_RE = /^Mode:\s*(.+)$/;
@@ -116,6 +149,7 @@ export function parsePlanFile(content: string): Result<PlanFile> {
   let currentPhaseNumber: number | undefined;
   let currentPhaseTitle: string | undefined;
   let currentCommitMessage: string | undefined;
+  let currentCommitNormalized = false;
   let currentCoverage: CoverageDirective = { mode: "default" };
   let currentVerifyOnly = false;
   const currentSteps: Step[] = [];
@@ -142,6 +176,14 @@ export function parsePlanFile(content: string): Result<PlanFile> {
       return { ok: true, value: undefined };
     }
     flushStep();
+    if (currentCommitMessage !== undefined && currentCommitMessage.length === 0) {
+      return {
+        ok: false,
+        error: new Error(
+          `Phase ${currentPhaseNumber} has an empty "Commit message:" after normalization`,
+        ),
+      };
+    }
     if (!currentCommitMessage) {
       return {
         ok: false,
@@ -166,6 +208,7 @@ export function parsePlanFile(content: string): Result<PlanFile> {
       number: currentPhaseNumber,
       title: currentPhaseTitle,
       commitMessage: currentCommitMessage,
+      commitMessageNormalized: currentCommitNormalized,
       steps: [...currentSteps],
       coverage: currentCoverage,
       verifyOnly: currentVerifyOnly,
@@ -174,6 +217,7 @@ export function parsePlanFile(content: string): Result<PlanFile> {
     currentPhaseNumber = undefined;
     currentPhaseTitle = undefined;
     currentCommitMessage = undefined;
+    currentCommitNormalized = false;
     currentCoverage = { mode: "default" };
     currentVerifyOnly = false;
     currentSteps.length = 0;
@@ -199,7 +243,9 @@ export function parsePlanFile(content: string): Result<PlanFile> {
 
     const commitMatch = COMMIT_RE.exec(line);
     if (commitMatch && currentPhaseNumber !== undefined) {
-      currentCommitMessage = commitMatch[1].trim();
+      const normalized = normalizeCommitMessage(commitMatch[1].trim());
+      currentCommitMessage = normalized.message;
+      currentCommitNormalized = normalized.normalized;
       continue;
     }
 
