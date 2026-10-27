@@ -148,6 +148,13 @@ unchanged either way.
 pipeline step. Useful for validating plan syntax before committing to a full unattended run. Exit
 code 0 on a valid plan, non-zero on a parse error.
 
+`--dry-run` is a superset of `--parse-only`: it validates the plan, runs read-only preflight
+checks, and prints the predicted run shape, without dispatching to any model or mutating the
+working tree. Preflight reports plan defects (a missing `Assert:` path, a delimiter-wrapped commit
+message, an elided anchor, a step naming no file) and aborts with exit code 3 on any error; a
+delimiter-wrapped commit subject is normalized away so it never reaches git history. With
+`--strict`, preflight warnings are promoted to errors.
+
 `--sandboxed` runs pipeline steps inside a sandboxed environment (restricted `nix develop` shell
 with network access disabled). Individual steps opt in to sandbox enforcement; steps that do not
 support sandboxing are unaffected.

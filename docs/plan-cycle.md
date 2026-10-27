@@ -291,7 +291,10 @@ Coverage: skip | N% | (omitted for default 90%, Rust only)
 - **Feature name**: Single line after `# Feature:`
 - **Phase number**: Must be sequential (1, 2, 3, …)
 - **Phase title**: Short description of the phase
-- **Commit message**: Conventional commit format (feat:, fix:, refactor:, etc.)
+- **Commit message**: Conventional commit format (feat:, fix:, refactor:, etc.). A surrounding
+  pair of matching delimiters (backtick, double quote, or single quote) is stripped during
+  parsing, so a wrapped subject never leaks into git history; a value that normalizes to the
+  empty string is a parse error.
 - **Coverage** (optional): `skip`, an explicit `N%` threshold, or omitted for the default.
   Only consulted by the Rust factory today.
 - **Step number**: Must be sequential within each phase (1, 2, 3, …)
@@ -327,6 +330,29 @@ Run this with `bun run pipeline plan-cycle ./my-project --plan ./plans/rate-limi
 language flag needed; each phase's touched files are routed automatically.
 
 ---
+
+## Preflight
+
+Before any model dispatch or working-tree mutation, `plan-cycle` runs a pure, static preflight
+over the parsed plan. It never spends tokens and never touches the working tree. It runs on
+`--dry-run` and on live runs only — `--parse-only` stays grammar-only.
+
+Rules and severities:
+
+- `assert-path-missing` (**error**): an `Assert:` path that requires the file to exist (contains,
+  not-contains, exists, matches, toml-keys, test) is absent on disk and mentioned by no step.
+  Paths resolve against the workspace like the runtime assertion check (absolute paths are
+  honoured), and a leading `./` is ignored when searching the plan for a mention. A plan that
+  creates a file must name its path in a step.
+- `commit-message-normalized` (**warn**): the parser stripped surrounding delimiters from a
+  phase's commit message.
+- `anchor-ellipsis` (**warn**): an anchor block appears to contain an elided region.
+- `step-without-edit-target` (**warn**): a non-verify-only step names no file and has no fenced
+  edit block.
+
+Behaviour: on `--dry-run` the report prints to stdout; on a live run it prints to stderr and
+emits a `preflight` ledger/progress event synchronously before any abort. Any error aborts with
+exit code 3 before dispatch. With `--strict`, warnings are promoted to errors and also abort.
 
 ## Usage
 
