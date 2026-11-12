@@ -120,6 +120,24 @@ Any other value (including unset) leaves the guard enabled.
 
 ---
 
+### Rust gate wrapper (optional)
+
+Rust plan-cycle gates run against the whole cargo workspace (`cargo check
+--workspace --all-targets`, `cargo clippy --workspace --all-targets`, `cargo
+test --workspace`, `cargo tarpaulin --workspace`). To run those cargo gates
+under a containment wrapper such as a memory-capped systemd scope, set
+`AI_CODING_RUST_GATE_WRAPPER` to a non-blank string:
+
+```bash
+export AI_CODING_RUST_GATE_WRAPPER="systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0"
+```
+
+The value is split on whitespace into argv tokens (no quoting support) and
+prepended to every cargo gate command, after any `nix develop --command`
+prefix. Unset or blank is a no-op; macOS has no `systemd-run`.
+
+---
+
 ## Running pipelines
 
 ```bash

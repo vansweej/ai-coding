@@ -570,6 +570,15 @@ both lower real ops with `lowerPatchOps` AND restructure verification to run per
 before an `opId` on a `gate-output` ledger line would be meaningful; today's
 `gate-output` lines carry `phase` but never `opId`.
 
+Until `feat/rust-gates-workspace-scope`, every `TOOLCHAIN_DESCRIPTORS` lambda dropped
+the trailing `onGateOutput` parameter (TypeScript method-parameter bivariance hid the
+omission), so no real run ever wrote a `gate-output` line. Each descriptor now forwards
+`onGateOutput` to its `create*PlanConfig` factory, pinned by a regression test in
+`definitions/language-configs.test.ts`. Related: after a green Rust phase, `runPhase`
+emits a fail-open `gate-coverage-warning` progress event (never a degradation, never
+exit code 4) when a touched `.rs` file lies outside every cargo workspace member
+directory -- see `routing/rust-gate-coverage.ts`.
+
 ---
 
 ## Progress Reporting (`--verbose`)

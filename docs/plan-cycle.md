@@ -66,7 +66,7 @@ producing a language-specific implementation prompt and toolchain.
 
 | Language | Toolchain steps | Coverage gate | `baselineCheck` |
 |----------|-----------------|:---:|:---:|
-| Rust | `cargo fmt` → `cargo check` → `cargo clippy -D warnings` → `cargo test` → (if gated) `cargo tarpaulin` → coverage gate | ✅ fatal when gated | — |
+| Rust | `cargo fmt --all` → `cargo check --workspace --all-targets` → `cargo clippy --workspace --all-targets -D warnings` → `cargo test --workspace` → (if gated) `cargo tarpaulin --workspace` → coverage gate | ✅ fatal when gated | — |
 | TypeScript | `bun run typecheck` → `bunx biome check --write .` → `bun test` (300s) | — | — |
 | Python | `ruff format --check` → `ruff check` → `mypy .` (warning-only) → `pytest -q` (300s) | — | — |
 | C++ | `cmake -S . -B build` (120s) → `cmake --build build` (300s) → `ctest --test-dir build` (300s) | — | — |

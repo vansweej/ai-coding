@@ -41,9 +41,13 @@ ai-coding/
         steps/             - OrchestratorStep, SkillResolverStep, VerifiedImplementStep, structured-implement.ts (tryStructuredPhase: whole-phase structured patch attempt with transactional apply/rollback, tried ahead of the aider-text retry loop); prompt-context.ts (bounded referenced-first retry context), output-budget.ts (implement/fix output-token resolver), edit-scope-guard.ts (conservative apply-time pre-pass guard: elision placeholders, substituted non-ASCII lines, truncation-marker echo; AI_CODING_EDIT_SCOPE_GUARD=off opt-out); verification-failure.ts (classifyVerificationFailure: gate/exit/timeout classification), progress-score.ts (scoreFailure/compareProgress first-failing-gate ranking), convergence.ts (fingerprintFailure/hasConverged consecutive-failure detection), best-so-far.ts (recordAttempt/revertToBest keep-and-revert to the best non-regressed tree)
         definitions/       - dev-cycle language configs (interactive), PLAN_CONFIG_FACTORIES
                              toolchain registry for plan-cycle (rust, typescript, python, cpp,
-                             haskell, julia, nix, shell), scaffold-*
+                             haskell, julia, nix, shell), scaffold-*; Rust gates run
+                             workspace-wide and honour the optional AI_CODING_RUST_GATE_WRAPPER
+                             argv prefix (rustGateCommand)
         routing/           - route.ts: auto-routes each touched file to a toolchain based on the
-                             workspace's devShell palette; unmatched/unavailable files are edit-only
+                             workspace's devShell palette; unmatched/unavailable files are edit-only;
+                             rust-gate-coverage.ts: flags touched .rs files outside every cargo
+                             workspace member (fail-open gate-coverage-warning)
         progress.ts        - ProgressEvent model + pure formatProgressEvent (--verbose feed)
         git-clean-args.ts  - buildGitCleanArgs: constructs the git-clean argv, always excluding
                              plans/ and optionally an explicit --plan path; single source of

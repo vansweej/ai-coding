@@ -34,11 +34,15 @@ dev-shell or by having them already on `PATH`.
 
 | Step | Command | Notes |
 |------|---------|-------|
-| `fmt` | `cargo fmt` | Autofix (not `--check`) — plan-cycle's Rust config always reformats |
-| `check` | `cargo check --quiet` | |
-| `clippy` | `cargo clippy -- -D warnings` | Fatal on any warning |
-| `test` | `cargo test` | |
-| `tarpaulin` | `cargo tarpaulin` | Only run when coverage is gated (see below). `failOnNonZero: false`, `timeoutMs: 900_000` (15 min) — feeds the coverage gate, doesn't fail the phase on its own exit code |
+| `fmt` | `cargo fmt --all` | Autofix (not `--check`) — reformats every workspace crate |
+| `check` | `cargo check --workspace --all-targets --quiet` | Compiles every workspace member and all targets; `timeoutMs: 900_000` |
+| `clippy` | `cargo clippy --workspace --all-targets -- -D warnings` | Fatal on any warning across the whole workspace; `timeoutMs: 900_000` |
+| `test` | `cargo test --workspace` | Runs every workspace member's tests; `timeoutMs: 900_000` |
+| `tarpaulin` | `cargo tarpaulin --workspace` | Only run when coverage is gated (see below). `failOnNonZero: false`, `timeoutMs: 900_000` (15 min) — feeds the coverage gate, doesn't fail the phase on its own exit code |
+
+**Optional containment wrapper.** Set `AI_CODING_RUST_GATE_WRAPPER` to a non-blank string to prepend a wrapper to every cargo gate command -- e.g. `AI_CODING_RUST_GATE_WRAPPER="systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0"`. The value is split on whitespace into argv tokens (no quoting support) and inserted ahead of `cargo` (after any `nix develop --command` prefix). Unset or blank is a no-op. macOS has no `systemd-run`, so leave it unset there.
+
+**Cross-crate coverage warning.** After a green Rust phase, if a touched `.rs` file lies outside every workspace member's directory (an excluded or nested non-member crate), the run emits an advisory `gate-coverage-warning` -- the workspace gates cannot cover that file. This is fail-open: a missing or failing `cargo metadata` is silently skipped and never fails the phase or changes the exit code.
 | `coverage` | Coverage gate | **Fatal.** Only present when gated. Threshold from the phase's `Coverage:` directive (default 90%), with auto-exempt for zero-line-addition diffs |
 
 When a phase's `Coverage:` directive resolves to *not gated* (`skip`, or auto-exempt), the
