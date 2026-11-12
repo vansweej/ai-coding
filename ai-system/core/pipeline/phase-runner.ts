@@ -1,4 +1,6 @@
 import { execFileSync, execSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { $ } from "bun";
 
 import type { PipelineContext, Result, StepResult } from "@ai-coding/pipeline";
@@ -13,6 +15,7 @@ import { PHASE_FAILURE_REASONS, phaseHardFail } from "./phase-hard-fail";
 import type { Phase } from "./plan-parser";
 import type { OnProgress } from "./progress";
 import { getTouchedFiles, route } from "./routing/route";
+import { computeUncoveredRustFiles } from "./routing/rust-gate-coverage";
 import { captureSnapshot } from "./snapshot";
 import type { RetryConfig } from "./steps/verified-implement-step";
 import { createVerifiedImplementStep } from "./steps/verified-implement-step";
@@ -491,6 +494,34 @@ export async function runPhase(
       PHASE_FAILURE_REASONS.structuralAssertion,
       `failed a structural assertion: ${assertionResult.error.message}`,
     );
+  }
+
+  // This purely advisory, fail-open warning never changes the phase outcome or
+  // exit code and deliberately does not use the feature-level degradations path.
+  try {
+    const touched = getTouchedFiles(options.workspace);
+    if (touched.some((file) => file.endsWith(".rs"))) {
+      const cargoMetadataArgs = ["cargo", "metadata", "--format-version", "1", "--no-deps"];
+      const command = existsSync(join(options.workspace, "flake.nix"))
+        ? ["nix", "develop", "--command", ...cargoMetadataArgs]
+        : cargoMetadataArgs;
+      const output = execFileSync(command[0], command.slice(1), {
+        cwd: options.workspace,
+        encoding: "utf8",
+        timeout: 60_000,
+      });
+      const metadata = JSON.parse(output);
+      const uncovered = computeUncoveredRustFiles(metadata, touched, options.workspace);
+      if (uncovered.length > 0) {
+        options.onProgress?.({
+          kind: "gate-coverage-warning",
+          phase: phase.number,
+          paths: uncovered,
+        });
+      }
+    }
+  } catch {
+    // Fail-open: cargo metadata failure is advisory and must never fail the phase.
   }
 
   const commit = options.commitPhase ?? commitPhaseChanges;

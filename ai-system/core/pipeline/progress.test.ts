@@ -112,6 +112,16 @@ describe("formatProgressEvent (plain theme)", () => {
     expect(line.startsWith("  ")).toBe(false);
   });
 
+  it("formats a gate-coverage-warning event", () => {
+    const line = formatProgressEvent(
+      { kind: "gate-coverage-warning", phase: 2, paths: ["crates/excluded/src/lib.rs"] },
+      buildTheme(false),
+    );
+
+    expect(line).toContain("gate coverage WARNING");
+    expect(line).toContain("crates/excluded/src/lib.rs");
+  });
+
   it("never emits ANSI escape codes under the plain theme", () => {
     for (const event of EVENTS) {
       expect(formatProgressEvent(event, theme)).not.toContain("\x1b[");
