@@ -783,9 +783,13 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<Record<ToolchainId, ToolchainDescri
     markerTools: ["cargo", "rustc", "cargo-clippy", "rustfmt", "cargo-tarpaulin"],
     driverTools: ["cargo"],
     idioms: RUST_PLAN_IDIOMS,
-    toolchainSteps: (workspace, coverage, diff, palette) =>
+    toolchainSteps: (workspace, coverage, diff, palette, onGateOutput) =>
       createRustPlanConfig(coverage ?? DEFAULT_PLAN_COVERAGE, diff ?? "", palette).toolchainSteps(
         workspace,
+        coverage,
+        diff,
+        palette,
+        onGateOutput,
       ),
   },
   typescript: {
@@ -794,8 +798,14 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<Record<ToolchainId, ToolchainDescri
     markerTools: ["bun"],
     driverTools: ["bun"],
     idioms: TS_PLAN_IDIOMS,
-    toolchainSteps: (workspace) =>
-      createTsPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+    toolchainSteps: (workspace, _coverage, _diff, _palette, onGateOutput) =>
+      createTsPlanConfig({ mode: "default" }, "").toolchainSteps(
+        workspace,
+        _coverage,
+        _diff,
+        _palette,
+        onGateOutput,
+      ),
   },
   python: {
     id: "python",
@@ -803,8 +813,14 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<Record<ToolchainId, ToolchainDescri
     markerTools: ["ruff", "mypy", "pytest"],
     driverTools: ["ruff", "pytest"],
     idioms: PYTHON_PLAN_IDIOMS,
-    toolchainSteps: (workspace) =>
-      createPythonPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+    toolchainSteps: (workspace, _coverage, _diff, _palette, onGateOutput) =>
+      createPythonPlanConfig({ mode: "default" }, "").toolchainSteps(
+        workspace,
+        _coverage,
+        _diff,
+        _palette,
+        onGateOutput,
+      ),
   },
   cpp: {
     id: "cpp",
@@ -812,8 +828,14 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<Record<ToolchainId, ToolchainDescri
     markerTools: ["cmake", "ctest"],
     driverTools: ["cmake"],
     idioms: CPP_PLAN_IDIOMS,
-    toolchainSteps: (workspace) =>
-      createCppPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+    toolchainSteps: (workspace, _coverage, _diff, _palette, onGateOutput) =>
+      createCppPlanConfig({ mode: "default" }, "").toolchainSteps(
+        workspace,
+        _coverage,
+        _diff,
+        _palette,
+        onGateOutput,
+      ),
   },
   haskell: {
     id: "haskell",
@@ -821,8 +843,14 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<Record<ToolchainId, ToolchainDescri
     markerTools: ["cabal", "hlint", "ghc"],
     driverTools: ["cabal"],
     idioms: HASKELL_PLAN_IDIOMS,
-    toolchainSteps: (workspace) =>
-      createHaskellPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+    toolchainSteps: (workspace, _coverage, _diff, _palette, onGateOutput) =>
+      createHaskellPlanConfig({ mode: "default" }, "").toolchainSteps(
+        workspace,
+        _coverage,
+        _diff,
+        _palette,
+        onGateOutput,
+      ),
   },
   julia: {
     id: "julia",
@@ -830,8 +858,14 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<Record<ToolchainId, ToolchainDescri
     markerTools: ["julia"],
     driverTools: ["julia"],
     idioms: JULIA_PLAN_IDIOMS,
-    toolchainSteps: (workspace) =>
-      createJuliaPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+    toolchainSteps: (workspace, _coverage, _diff, _palette, onGateOutput) =>
+      createJuliaPlanConfig({ mode: "default" }, "").toolchainSteps(
+        workspace,
+        _coverage,
+        _diff,
+        _palette,
+        onGateOutput,
+      ),
   },
   nix: {
     id: "nix",
@@ -840,8 +874,14 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<Record<ToolchainId, ToolchainDescri
     driverTools: ["nix"],
     idioms: NIX_PLAN_IDIOMS,
     isWholeRepoValidator: true,
-    toolchainSteps: (workspace) =>
-      createNixPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+    toolchainSteps: (workspace, _coverage, _diff, _palette, onGateOutput) =>
+      createNixPlanConfig({ mode: "default" }, "").toolchainSteps(
+        workspace,
+        _coverage,
+        _diff,
+        _palette,
+        onGateOutput,
+      ),
   },
   shell: {
     id: "shell",
@@ -850,8 +890,14 @@ export const TOOLCHAIN_DESCRIPTORS: Readonly<Record<ToolchainId, ToolchainDescri
     driverTools: ["shfmt", "shellcheck"],
     idioms: SHELL_PLAN_IDIOMS,
     isWholeRepoValidator: true,
-    toolchainSteps: (workspace) =>
-      createShellPlanConfig({ mode: "default" }, "").toolchainSteps(workspace),
+    toolchainSteps: (workspace, _coverage, _diff, _palette, onGateOutput) =>
+      createShellPlanConfig({ mode: "default" }, "").toolchainSteps(
+        workspace,
+        _coverage,
+        _diff,
+        _palette,
+        onGateOutput,
+      ),
   },
 };
 

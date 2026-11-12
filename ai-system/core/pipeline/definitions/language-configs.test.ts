@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "bun:test";
 
 import {
@@ -589,5 +593,32 @@ describe("language configs", () => {
         ]),
       );
     });
+  });
+});
+
+/** Proves descriptor forwarding without spawning a heavy toolchain. */
+describe("TOOLCHAIN_DESCRIPTORS gate output", () => {
+  it("forwards onGateOutput through the typescript descriptor to its first step", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "gate-output-"));
+    const names: string[] = [];
+    const onGateOutput = (name: string): void => {
+      names.push(name);
+    };
+
+    try {
+      const steps = TOOLCHAIN_DESCRIPTORS.typescript.toolchainSteps(
+        tmp,
+        undefined,
+        undefined,
+        undefined,
+        onGateOutput,
+      );
+      await steps[0].execute({ event: undefined, results: new Map() } as never);
+
+      expect(names).toHaveLength(1);
+      expect(names[0]).toBe("typecheck");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
