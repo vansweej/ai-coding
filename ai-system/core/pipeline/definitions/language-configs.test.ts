@@ -11,6 +11,7 @@ import {
   EXTENSION_TO_TOOLCHAIN,
   PLAN_CONFIG_FACTORIES,
   RUST_CONFIG,
+  RUST_GATE_WRAPPER_ENV,
   TOOLCHAIN_DESCRIPTORS,
   TYPESCRIPT_CONFIG,
   buildPatchSystem,
@@ -22,6 +23,7 @@ import {
   createRustPlanConfig,
   createShellPlanConfig,
   createTsPlanConfig,
+  rustGateCommand,
 } from "./language-configs";
 
 describe("language configs", () => {
@@ -620,5 +622,36 @@ describe("TOOLCHAIN_DESCRIPTORS gate output", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+/** Covers the pure optional Rust gate-wrapper argv helper. */
+describe("rustGateCommand", () => {
+  it("returns args unchanged when the env var is unset", () => {
+    const args = ["cargo", "test", "--workspace"];
+
+    expect(rustGateCommand(args, {})).toEqual(args);
+  });
+
+  it("returns args unchanged when the env var is blank", () => {
+    const args = ["cargo", "test", "--workspace"];
+
+    expect(rustGateCommand(args, { [RUST_GATE_WRAPPER_ENV]: "   " })).toEqual(args);
+  });
+
+  it("prepends whitespace-split wrapper tokens", () => {
+    expect(
+      rustGateCommand(["cargo", "test", "--workspace"], {
+        [RUST_GATE_WRAPPER_ENV]: "systemd-run --user --scope",
+      }),
+    ).toEqual(["systemd-run", "--user", "--scope", "cargo", "test", "--workspace"]);
+  });
+
+  it("collapses repeated whitespace between tokens", () => {
+    expect(
+      rustGateCommand(["cargo", "test", "--workspace"], {
+        [RUST_GATE_WRAPPER_ENV]: "systemd-run   --user\t--scope",
+      }),
+    ).toEqual(["systemd-run", "--user", "--scope", "cargo", "test", "--workspace"]);
   });
 });

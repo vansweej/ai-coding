@@ -26,6 +26,37 @@ const DEFAULT_COVERAGE_THRESHOLD = 90;
 const DEFAULT_CPP_BUILD_DIR = "build";
 
 /**
+ * Environment variable that, when set to a non-blank string, is split on
+ * whitespace into argv tokens and prepended to every Rust cargo gate command
+ * (see `rustGateCommand`). Intended for an opt-in containment wrapper such as
+ * `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0`. No quoting
+ * support: tokens are a plain whitespace split. Unset or blank is a no-op.
+ */
+export const RUST_GATE_WRAPPER_ENV = "AI_CODING_RUST_GATE_WRAPPER";
+
+/**
+ * Prepend the optional containment-wrapper argv (read from
+ * `AI_CODING_RUST_GATE_WRAPPER`) to a cargo gate command.
+ *
+ * @param args - The base cargo command argv, e.g. ["cargo", "test", "--workspace"].
+ * @param env  - Environment map to read the wrapper from; defaults to process.env.
+ * @returns The wrapper tokens (if any) followed by args; args unchanged when unset or blank.
+ */
+export function rustGateCommand(
+  args: readonly string[],
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): readonly string[] {
+  const raw = env[RUST_GATE_WRAPPER_ENV];
+  if (raw === undefined) return args;
+  const tokens = raw
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+  if (tokens.length === 0) return args;
+  return [...tokens, ...args];
+}
+
+/**
  * Build the `implementSystem` prompt for plan-cycle configs that use aider-style
  * SEARCH/REPLACE patches.
  *
@@ -167,16 +198,36 @@ export const RUST_CONFIG: DevCycleLanguageConfig = {
     "Generate compilable Rust code. Ensure all use statements are present and all types, functions, and macros referenced are either in the standard prelude or explicitly imported. " +
     "Do not include any explanation or prose outside the code blocks.",
   toolchainSteps: (workspace: string): readonly PipelineStep<AIRequestEvent>[] => [
-    createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt", "--check"], { cwd: workspace }),
-    createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], { cwd: workspace }),
-    createNixShellStep<AIRequestEvent>("clippy", ["cargo", "clippy", "--", "-D", "warnings"], {
+    createNixShellStep<AIRequestEvent>(
+      "fmt",
+      rustGateCommand(["cargo", "fmt", "--all", "--check"]),
+      {
+        cwd: workspace,
+      },
+    ),
+    createNixShellStep<AIRequestEvent>(
+      "check",
+      rustGateCommand(["cargo", "check", "--workspace", "--all-targets", "--quiet"]),
+      { cwd: workspace, timeoutMs: 900_000 },
+    ),
+    createNixShellStep<AIRequestEvent>(
+      "clippy",
+      rustGateCommand(["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]),
+      { cwd: workspace, timeoutMs: 900_000 },
+    ),
+    createNixShellStep<AIRequestEvent>("test", rustGateCommand(["cargo", "test", "--workspace"]), {
       cwd: workspace,
+      timeoutMs: 900_000,
     }),
-    createNixShellStep<AIRequestEvent>("test", ["cargo", "test"], { cwd: workspace }),
-    createNixShellStep<AIRequestEvent>("tarpaulin", ["cargo", "tarpaulin"], {
-      cwd: workspace,
-      failOnNonZero: false,
-    }),
+    createNixShellStep<AIRequestEvent>(
+      "tarpaulin",
+      rustGateCommand(["cargo", "tarpaulin", "--workspace"]),
+      {
+        cwd: workspace,
+        failOnNonZero: false,
+        timeoutMs: 900_000,
+      },
+    ),
     createCoverageGateStep<AIRequestEvent>("coverage", "tarpaulin", DEFAULT_COVERAGE_THRESHOLD),
   ],
 };
@@ -231,22 +282,45 @@ export function createRustPlanConfig(
       ) => void,
     ): readonly PipelineStep<AIRequestEvent>[] => {
       const baseSteps: PipelineStep<AIRequestEvent>[] = [
-        createNixShellStep<AIRequestEvent>("fmt", ["cargo", "fmt"], {
+        createNixShellStep<AIRequestEvent>("fmt", rustGateCommand(["cargo", "fmt", "--all"]), {
           cwd: workspace,
           onGateOutput,
         }),
-        createNixShellStep<AIRequestEvent>("check", ["cargo", "check", "--quiet"], {
-          cwd: workspace,
-          onGateOutput,
-        }),
-        createNixShellStep<AIRequestEvent>("clippy", ["cargo", "clippy", "--", "-D", "warnings"], {
-          cwd: workspace,
-          onGateOutput,
-        }),
-        createNixShellStep<AIRequestEvent>("test", ["cargo", "test"], {
-          cwd: workspace,
-          onGateOutput,
-        }),
+        createNixShellStep<AIRequestEvent>(
+          "check",
+          rustGateCommand(["cargo", "check", "--workspace", "--all-targets", "--quiet"]),
+          {
+            cwd: workspace,
+            timeoutMs: 900_000,
+            onGateOutput,
+          },
+        ),
+        createNixShellStep<AIRequestEvent>(
+          "clippy",
+          rustGateCommand([
+            "cargo",
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+          ]),
+          {
+            cwd: workspace,
+            timeoutMs: 900_000,
+            onGateOutput,
+          },
+        ),
+        createNixShellStep<AIRequestEvent>(
+          "test",
+          rustGateCommand(["cargo", "test", "--workspace"]),
+          {
+            cwd: workspace,
+            timeoutMs: 900_000,
+            onGateOutput,
+          },
+        ),
       ];
 
       // When coverage isn't gated (Coverage: skip or auto-exempt), skip the
@@ -263,14 +337,18 @@ export function createRustPlanConfig(
 
       return [
         ...baseSteps,
-        createNixShellStep<AIRequestEvent>("tarpaulin", ["cargo", "tarpaulin"], {
-          cwd: workspace,
-          failOnNonZero: false,
-          // Instrumented rebuilds of heavy workspaces can take well over the
-          // 60s shell-step default; give gated phases a realistic budget.
-          timeoutMs: 900_000,
-          onGateOutput,
-        }),
+        createNixShellStep<AIRequestEvent>(
+          "tarpaulin",
+          rustGateCommand(["cargo", "tarpaulin", "--workspace"]),
+          {
+            cwd: workspace,
+            failOnNonZero: false,
+            // Instrumented rebuilds of heavy workspaces can take well over the
+            // 60s shell-step default; give gated phases a realistic budget.
+            timeoutMs: 900_000,
+            onGateOutput,
+          },
+        ),
         // Coverage gate is fatal when gated (per-phase directives/auto-exempt
         // already resolved above).
         createCoverageGateStep<AIRequestEvent>("coverage", "tarpaulin", percent),
