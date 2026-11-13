@@ -57,6 +57,7 @@ export interface PreflightInput {
 const PATH_REQUIRING_KINDS: ReadonlySet<PhaseAssertion["kind"]> = new Set([
   "contains",
   "not-contains",
+  "not-contains-outside-tests",
   "exists",
   "matches",
   "toml-keys",

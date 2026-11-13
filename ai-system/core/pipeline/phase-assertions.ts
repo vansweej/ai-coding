@@ -55,6 +55,8 @@ export function renderAssertion(assertion: PhaseAssertion): string {
       return `Assert: contains ${assertion.path} :: ${assertion.needle}`;
     case "not-contains":
       return `Assert: not-contains ${assertion.path} :: ${assertion.needle}`;
+    case "not-contains-outside-tests":
+      return `Assert: not-contains-outside-tests ${assertion.path} :: ${assertion.needle}`;
     case "exists":
       return `Assert: exists ${assertion.path}`;
     case "not-exists":
@@ -71,6 +73,7 @@ export function renderAssertion(assertion: PhaseAssertion): string {
 export type PhaseAssertion =
   | { readonly kind: "contains"; readonly path: string; readonly needle: string }
   | { readonly kind: "not-contains"; readonly path: string; readonly needle: string }
+  | { readonly kind: "not-contains-outside-tests"; readonly path: string; readonly needle: string }
   | { readonly kind: "exists"; readonly path: string }
   | { readonly kind: "not-exists"; readonly path: string }
   | { readonly kind: "matches"; readonly path: string; readonly pattern: string }
@@ -121,7 +124,7 @@ function parseTomlSource(source: string): Result<Record<string, unknown>> {
  * The current assert-grammar version. Used for forward-compat policy checks
  * to detect plan files authored against a future grammar version.
  */
-export const assertGrammarVersion = 4;
+export const assertGrammarVersion = 5;
 
 /**
  * Parses the text following an `Assert:` directive into a `PhaseAssertion`.
@@ -143,6 +146,35 @@ export function parseAssertion(spec: string): Result<PhaseAssertion> {
   const firstSpace = trimmedSpec.indexOf(" ");
   const verb = firstSpace === -1 ? trimmedSpec : trimmedSpec.slice(0, firstSpace);
   const rest = firstSpace === -1 ? "" : trimmedSpec.slice(firstSpace + 1);
+
+  if (verb === "not-contains-outside-tests") {
+    const separatorIndex = rest.indexOf(SEPARATOR);
+    if (separatorIndex === -1) {
+      return {
+        ok: false,
+        error: new Error(
+          `invalid "not-contains-outside-tests" assertion (missing " :: " separator between path and needle): "${spec}"`,
+        ),
+      };
+    }
+    const path = rest.slice(0, separatorIndex).trim();
+    const needle = rest.slice(separatorIndex + SEPARATOR.length).trim();
+    if (path === "") {
+      return {
+        ok: false,
+        error: new Error(`invalid "not-contains-outside-tests" assertion (empty path): "${spec}"`),
+      };
+    }
+    if (needle === "") {
+      return {
+        ok: false,
+        error: new Error(
+          `invalid "not-contains-outside-tests" assertion (empty needle): "${spec}"`,
+        ),
+      };
+    }
+    return { ok: true, value: { kind: "not-contains-outside-tests", path, needle } };
+  }
 
   if (verb === "contains" || verb === "not-contains") {
     const separatorIndex = rest.indexOf(SEPARATOR);
@@ -294,6 +326,36 @@ export function parseAssertion(spec: string): Result<PhaseAssertion> {
   };
 }
 
+/** Collapse every whitespace run (including newlines) to one space and trim. */
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Find the file line whose trimmed text shares the longest common prefix
+ * (at least 8 characters) with the trimmed needle. Returns a "closest match"
+ * hint ("line <n>: <text>", text trimmed to 160 chars) or "no similar line".
+ */
+function closestLineHint(content: string, needle: string): string {
+  const target = needle.trim();
+  const lines = content.split("\n");
+  let bestLength = 0;
+  let bestIndex = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    const candidate = (lines[index] ?? "").trim();
+    let shared = 0;
+    const max = Math.min(candidate.length, target.length);
+    while (shared < max && candidate[shared] === target[shared]) shared += 1;
+    if (shared > bestLength) {
+      bestLength = shared;
+      bestIndex = index;
+    }
+  }
+  if (bestIndex === -1 || bestLength < 8) return "no similar line";
+  const text = (lines[bestIndex] ?? "").trim().slice(0, 160);
+  return `line ${bestIndex + 1}: ${text}`;
+}
+
 /**
  * Evaluates a list of structural assertions against a workspace on disk, in
  * order. Returns `{ ok: false }` naming the first violated assertion's kind,
@@ -346,11 +408,14 @@ export async function checkAssertions(
             ),
           };
         }
-        if (!content.includes(assertion.needle)) {
+        if (
+          !content.includes(assertion.needle) &&
+          !collapseWhitespace(content).includes(collapseWhitespace(assertion.needle))
+        ) {
           return {
             ok: false,
             error: new Error(
-              `Structural assertion failed: file "${assertion.path}" must contain "${assertion.needle}"`,
+              `Structural assertion failed: file "${assertion.path}" must contain "${assertion.needle}" (closest: ${closestLineHint(content, assertion.needle)})`,
             ),
           };
         }
@@ -373,6 +438,31 @@ export async function checkAssertions(
             ok: false,
             error: new Error(
               `Structural assertion failed: file "${assertion.path}" must not contain "${assertion.needle}"`,
+            ),
+          };
+        }
+        break;
+      }
+      case "not-contains-outside-tests": {
+        let content: string;
+        try {
+          content = readFileSync(resolvedPath, "utf8");
+        } catch {
+          return {
+            ok: false,
+            error: new Error(
+              `Structural assertion failed: file "${assertion.path}" must not contain "${assertion.needle}" outside tests but could not be read`,
+            ),
+          };
+        }
+        const lines = content.split("\n");
+        const cfgTestIndex = lines.findIndex((line) => line.trim().startsWith("#[cfg(test)]"));
+        const region = cfgTestIndex === -1 ? content : lines.slice(0, cfgTestIndex).join("\n");
+        if (region.includes(assertion.needle)) {
+          return {
+            ok: false,
+            error: new Error(
+              `Structural assertion failed: file "${assertion.path}" must not contain "${assertion.needle}" before the first #[cfg(test)] line`,
             ),
           };
         }

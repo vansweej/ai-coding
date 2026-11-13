@@ -15,6 +15,12 @@ describe("renderAssertion", () => {
     );
   });
 
+  it("renders not-contains-outside-tests assertions", () => {
+    expect(
+      renderAssertion({ kind: "not-contains-outside-tests", path: "src/x.rs", needle: "n" }),
+    ).toBe("Assert: not-contains-outside-tests src/x.rs :: n");
+  });
+
   it("renders exists assertions", () => {
     expect(renderAssertion({ kind: "exists", path: "src/x.ts" })).toBe("Assert: exists src/x.ts");
   });

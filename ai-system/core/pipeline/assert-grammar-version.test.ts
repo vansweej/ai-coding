@@ -17,7 +17,11 @@ import { parsePlanFile } from "./plan-parser";
 const FIXTURE_DIR = join(import.meta.dir, "fixtures");
 
 /** Phase 4 fixture files (all .md files present in the fixtures directory). */
-const PHASE_4_FIXTURES = ["legacy-contains-v1.md", "legacy-matches-v2.md"];
+const PHASE_4_FIXTURES = [
+  "legacy-contains-v1.md",
+  "legacy-matches-v2.md",
+  "legacy-not-contains-outside-tests-v5.md",
+];
 
 describe("assert-grammar-version forward-compat policy", () => {
   it("assertGrammarVersion is a positive integer representing the current grammar version", () => {
@@ -75,6 +79,8 @@ describe("assert-grammar-version forward-compat policy", () => {
                     return `contains ${assertion.path} :: ${assertion.needle}`;
                   case "not-contains":
                     return `not-contains ${assertion.path} :: ${assertion.needle}`;
+                  case "not-contains-outside-tests":
+                    return `not-contains-outside-tests ${assertion.path} :: ${assertion.needle}`;
                   case "exists":
                     return `exists ${assertion.path}`;
                   case "not-exists":

@@ -27,6 +27,18 @@ describe("parseAssertion", () => {
     }
   });
 
+  it("parses a valid not-contains-outside-tests directive", () => {
+    const result = parseAssertion("not-contains-outside-tests README.md :: TODO");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual({
+        kind: "not-contains-outside-tests",
+        path: "README.md",
+        needle: "TODO",
+      });
+    }
+  });
+
   it("preserves a needle containing spaces and a later ::", () => {
     const result = parseAssertion("contains src/x.ts :: a :: b with spaces");
     expect(result.ok).toBe(true);
@@ -216,6 +228,27 @@ describe("checkAssertions", () => {
     }
   });
 
+  it("contains tolerates collapsed whitespace", async () => {
+    writeFileSync(join(workspace, "a.txt"), "fn a(x:\n    u8)");
+    const result = await checkAssertions(workspace, [
+      { kind: "contains", path: "a.txt", needle: "fn a(x: u8)" },
+    ]);
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("contains includes a closest-match hint on failure", async () => {
+    writeFileSync(join(workspace, "a.txt"), "const exampleValue = 1;");
+    const result = await checkAssertions(workspace, [
+      { kind: "contains", path: "a.txt", needle: "const exampleThing = 1;" },
+    ]);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("closest:");
+    }
+  });
+
   it("contains fails on a missing file (read failure surfaced, no throw)", async () => {
     const result = await checkAssertions(workspace, [
       { kind: "contains", path: "missing.txt", needle: "x" },
@@ -243,6 +276,24 @@ describe("checkAssertions", () => {
     const result = await checkAssertions(workspace, [
       { kind: "not-contains", path: "a.txt", needle: "world" },
     ]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("not-contains-outside-tests ignores content after #[cfg(test)]", async () => {
+    writeFileSync(join(workspace, "lib.rs"), "pub fn value() {}\n#[cfg(test)]\n// TODO");
+    const result = await checkAssertions(workspace, [
+      { kind: "not-contains-outside-tests", path: "lib.rs", needle: "TODO" },
+    ]);
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("not-contains-outside-tests catches content before #[cfg(test)]", async () => {
+    writeFileSync(join(workspace, "lib.rs"), "// TODO\n#[cfg(test)]\nmod tests {}");
+    const result = await checkAssertions(workspace, [
+      { kind: "not-contains-outside-tests", path: "lib.rs", needle: "TODO" },
+    ]);
+
     expect(result.ok).toBe(false);
   });
 
