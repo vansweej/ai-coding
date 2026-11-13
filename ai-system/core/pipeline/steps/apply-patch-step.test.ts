@@ -35,6 +35,27 @@ describe("applyPatch", () => {
     expect(readFileSync(filePath, "utf8")).toBe(original);
   });
 
+  it("applies a plan-authored non-ASCII comment rewrite", async () => {
+    const filePath = join(tempDir, "scheme.rs");
+    const original = "/// Type scheme: ∀α.τ\npub struct Scheme;";
+    const replacement = "/// Type scheme is documented below\npub struct Scheme;";
+    const edits: PatchEdit[] = [
+      {
+        filePath: "scheme.rs",
+        search: original,
+        replace: replacement,
+        isCreate: false,
+        isMove: false,
+      },
+    ];
+    writeFileSync(filePath, original, "utf8");
+
+    const result = await applyPatch(tempDir, edits, { planText: `${original}\n${replacement}` });
+
+    expect(result.ok).toBe(true);
+    expect(readFileSync(filePath, "utf8")).toBe(replacement);
+  });
+
   it("applies NO edits when a later edit in the batch violates scope", async () => {
     const aPath = join(tempDir, "a.ts");
     const bPath = join(tempDir, "b.ts");

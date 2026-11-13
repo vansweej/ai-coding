@@ -194,6 +194,46 @@ describe("checkEditScope R2 non-ASCII substitution", () => {
     expect(result.error.rule).toBe("non-ascii-destruction");
   });
 
+  it("exempts a plan-authored non-ASCII comment rewrite", () => {
+    const search = "/// Type scheme for polymorphic types: \u2200\u03b1.\u03c4\npub struct Scheme;";
+    const replace = "/// Type scheme is documented below\npub struct Scheme;";
+    const planText = `${search}\n${replace}`;
+
+    expect(checkEditScope(search, replace, "src/scheme.rs", planText).ok).toBe(true);
+  });
+
+  it("still rejects a non-ASCII rewrite without planText", () => {
+    const search = "/// Type scheme for polymorphic types: \u2200\u03b1.\u03c4\npub struct Scheme;";
+    const replace = "/// Type scheme is documented below\npub struct Scheme;";
+    const result = checkEditScope(search, replace, "src/scheme.rs");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected violation");
+    expect(result.error.rule).toBe("non-ascii-destruction");
+  });
+
+  it("rejects a planText that omits an introduced same-family comment", () => {
+    const search = "/// Type scheme for polymorphic types: \u2200\u03b1.\u03c4\npub struct Scheme;";
+    const replace = "/// Type scheme is documented below\npub struct Scheme;";
+    const result = checkEditScope(search, replace, "src/scheme.rs", search);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected violation");
+    expect(result.error.rule).toBe("non-ascii-destruction");
+  });
+
+  it("reports the allowed alternative comment family", () => {
+    const result = checkEditScope(
+      "/// Type scheme for polymorphic types: \u2200\u03b1.\u03c4\npub struct Scheme;",
+      "/// Type scheme is documented below\npub struct Scheme;",
+      "src/scheme.rs",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected violation");
+    expect(result.error.message).toContain("use a different comment family");
+  });
+
   it("allows deleting a non-ASCII comment line outright", () => {
     const search = "// note \u2014 detail\nconst x = 1;";
     const replace = "const x = 1;";

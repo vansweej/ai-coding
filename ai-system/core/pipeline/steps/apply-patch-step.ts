@@ -58,6 +58,14 @@ export interface ApplyPatchOptions {
    * passes no options and is unaffected.
    */
   readonly tolerantAnchorMatch?: boolean;
+
+  /**
+   * The concatenated step bodies of the phase currently being applied. When
+   * present, the edit-scope guard's R2 rule treats a non-ASCII comment
+   * rewrite as INTENDED (and exempt) when both the dropped line and every
+   * newly introduced same-family line appear verbatim in this text.
+   */
+  readonly planText?: string;
 }
 
 /**
@@ -117,7 +125,7 @@ export async function applyPatch(
   if (isEditScopeGuardEnabled(process.env)) {
     for (const edit of edits) {
       if (edit.isMove || edit.isCreate) continue;
-      const scope = checkEditScope(edit.search, edit.replace, edit.filePath);
+      const scope = checkEditScope(edit.search, edit.replace, edit.filePath, options?.planText);
       if (!scope.ok) {
         return {
           ok: false,

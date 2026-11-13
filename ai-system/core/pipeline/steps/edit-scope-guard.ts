@@ -172,12 +172,14 @@ function nonAsciiChars(line: string): string[] {
  * @param search - The edit's SEARCH body.
  * @param replace - The edit's REPLACE body.
  * @param filePath - The edit's target path (drives the prose-file skip).
+ * @param planText - The phase step bodies used to exempt intended R2 comment rewrites.
  * @returns A `Result<void, EditScopeViolation>`.
  */
 export function checkEditScope(
   search: string,
   replace: string,
   filePath: string,
+  planText?: string,
 ): { ok: true; value: undefined } | { ok: false; error: EditScopeViolation } {
   const searchLines = search.split("\n");
   const replaceLines = replace.split("\n");
@@ -241,17 +243,23 @@ export function checkEditScope(
     const chars = nonAsciiChars(line);
     if (chars.some((ch) => replaceJoined.includes(ch))) continue;
     const token = commentToken(trimmed);
-    const substituted = introducedComments.some((c) => c.token === token);
-    if (substituted) {
-      return {
-        ok: false,
-        error: {
-          rule: "non-ascii-destruction",
-          offendingLine: line,
-          message: `SEARCH comment line "${trimmed}" contains non-ASCII characters and was replaced by a new same-family comment in REPLACE. Preserve the original line verbatim; do not substitute a placeholder for it.`,
-        },
-      };
+    const sameFamily = introducedComments.filter((c) => c.token === token);
+    if (sameFamily.length === 0) continue;
+    // Plan-authored exemption: when the plan's own step bodies (planText)
+    // contain BOTH the dropped non-ASCII comment line AND every newly
+    // introduced same-family comment line (all trimmed), the rewrite is the
+    // plan's intent, not drift, so R2 must not fire.
+    if (planText?.includes(trimmed) && sameFamily.every((c) => planText.includes(c.trimmed))) {
+      continue;
     }
+    return {
+      ok: false,
+      error: {
+        rule: "non-ascii-destruction",
+        offendingLine: line,
+        message: `SEARCH comment line "${trimmed}" contains non-ASCII characters and was replaced by a new same-family comment in REPLACE. Preserve the original line verbatim, or do one of: delete the line plainly, keep one of its non-ASCII characters, or use a different comment family.`,
+      },
+    };
   }
 
   return { ok: true, value: undefined };
