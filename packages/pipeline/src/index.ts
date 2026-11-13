@@ -16,3 +16,4 @@ export { parseCodeBlocks } from "./steps/parse-code-blocks";
 export type { ParsedCodeBlock } from "./steps/parse-code-blocks";
 export { createFileWriterStep } from "./steps/file-writer-step";
 export type { FileWriterStepOptions } from "./steps/file-writer-step";
+export { summarizeGateFailure } from "./steps/gate-failure-summary";

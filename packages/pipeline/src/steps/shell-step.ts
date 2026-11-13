@@ -1,5 +1,6 @@
 import type { Result } from "../pipeline-types";
 import type { PipelineContext, PipelineStep, StepResult } from "../pipeline-types";
+import { summarizeGateFailure } from "./gate-failure-summary";
 
 /** Options for configuring a ShellStep. */
 export interface ShellStepOptions {
@@ -85,11 +86,17 @@ export function createShellStep<TEvent = unknown>(
 
         if (failOnNonZero && exitCode !== 0) {
           const detail = stderrText.trim() || stdoutText.trim();
+          const summary = summarizeGateFailure(stdoutText, stderrText);
+          const bothPresent = stderrText.trim().length > 0 && stdoutText.trim().length > 0;
+          const stdoutTail = bothPresent
+            ? `\n--- stdout (tail) ---\n${stdoutText.slice(-4000)}`
+            : "";
+          const message = `Shell step "${name}" exited with code ${exitCode}${
+            summary ? `\nFirst failure:\n${summary}` : ""
+          }${detail ? `\n${detail}` : ""}${stdoutTail}`;
           return {
             ok: false,
-            error: new Error(
-              `Shell step "${name}" exited with code ${exitCode}${detail ? `: ${detail}` : ""}`,
-            ),
+            error: new Error(message),
           };
         }
 
