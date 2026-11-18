@@ -210,13 +210,12 @@ See [docs/agent-reference.md](./agent-reference.md) for full agent documentation
 
 ## OpenCode Primary Agents
 
-Seven primary agents are available in the TUI (switch with **Tab**):
+Six primary agents are available in the TUI (switch with **Tab**):
 
 | Agent         | Model                  | Use when…                                                    |
 |---------------|------------------------|--------------------------------------------------------------|
 | `build`       | claude-sonnet-5.5      | Default — full access, write files                           |
 | `plan`        | claude-opus-5.5        | Architecture decisions, deep analysis                        |
-| `local`       | claude-sonnet-5.5      | Experimentation, general-purpose                             |
 | `explore`     | claude-opus-5.5        | Read-only codebase exploration and Q&A                       |
 | `spar`        | claude-opus-5.5        | Challenging a feature idea before investing in a plan        |
 | `teach`       | claude-opus-5.5        | Learning — adaptive tutor grounded in project context        |
@@ -305,7 +304,7 @@ no skill loading. Use these for quick, self-contained questions about visible co
 **Full prompts** load the matching skill and use tools to read related files,
 run tests, and gather context before responding. They apply changes **directly
 to the source file** rather than displaying them in chat. All full prompts
-require the `build` or `local` agent to be active.
+require the `build` agent to be active.
 
 ### Known issue: multiple OpenCode instances
 
