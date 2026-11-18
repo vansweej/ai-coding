@@ -67,7 +67,7 @@ added -- no disk space is duplicated.
 - **Source:** `ollama/qwen3-8b-fast.Modelfile`
 - **Extra disk:** negligible (template layer only)
 - **Thinking:** permanently disabled
-- **Use for:** all OpenCode agents (`local`, `debugger`).  Emits tool calls
+- **Use for:** OpenCode agents (`debugger`).  Emits tool calls
   immediately without a reasoning preamble, which is critical for reliable
   tool-calling within OpenCode's context budget.
 

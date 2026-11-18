@@ -39,7 +39,7 @@ index.
 graph TD
     subgraph Consumers["Consumers"]
         Pipelines["Pipeline Definitions\nplan-cycle · scaffold-rust · scaffold-cpp"]
-        OpenCode["OpenCode Agents\nbuild · local · plan · explore\ndebugger · reviewer · tester · planner"]
+        OpenCode["OpenCode Agents\nbuild · plan · explore\ndebugger · reviewer · tester · planner"]
     end
 
     subgraph SkillsPkg["@ai-coding/skills (packages/skills/)"]
@@ -304,7 +304,7 @@ and read by the implement step via `buildLlmOptions`.
 
 ### How Agents Use the Skills Database
 
-All action-bearing OpenCode agents (`build`, `local`, `plan`, `planner`,
+All action-bearing OpenCode agents (`build`, `plan`, `planner`,
 `explore`, `debugger`, `reviewer`, `tester`) have `skill-retrieval` as step 1
 of their workflow. When an agent starts a task:
 
@@ -340,7 +340,6 @@ sequenceDiagram
 | Agent | `action` passed | Skills typically returned |
 |-------|----------------|--------------------------|
 | `build` | `edit` | `programmer` + workspace skills |
-| `local` | `edit` | `programmer` + workspace skills |
 | `plan` | `plan` | `architect` |
 | `planner` | `plan` | `architect` |
 | `explore` | `explore` | `explorer` |

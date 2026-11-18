@@ -27,7 +27,6 @@ under `~/.config/opencode/agents/`.
 | *(top-level default)* | Sonnet 5.5 | — | ask | — | Starting point before selecting a named agent — read-only git, prompts on edit/write |
 | `plan` | Opus 5.5 | 0.3 | deny | ask | Architecture decisions and deep analysis |
 | `build` | Sonnet 5.5 | 0.5 | allow | — | Full development — implement, refactor, test, ship |
-| `local` | Sonnet 5.5 | 0.3 | allow | — | General-purpose experimentation |
 | `explore` | Opus 5.5 | 0.3 | deny | allow | Read-only codebase exploration and Q&A |
 | `spar` | Opus 5.5 | 0.5 | ask | allow | Socratic sparring partner — writes only to `.spar/brief.md` |
 | `teach` | Opus 5.5 | 0.5 | deny | allow | Adaptive tutor — teaches from project context and broad knowledge |
@@ -49,12 +48,6 @@ tradeoff evaluation, or a structured implementation plan.
 The default development agent. Full access -- reads, writes, edits files, runs
 shell commands, commits. Use for implementing features, fixing bugs, refactoring,
 and shipping.
-
-### local
-
-General-purpose slot. Same model and access as `build` but with fewer steps
-configured, making it lighter for experimentation, quick questions, or tasks
-that don't fit the other agents.
 
 ### explore
 
@@ -496,7 +489,7 @@ graph TD
 
     HO["Handoff agents<br/>brainstorm · spar<br/>edit: deny | write: ask<br/>bash: git read-only only<br/>⚠ writes scoped to .brainstorm/ and .spar/ only"]
 
-    CG["Code generators<br/>build · local<br/>pipeline: allow<br/>full file and shell access"]
+    CG["Code generator<br/>build<br/>pipeline: allow<br/>full file and shell access"]
 
     SA["Subagents<br/>planner · debugger · reviewer · tester<br/>edit: deny | write: deny<br/>bash: git read-only<br/>+ bun test for debugger, reviewer, tester"]
 
@@ -507,8 +500,8 @@ graph TD
 ```
 
 Key rules:
-- **Code generators** (`build`, `local`) are the only agents with unrestricted
-  file and shell access — they are the intended code-writing agents.
+- **Code generator** (`build`) is the only agent with unrestricted
+  file and shell access — it is the intended code-writing agent.
 - **Handoff agents** (`brainstorm`, `spar`) may only write to their dedicated
   brief files (`.brainstorm/brief.md` and `.spar/brief.md` respectively). Any
   other write is a violation of their scope.
@@ -575,7 +568,6 @@ Key rules:
   opencode/agents/
     plan.md          ← source of truth for global primary agents
     build.md
-    local.md
     explore.md
     spar.md
     teach.md
@@ -589,7 +581,6 @@ Key rules:
 ~/.config/opencode/agents/
     plan.md          → /nix/store/.../plan.md          (symlink)
     build.md         → /nix/store/.../build.md         (symlink)
-    local.md         → /nix/store/.../local.md         (symlink)
     explore.md       → /nix/store/.../explore.md       (symlink)
     spar.md          → /nix/store/.../spar.md          (symlink)
     teach.md         → /nix/store/.../teach.md         (symlink)
