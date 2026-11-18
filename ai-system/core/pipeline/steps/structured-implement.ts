@@ -231,6 +231,7 @@ async function applyEditsTransactionally(
   workspace: string,
   edits: readonly PatchEdit[],
   planPath?: string,
+  planText?: string,
 ): Promise<Result<void, StructuredDecline>> {
   if (touchesDirectory(workspace, edits)) {
     if (!isGitRepo(workspace)) {
@@ -247,6 +248,7 @@ async function applyEditsTransactionally(
     const applyResult = await applyPatch(workspace, edits, {
       expandTableAnchors: true,
       tolerantAnchorMatch: true,
+      planText,
     });
     if (!applyResult.ok) {
       gitRestoreWorkingTree(workspace, planPath);
@@ -275,6 +277,7 @@ async function applyEditsTransactionally(
   const applyResult = await applyPatch(workspace, edits, {
     expandTableAnchors: true,
     tolerantAnchorMatch: true,
+    planText,
   });
   if (!applyResult.ok) {
     rollbackToSnapshot(snapshots);
@@ -337,6 +340,7 @@ export async function tryStructuredPhase(
   config: OrchestratorConfig,
   workspace: string,
   planPath?: string,
+  planText?: string,
 ): Promise<Result<"applied", StructuredDecline>> {
   try {
     const llmOptions: LLMOptions = { system: STRUCTURED_PATCH_SYSTEM };
@@ -376,7 +380,7 @@ export async function tryStructuredPhase(
 
     const edits = coerceCreatesToEdits(workspace, editsResult.value);
 
-    const applyResult = await applyEditsTransactionally(workspace, edits, planPath);
+    const applyResult = await applyEditsTransactionally(workspace, edits, planPath, planText);
     if (!applyResult.ok) {
       return applyResult;
     }

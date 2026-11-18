@@ -838,6 +838,7 @@ export function createVerifiedImplementStep(
         options.config,
         options.workspace,
         options.planPath,
+        options.steps?.map((step) => step.body).join("\n\n"),
       );
       if (structuredResult.ok) {
         const verificationResult = await verifyOrFail();
