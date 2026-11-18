@@ -129,7 +129,7 @@ describe("createVerifiedImplementStep", () => {
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {
       config,
@@ -150,7 +150,7 @@ describe("createVerifiedImplementStep", () => {
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {
       config,
@@ -195,7 +195,7 @@ describe("createVerifiedImplementStep", () => {
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {
       config,
@@ -220,7 +220,7 @@ describe("createVerifiedImplementStep", () => {
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {
       config,
@@ -252,7 +252,7 @@ describe("createVerifiedImplementStep", () => {
     const dispatcher = sequenceDispatcher([conflictingPatch, conflictingPatch]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     mkdirSync(join(workspace, "src"));
     writeFileSync(join(workspace, "src/index.ts"), original, "utf8");
@@ -288,7 +288,7 @@ describe("createVerifiedImplementStep", () => {
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {
       config,
@@ -355,7 +355,7 @@ describe("createVerifiedImplementStep", () => {
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {
       config,
@@ -389,7 +389,7 @@ describe("createVerifiedImplementStep", () => {
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const events: ProgressEvent[] = [];
     const step = createVerifiedImplementStep("verified", {
@@ -432,7 +432,7 @@ describe("createVerifiedImplementStep", () => {
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const events: ProgressEvent[] = [];
     const step = createVerifiedImplementStep("verified", {
@@ -474,7 +474,7 @@ describe("createVerifiedImplementStep", () => {
     const dispatcher = sequenceDispatcher(["unused"]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", { config, workspace });
 
@@ -500,7 +500,7 @@ describe("createVerifiedImplementStep", () => {
     };
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     // workspace is not a git repo, so union verification has no touched
     // files to route and trivially succeeds with zero steps -- this test
@@ -532,7 +532,7 @@ describe("createVerifiedImplementStep", () => {
     };
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {
       config,
@@ -558,7 +558,7 @@ describe("createVerifiedImplementStep", () => {
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {
       config,
@@ -677,7 +677,7 @@ describe("createVerifiedImplementStep (structured whole-phase dual path)", () =>
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const step = createVerifiedImplementStep("verified", {
       config,
@@ -776,7 +776,7 @@ describe("createVerifiedImplementStep (structured whole-phase dual path)", () =>
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const events: ProgressEvent[] = [];
     const step = createVerifiedImplementStep("verified", {
@@ -859,7 +859,7 @@ describe("createVerifiedImplementStep (structured whole-phase dual path)", () =>
     ]);
     const config: OrchestratorConfig = {
       profile: LOCAL_PROFILE,
-      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+      dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
     };
     const events: ProgressEvent[] = [];
     const constantFailStep = (): PipelineStep<AIRequestEvent> => ({
@@ -930,7 +930,7 @@ describe("createVerifiedImplementStep (structured whole-phase dual path)", () =>
       ]);
       const config: OrchestratorConfig = {
         profile: LOCAL_PROFILE,
-        dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+        dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
       };
       const events: ProgressEvent[] = [];
       const step = createVerifiedImplementStep("verified", {

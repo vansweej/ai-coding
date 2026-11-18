@@ -73,7 +73,7 @@ describe("loadConfig", () => {
     }
   });
 
-  it("binds the copilot/claude-sonnet-5 dispatcher to the same Copilot dispatcher as claude-sonnet-4.6", async () => {
+  it("binds copilot/claude-sonnet-5 and copilot/claude-sonnet-5.5 to the Copilot dispatcher", async () => {
     const env = process.env as Record<string, string>;
     env.GITHUB_COPILOT_TOKEN = "test-token";
     const result = await loadConfig("copilot-default");
@@ -114,7 +114,8 @@ describe("loadConfig", () => {
     if (result.ok) {
       expect(result.value.profile?.name).toBe("hybrid");
       expect(result.value.dispatchers["gemma4:26b"]).toBeDefined();
-      expect(result.value.dispatchers["claude-sonnet-4.6"]).toBeDefined();
+      expect(result.value.dispatchers["copilot/claude-sonnet-5"]).toBeDefined();
+      expect(result.value.dispatchers["copilot/claude-sonnet-5.5"]).toBeDefined();
     }
   });
 

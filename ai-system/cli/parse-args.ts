@@ -69,7 +69,7 @@ Pipeline names:
 
 Profile names:
   local            All roles → gemma4:26b (local Ollama); no Copilot token required (default)
-  hybrid           implementer/tester/debugger → gemma4:26b; fixer → claude-sonnet-4.6
+  hybrid           implementer/tester/debugger → gemma4:26b; fixer → copilot/claude-sonnet-5.5
   copilot-default  All roles → GitHub Copilot Claude Sonnet 5 (copilot/claude-sonnet-5, default)
   anthropic-sonnet All roles → Anthropic claude-sonnet-5 (native Messages API); requires ANTHROPIC_API_KEY
   bedrock-sonnet   All roles → Claude Sonnet on Amazon Bedrock (InvokeModel API); requires

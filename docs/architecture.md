@@ -846,7 +846,7 @@ built by `load-config.ts` is provider-agnostic, binding each model-ID string to
 its dispatcher (`claude-sonnet-5` → Anthropic native, `copilot/claude-sonnet-5`
 → Copilot-served Sonnet 5 (namespaced to stay distinct from the Anthropic-native
 bare id; the CopilotDispatcher strips the `copilot/` prefix on the wire),
-`claude-sonnet-4.6` → Copilot, `gemma4:26b` → Ollama, `copilot/claude-sonnet-5.5`
+`gemma4:26b` → Ollama, `copilot/claude-sonnet-5.5`
 → Copilot (the `fixer`-role escalation target under `copilot-default`)). The CopilotDispatcher
 sends the durable GitHub OAuth token from `GITHUB_COPILOT_TOKEN` DIRECTLY to
 `https://api.githubcopilot.com/chat/completions` as the `Authorization: Bearer`
@@ -1017,7 +1017,6 @@ type PatchMode = "text" | "anthropic-tool-use" | "openai-tool-calls";
 |------------------------------|-----------------------|-------------------------------|
 | `claude-sonnet-5`             | `anthropic-tool-use`  | Confirmed (dry-run, plumbing) |
 | `copilot/claude-sonnet-5`     | `openai-tool-calls`   | **Confirmed live** (real Copilot call, see `docs/adr/0001-copilot-structured-patch.md`) |
-| `claude-sonnet-4.6`           | `openai-tool-calls`   | **Confirmed live** |
 | everything else (default)    | `text`                | Unchanged aider-text path     |
 
 The default is always `"text"`, so every model not explicitly registered

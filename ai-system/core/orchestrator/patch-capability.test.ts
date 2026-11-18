@@ -19,10 +19,6 @@ describe("patchModeForModel", () => {
     expect(patchModeForModel("copilot/claude-sonnet-5")).toBe("openai-tool-calls");
   });
 
-  it("returns openai-tool-calls for claude-sonnet-4.6 (Copilot-served, not the Anthropic-native id)", () => {
-    expect(patchModeForModel("claude-sonnet-4.6")).toBe("openai-tool-calls");
-  });
-
   it("returns text for the opencode-free logical token", () => {
     expect(patchModeForModel("opencode-free")).toBe("text");
   });

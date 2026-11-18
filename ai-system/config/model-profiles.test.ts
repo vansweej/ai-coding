@@ -96,12 +96,16 @@ describe("HYBRID_PROFILE", () => {
     expect(HYBRID_PROFILE.roles.debugger).toBe("gemma4:26b");
   });
 
-  it("maps planner, fixer, reviewer, scaffolder, explorer to claude-sonnet-4.6", () => {
-    expect(HYBRID_PROFILE.roles.planner).toBe("claude-sonnet-4.6");
-    expect(HYBRID_PROFILE.roles.fixer).toBe("claude-sonnet-4.6");
-    expect(HYBRID_PROFILE.roles.reviewer).toBe("claude-sonnet-4.6");
-    expect(HYBRID_PROFILE.roles.scaffolder).toBe("claude-sonnet-4.6");
-    expect(HYBRID_PROFILE.roles.explorer).toBe("claude-sonnet-4.6");
+  it("maps planner, reviewer, scaffolder, explorer, default to copilot/claude-sonnet-5", () => {
+    expect(HYBRID_PROFILE.roles.planner).toBe("copilot/claude-sonnet-5");
+    expect(HYBRID_PROFILE.roles.reviewer).toBe("copilot/claude-sonnet-5");
+    expect(HYBRID_PROFILE.roles.scaffolder).toBe("copilot/claude-sonnet-5");
+    expect(HYBRID_PROFILE.roles.explorer).toBe("copilot/claude-sonnet-5");
+    expect(HYBRID_PROFILE.roles.default).toBe("copilot/claude-sonnet-5");
+  });
+
+  it("escalates fixer to copilot/claude-sonnet-5.5", () => {
+    expect(HYBRID_PROFILE.roles.fixer).toBe("copilot/claude-sonnet-5.5");
   });
 
   it("has all nine roles defined", () => {

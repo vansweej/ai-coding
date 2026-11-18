@@ -63,15 +63,15 @@ export const COPILOT_DEFAULT_PROFILE: ModelProfile = {
 export const HYBRID_PROFILE: ModelProfile = {
   name: "hybrid",
   roles: {
-    planner: "claude-sonnet-4.6",
+    planner: "copilot/claude-sonnet-5",
     implementer: "gemma4:26b",
     debugger: "gemma4:26b",
-    fixer: "claude-sonnet-4.6",
-    reviewer: "claude-sonnet-4.6",
+    fixer: "copilot/claude-sonnet-5.5",
+    reviewer: "copilot/claude-sonnet-5",
     tester: "gemma4:26b",
-    scaffolder: "claude-sonnet-4.6",
-    explorer: "claude-sonnet-4.6",
-    default: "claude-sonnet-4.6",
+    scaffolder: "copilot/claude-sonnet-5",
+    explorer: "copilot/claude-sonnet-5",
+    default: "copilot/claude-sonnet-5",
   },
 };
 
@@ -85,7 +85,7 @@ export const HYBRID_PROFILE: ModelProfile = {
  * to its dispatcher), any role in any current or future profile selects its
  * provider purely by which model-ID string it maps to (e.g. "claude-sonnet-5"
  * -> Anthropic native, "copilot/claude-sonnet-5" -> Copilot-served Sonnet 5
- * (distinct from the Anthropic-native bare id), "claude-sonnet-4.6" -> Copilot,
+ * (distinct from the Anthropic-native bare id), "copilot/claude-sonnet-5.5" -> Copilot,
  * "gemma4:26b" -> Ollama).
  * Adding a new provider mix later is pure data: define another ModelProfile
  * constant and register it below -- no routing, CLI, or wiring changes required.

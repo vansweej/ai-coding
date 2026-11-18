@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   }
 
   const body = {
-    model: "claude-sonnet-4.6",
+    model: "claude-sonnet-5",
     messages: [
       {
         role: "user",

@@ -19,7 +19,7 @@ task type and runs multi-step agent pipelines for planning, implementing, and ve
   `OPENCODE_ZEN_MODEL`, e.g. `deepseek-v4-flash-free` -- swapping the free model when it
   rotates out is a one-line `OPENCODE_ZEN_MODEL` change).
 - **Structured patch output** -- capable backends (currently Copilot's
-  `copilot/claude-sonnet-5` / `claude-sonnet-4.6`, confirmed live; Anthropic's
+  `copilot/claude-sonnet-5`, confirmed live; Anthropic's
   `claude-sonnet-5`, confirmed via dry run) emit **whole-phase structured
   patches** (typed create/edit/move ops via a forced tool call) instead of
   free-text SEARCH/REPLACE, applied transactionally with automatic rollback on
