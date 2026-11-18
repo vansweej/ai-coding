@@ -359,10 +359,31 @@ Rules and severities:
 - `anchor-ellipsis` (**warn**): an anchor block appears to contain an elided region.
 - `step-without-edit-target` (**warn**): a non-verify-only step names no file and has no fenced
   edit block.
+- `anchor-not-found` / `anchor-not-unique` (**warn**): an OLD anchor resolves to zero or multiple
+  sites in the sequential in-memory edit simulation.
+- `plan-conflicts-with-guard` (**warn**): an OLD/NEW edit would trip the apply-time edit-scope
+  guard.
+- `fragile-assert` (**warn**): a `contains` or `not-contains` needle is vulnerable to formatting
+  or regeneration, such as a multi-field struct, long signature, multi-item import, or non-ASCII.
+- `assert-needle-unsourced` (**warn**): a `contains` needle appears in no NEW block for its path
+  and is absent from the current file.
 
 Behaviour: on `--dry-run` the report prints to stdout; on a live run it prints to stderr and
 emits a `preflight` ledger/progress event synchronously before any abort. Any error aborts with
 exit code 3 before dispatch. With `--strict`, warnings are promoted to errors and also abort.
+
+### OLD/NEW anchor cue convention
+
+This is the contract the agora plan persona follows: a line `OLD:` or
+``OLD (`<repo-relative path>`):`` is followed by a fenced block with three or more backticks.
+The closing fence has the same backtick count, so a four-backtick outer fence may wrap inner
+triple-backtick content. Then a line starting with `NEW` and ending with `:` is followed by a
+fenced block. The target path is resolved from the OLD cue's backticked path, else the NEW cue's,
+else the single distinct repo-relative path token in the step body; otherwise the pair is skipped
+(fail-open).
+
+The simulation applies extracted pairs in plan order to an in-memory file map, so later anchors
+see earlier simulated edits. It does not compile the edited code or run toolchain gates.
 
 ## Usage
 

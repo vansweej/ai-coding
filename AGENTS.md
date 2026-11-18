@@ -220,10 +220,12 @@ require network access or valid API tokens.
   running any pipeline step. Exit code 0 on a valid plan, non-zero on a parse error.
 - **`--dry-run`** is a superset of `--parse-only`: it also runs a read-only preflight report over
   the parsed plan (missing `Assert:` paths, delimiter-wrapped commit messages, elided anchors,
-  steps naming no file) and predicts the run shape, without any model dispatch or working-tree
-  mutation. Any preflight error exits 3; `--strict` promotes warnings to errors. Commit messages
-  wrapped in matching backticks/quotes are normalized during parsing so they never leak into git
-  history.
+  steps naming no file), simulates OLD/NEW edit pairs in memory for unresolved or ambiguous
+  anchors, checks them against the edit-scope guard, and lints fragile or unsourced `Assert:`
+  needles. These new checks have WARN severity. It predicts the run shape without any model
+  dispatch or working-tree mutation. Any preflight error exits 3; `--strict` promotes warnings to
+  errors. Commit messages wrapped in matching backticks/quotes are normalized during parsing so
+  they never leak into git history.
 
 Use `doctor` to verify the installation is intact after `home-manager switch` or a dependency
 update. Exit code 0 when all checks pass, exit code 3 when any check fails.

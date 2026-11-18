@@ -175,8 +175,10 @@ code 0 on a valid plan, non-zero on a parse error.
 checks, and prints the predicted run shape, without dispatching to any model or mutating the
 working tree. Preflight reports plan defects (a missing `Assert:` path, a delimiter-wrapped commit
 message, an elided anchor, a step naming no file) and aborts with exit code 3 on any error; a
-delimiter-wrapped commit subject is normalized away so it never reaches git history. With
-`--strict`, preflight warnings are promoted to errors.
+delimiter-wrapped commit subject is normalized away so it never reaches git history. Preflight
+also simulates OLD/NEW edit pairs in memory to find unresolved or ambiguous anchors, checks them
+against the edit-scope guard, and lints fragile or unsourced `Assert:` needles. These checks are
+WARN severity; with `--strict`, preflight warnings are promoted to errors.
 
 `--sandboxed` runs pipeline steps inside a sandboxed environment (restricted `nix develop` shell
 with network access disabled). Individual steps opt in to sandbox enforcement; steps that do not
