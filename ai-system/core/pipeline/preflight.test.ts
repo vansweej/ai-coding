@@ -282,4 +282,85 @@ describe("runPreflight", () => {
       runPreflight({ plan: parseOk(text), planText: text, fileExists: existsAll }),
     ).not.toThrow();
   });
+
+  it("warns plan-conflicts-with-guard when a NEW block carries an elision placeholder", () => {
+    const text = [
+      "# Feature: F",
+      "## Phase 1: P",
+      "Commit message: feat: x",
+      "### Step 1: Edit",
+      "OLD (`src/a.ts`):",
+      FENCE,
+      "const a = 1;",
+      FENCE,
+      "NEW:",
+      FENCE,
+      "const a = 1;",
+      "// ... existing code ...",
+      FENCE,
+    ].join("\n");
+    const report = runPreflight({
+      plan: parseOk(text),
+      planText: text,
+      fileExists: existsAll,
+      readFile: () => "const a = 1;",
+    });
+    expect(report.violations.some((v) => v.rule === "plan-conflicts-with-guard")).toBe(true);
+  });
+
+  it("warns fragile-assert on a multi-field struct needle", () => {
+    const text = [
+      "# Feature: F",
+      "## Phase 1: P",
+      "Commit message: feat: x",
+      "Assert: contains src/a.ts :: Point { x: i32, y: i32 }",
+      "### Step 1: Edit",
+      "Edit src/a.ts.",
+    ].join("\n");
+    const report = runPreflight({ plan: parseOk(text), planText: text, fileExists: existsAll });
+    expect(report.violations.some((v) => v.rule === "fragile-assert")).toBe(true);
+  });
+
+  it("warns assert-needle-unsourced when the needle is in no NEW block and absent on disk", () => {
+    const text = [
+      "# Feature: F",
+      "## Phase 1: P",
+      "Commit message: feat: x",
+      "Assert: contains src/a.ts :: unsourcedToken",
+      "### Step 1: Edit",
+      "Edit src/a.ts.",
+    ].join("\n");
+    const report = runPreflight({
+      plan: parseOk(text),
+      planText: text,
+      fileExists: existsAll,
+      readFile: () => "const a = 1;",
+    });
+    expect(report.violations.some((v) => v.rule === "assert-needle-unsourced")).toBe(true);
+  });
+
+  it("does not warn assert-needle-unsourced when a plan NEW block produces the needle", () => {
+    const text = [
+      "# Feature: F",
+      "## Phase 1: P",
+      "Commit message: feat: x",
+      "Assert: contains src/a.ts :: unsourcedToken",
+      "### Step 1: Edit",
+      "OLD (`src/a.ts`):",
+      FENCE,
+      "const a = 1;",
+      FENCE,
+      "NEW:",
+      FENCE,
+      "const unsourcedToken = 1;",
+      FENCE,
+    ].join("\n");
+    const report = runPreflight({
+      plan: parseOk(text),
+      planText: text,
+      fileExists: existsAll,
+      readFile: () => "const a = 1;",
+    });
+    expect(report.violations.some((v) => v.rule === "assert-needle-unsourced")).toBe(false);
+  });
 });
