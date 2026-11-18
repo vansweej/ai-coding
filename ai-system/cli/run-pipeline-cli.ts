@@ -266,6 +266,13 @@ async function main(): Promise<void> {
         plan: parseResult.value,
         planText: planContent,
         fileExists: (p) => existsSync(resolve(workspace, p)),
+        readFile: (p) => {
+          try {
+            return readFileSync(resolve(workspace, p), "utf8");
+          } catch {
+            return undefined;
+          }
+        },
       });
       const dryRunReport = reportPreflight(dryRunPreflight, strict === true);
       for (const line of dryRunReport.lines) {
@@ -344,6 +351,13 @@ async function main(): Promise<void> {
         plan: preflightParse.value,
         planText: planContent,
         fileExists: (p) => existsSync(resolve(workspace, p)),
+        readFile: (p) => {
+          try {
+            return readFileSync(resolve(workspace, p), "utf8");
+          } catch {
+            return undefined;
+          }
+        },
       });
       const rendered = reportPreflight(preflightReport, strict === true);
       onProgress({
