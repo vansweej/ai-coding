@@ -190,15 +190,15 @@ describe("orchestratePatch", () => {
     const hybridLikeProfile = {
       name: "hybrid",
       roles: {
-        planner: "claude-sonnet-4.6",
+        planner: "copilot/claude-sonnet-5",
         implementer: "gemma4:26b",
         debugger: "gemma4:26b",
         fixer: "claude-sonnet-5",
-        reviewer: "claude-sonnet-4.6",
+        reviewer: "copilot/claude-sonnet-5",
         tester: "gemma4:26b",
-        scaffolder: "claude-sonnet-4.6",
-        explorer: "claude-sonnet-4.6",
-        default: "claude-sonnet-4.6",
+        scaffolder: "copilot/claude-sonnet-5",
+        explorer: "copilot/claude-sonnet-5",
+        default: "copilot/claude-sonnet-5",
       },
     };
 

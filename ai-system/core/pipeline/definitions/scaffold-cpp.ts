@@ -114,8 +114,8 @@ export function createCppScaffoldPipeline(
   buildDir: string = DEFAULT_BUILD_DIR,
 ): readonly PipelineStep<AIRequestEvent>[] {
   return [
-    // Use "plan" action so the legacy router routes to claude-sonnet-4.6,
-    // and the copilot-default profile maps the planner role to claude-sonnet-4.6.
+    // Use "plan" action so the legacy router routes to copilot/claude-sonnet-5,
+    // and the copilot-default profile maps the planner role to copilot/claude-sonnet-5.
     createOrchestratorStep("generate", "plan", config, () => GENERATE_PROMPT, SCAFFOLD_LLM_OPTIONS),
 
     createFileWriterStep<AIRequestEvent>("write-files", {

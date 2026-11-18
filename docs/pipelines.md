@@ -292,7 +292,7 @@ const config: OrchestratorConfig = {
   dispatchers: {
     // GITHUB_COPILOT_TOKEN is the durable GitHub OAuth access token; it is sent
     // directly as the chat Bearer credential (no exchange).
-    "claude-sonnet-4.6": new CopilotDispatcher(process.env.GITHUB_COPILOT_TOKEN ?? ""),
+    "copilot/claude-sonnet-5": new CopilotDispatcher(process.env.GITHUB_COPILOT_TOKEN ?? ""),
   },
 };
 ```

@@ -174,7 +174,7 @@ teach: Good question -- let me show you the relevant code first.
        the actual answer.
 
        Before I explain further: what do you think would break if you
-       hardcoded "claude-sonnet-4.6" directly in selectModel()?
+       hardcoded "copilot/claude-sonnet-5" directly in selectModel()?
 
 You:   You couldn't switch models without changing the code?
 

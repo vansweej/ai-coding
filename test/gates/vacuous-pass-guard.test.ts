@@ -201,7 +201,7 @@ describe("vacuous-pass guard", () => {
       const step = createVerifiedImplementStep("verified", {
         config: {
           profile: LOCAL_PROFILE,
-          dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+          dispatchers: { "gemma4:26b": dispatcher, "copilot/claude-sonnet-5": dispatcher },
         },
         workspace: gitWorkspace,
         palette: new Set(["bun"]),

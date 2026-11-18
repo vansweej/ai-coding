@@ -19,10 +19,11 @@ export type PatchMode = "text" | "anthropic-tool-use" | "openai-tool-calls";
  * Registry of model-IDs opted into a structured PatchMode.
  *
  * - "claude-sonnet-5" (Anthropic-native) -> "anthropic-tool-use" (Plan A).
- * - "copilot/claude-sonnet-5" and "claude-sonnet-4.6" (both Copilot-served
- *   per model-profiles.ts -- COPILOT_DEFAULT_PROFILE and HYBRID_PROFILE
- *   respectively) -> "openai-tool-calls" (Plan B; empirically confirmed
- *   against live Copilot, see docs/adr/0001-copilot-structured-patch.md).
+ * - "copilot/claude-sonnet-5" (Copilot-served; used by COPILOT_DEFAULT_PROFILE
+ *   and HYBRID_PROFILE in model-profiles.ts) -> "openai-tool-calls" (Plan B;
+ *   empirically confirmed against live Copilot, see
+ *   docs/adr/0001-copilot-structured-patch.md). The fixer escalation id
+ *   "copilot/claude-sonnet-5.5" is deliberately not registered (text-only).
  *
  * Local/Zen models ("constrained-json") are added in Plan C -- do not add
  * them here.
@@ -30,7 +31,6 @@ export type PatchMode = "text" | "anthropic-tool-use" | "openai-tool-calls";
 const PATCH_MODE_BY_MODEL: Readonly<Record<string, PatchMode>> = {
   "claude-sonnet-5": "anthropic-tool-use",
   "copilot/claude-sonnet-5": "openai-tool-calls",
-  "claude-sonnet-4.6": "openai-tool-calls",
 };
 
 /**
