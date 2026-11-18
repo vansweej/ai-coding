@@ -14,8 +14,8 @@ There are two types:
   Short-lived delegation targets for focused tasks. The primary agent resumes
   after the subagent responds.
 
-All agents use GitHub Copilot (`github-copilot/claude-opus-4.6` or
-`github-copilot/claude-sonnet-4.6`) and are deployed as Nix store symlinks
+All agents use GitHub Copilot (`github-copilot/claude-opus-5.5` or
+`github-copilot/claude-sonnet-5.5`) and are deployed as Nix store symlinks
 under `~/.config/opencode/agents/`.
 
 ---
@@ -24,18 +24,18 @@ under `~/.config/opencode/agents/`.
 
 | Name | Model | Temp | Write | Web | Purpose |
 |------|-------|------|-------|-----|---------|
-| *(top-level default)* | Sonnet 4.6 | — | ask | — | Starting point before selecting a named agent — read-only git, prompts on edit/write |
-| `plan` | Opus 4.6 | 0.3 | deny | ask | Architecture decisions and deep analysis |
-| `build` | Sonnet 4.6 | 0.5 | allow | — | Full development — implement, refactor, test, ship |
-| `local` | Sonnet 4.6 | 0.3 | allow | — | General-purpose experimentation |
-| `explore` | Sonnet 4.6 | 0.3 | deny | allow | Read-only codebase exploration and Q&A |
-| `spar` | Opus 4.6 | 0.5 | ask | allow | Socratic sparring partner — writes only to `.spar/brief.md` |
-| `teach` | Opus 4.6 | 0.5 | deny | allow | Adaptive tutor — teaches from project context and broad knowledge |
-| `brainstorm` | Opus 4.6 | 0.6 | ask | allow | Generative brainstorming — writes only to `.brainstorm/brief.md` |
+| *(top-level default)* | Sonnet 5.5 | — | ask | — | Starting point before selecting a named agent — read-only git, prompts on edit/write |
+| `plan` | Opus 5.5 | 0.3 | deny | ask | Architecture decisions and deep analysis |
+| `build` | Sonnet 5.5 | 0.5 | allow | — | Full development — implement, refactor, test, ship |
+| `local` | Sonnet 5.5 | 0.3 | allow | — | General-purpose experimentation |
+| `explore` | Opus 5.5 | 0.3 | deny | allow | Read-only codebase exploration and Q&A |
+| `spar` | Opus 5.5 | 0.5 | ask | allow | Socratic sparring partner — writes only to `.spar/brief.md` |
+| `teach` | Opus 5.5 | 0.5 | deny | allow | Adaptive tutor — teaches from project context and broad knowledge |
+| `brainstorm` | Opus 5.5 | 0.6 | ask | allow | Generative brainstorming — writes only to `.brainstorm/brief.md` |
 
 ### plan
 
-Powered by Claude Opus 4.6. Use when you need deep architectural analysis,
+Powered by Claude Opus 5.5. Use when you need deep architectural analysis,
 tradeoff evaluation, or a structured implementation plan.
 
 - Reads `.spar/brief.md` if present in the project root and incorporates
@@ -66,7 +66,7 @@ RFCs while exploring.
 
 ### spar
 
-Powered by Claude Opus 4.6. A Socratic sparring partner for discussing new
+Powered by Claude Opus 5.5. A Socratic sparring partner for discussing new
 features **before** you invest in planning or implementation.
 
 **What it does:**
@@ -119,7 +119,7 @@ spar: Got it. Looking at copilot-dispatcher.ts line 34 -- the dispatcher
 
 ### teach
 
-Powered by Claude Opus 4.6. An adaptive tutor that helps you deeply understand
+Powered by Claude Opus 5.5. An adaptive tutor that helps you deeply understand
 concepts -- not just get answers. It reads the current project for concrete
 teaching material and can fetch external documentation, specs, and tutorials.
 
@@ -184,7 +184,7 @@ teach: Exactly. And what else? Think about the test suite -- how would you
 
 ### brainstorm
 
-Powered by Claude Opus 4.6. A generative brainstorming partner for exploring
+Powered by Claude Opus 5.5. A generative brainstorming partner for exploring
 new ideas **before** you know what you want to build. It thinks divergently,
 presents concrete choices, researches prior art via web, and produces an Idea
 Brief when you are ready to move forward.
@@ -336,10 +336,10 @@ Invoke with `@name` from within any primary agent session.
 
 | Name | Model | Permissions | Purpose |
 |------|-------|-------------|---------|
-| `@planner` | Sonnet 4.6 | read + git | Planning within a session |
-| `@debugger` | Sonnet 4.6 | read + git + bun test | Root-cause diagnosis |
-| `@reviewer` | Sonnet 4.6 | read + git + bun test | Code review (quality, correctness, security) |
-| `@tester` | Sonnet 4.6 | read + git + bun test | Test writing and coverage improvement |
+| `@planner` | Sonnet 5.5 | read + git | Planning within a session |
+| `@debugger` | Sonnet 5.5 | read + git + bun test | Root-cause diagnosis |
+| `@reviewer` | Sonnet 5.5 | read + git + bun test | Code review (quality, correctness, security) |
+| `@tester` | Sonnet 5.5 | read + git + bun test | Test writing and coverage improvement |
 
 ### @planner
 

@@ -187,10 +187,10 @@ via Home Manager). Invoke them by prefixing a message with `@<name>`:
 
 | Agent       | Model               | Role                              | Permissions          |
 |-------------|---------------------|-----------------------------------|----------------------|
-| `@planner`  | claude-sonnet-4.6   | Read-only planning and analysis   | read + git inspect   |
-| `@debugger` | claude-sonnet-4.6   | Root-cause diagnosis              | read + bun test + git |
-| `@reviewer` | claude-sonnet-4.6   | Code review (quality/security)    | read + bun test + git |
-| `@tester`   | claude-sonnet-4.6   | Test writing and coverage         | read + bun test + git |
+| `@planner`  | claude-sonnet-5.5   | Read-only planning and analysis   | read + git inspect   |
+| `@debugger` | claude-sonnet-5.5   | Root-cause diagnosis              | read + bun test + git |
+| `@reviewer` | claude-sonnet-5.5   | Code review (quality/security)    | read + bun test + git |
+| `@tester`   | claude-sonnet-5.5   | Test writing and coverage         | read + bun test + git |
 
 See [docs/agent-reference.md](./agent-reference.md) for full agent documentation.
 
@@ -214,13 +214,13 @@ Seven primary agents are available in the TUI (switch with **Tab**):
 
 | Agent         | Model                  | Use when…                                                    |
 |---------------|------------------------|--------------------------------------------------------------|
-| `build`       | claude-sonnet-4.6      | Default — full access, write files                           |
-| `plan`        | claude-opus-4.6        | Architecture decisions, deep analysis                        |
-| `local`       | claude-sonnet-4.6      | Experimentation, general-purpose                             |
-| `explore`     | claude-sonnet-4.6      | Read-only codebase exploration and Q&A                       |
-| `spar`        | claude-opus-4.6        | Challenging a feature idea before investing in a plan        |
-| `teach`       | claude-opus-4.6        | Learning — adaptive tutor grounded in project context        |
-| `brainstorm`  | claude-opus-4.6        | Exploring new ideas — presents choices, researches prior art |
+| `build`       | claude-sonnet-5.5      | Default — full access, write files                           |
+| `plan`        | claude-opus-5.5        | Architecture decisions, deep analysis                        |
+| `local`       | claude-sonnet-5.5      | Experimentation, general-purpose                             |
+| `explore`     | claude-opus-5.5        | Read-only codebase exploration and Q&A                       |
+| `spar`        | claude-opus-5.5        | Challenging a feature idea before investing in a plan        |
+| `teach`       | claude-opus-5.5        | Learning — adaptive tutor grounded in project context        |
+| `brainstorm`  | claude-opus-5.5        | Exploring new ideas — presents choices, researches prior art |
 
 See [docs/agent-reference.md](./agent-reference.md) for full agent documentation, design
 principles, and the brainstorm → spar → plan handoff workflow.
