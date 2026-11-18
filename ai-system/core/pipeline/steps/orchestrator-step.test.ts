@@ -30,7 +30,7 @@ function failingDispatcher(message: string): ModelDispatcher {
 function makeConfig(overrides?: Partial<OrchestratorConfig["dispatchers"]>): OrchestratorConfig {
   return {
     dispatchers: {
-      "claude-sonnet-4.6": mockDispatcher("plan-response"),
+      "copilot/claude-sonnet-5": mockDispatcher("plan-response"),
       "deepseek-coder-v2": mockDispatcher("debug-response"),
       "gemma4:26b": mockDispatcher("default-response"),
       ...overrides,

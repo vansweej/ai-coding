@@ -27,7 +27,7 @@ function timeoutDispatcher(): ModelDispatcher {
 function makeConfig(runId?: string): OrchestratorConfig {
   return {
     dispatchers: {
-      "claude-sonnet-4.6": timeoutDispatcher(),
+      "copilot/claude-sonnet-5": timeoutDispatcher(),
       "deepseek-coder-v2": timeoutDispatcher(),
       "gemma4:26b": timeoutDispatcher(),
     },
