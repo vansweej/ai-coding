@@ -1,5 +1,7 @@
 import type { PhaseAssertion } from "./phase-assertions";
+import { extractPlanEditPairs, simulatePlanEdits } from "./plan-edit-blocks";
 import type { PlanFile } from "./plan-parser";
+import { checkEditScope } from "./steps/edit-scope-guard";
 
 /**
  * Pure plan-preflight validation. Runs a small set of static rules over a
@@ -20,6 +22,16 @@ import type { PlanFile } from "./plan-parser";
  *     a literal ellipsis — likely an elided anchor. A JS spread is NOT flagged.
  *   - `step-without-edit-target` (warn): a non-verify-only step whose body
  *     has neither a fenced block nor a file-path-like token.
+ *   - `anchor-not-found` / `anchor-not-unique` (warn): an extracted OLD/NEW
+ *     edit pair whose OLD anchor resolves to zero / more than one site in the
+ *     sequentially simulated virtual tree (requires an injected `readFile`).
+ *   - `plan-conflicts-with-guard` (warn): an extracted edit pair whose OLD/NEW
+ *     bodies would trip the apply-time edit-scope guard.
+ *   - `fragile-assert` (warn): a `contains`/`not-contains` needle that looks
+ *     fragile (multi-field struct, long signature, multi-item import list, or
+ *     non-ASCII).
+ *   - `assert-needle-unsourced` (warn): a `contains` needle produced by no plan
+ *     NEW block and absent from the current file (requires `readFile`).
  */
 
 /** Severity of a preflight violation. */
@@ -51,6 +63,13 @@ export interface PreflightInput {
   readonly planText: string;
   /** Repo-relative existence probe injected by the caller (no I/O here). */
   readonly fileExists: (repoRelativePath: string) => boolean;
+  /**
+   * Optional repo-relative content probe. Returns the file's text, or
+   * `undefined` when absent or unreadable. Rules that need file content are
+   * skipped when this is not supplied, so the existing call shape keeps
+   * working. No I/O happens in this module; the caller injects the reader.
+   */
+  readonly readFile?: (repoRelativePath: string) => string | undefined;
 }
 
 /** Assertion kinds whose target file must exist for the Assert to pass. */
@@ -141,6 +160,64 @@ function bodyHasPathToken(body: string): boolean {
   return /[\w./-]+\.[A-Za-z0-9]+/.test(body);
 }
 
+/** True when a `contains`/`not-contains` needle looks fragile to anchor on. */
+function isFragileNeedle(needle: string): boolean {
+  if (/\b[A-Z]\w*\s*\{[^}]*:[^}]*,[^}]*:/.test(needle)) return true;
+  if ((needle.includes("fn ") || needle.includes("function ")) && needle.length > 60) return true;
+  if (/\b(use|import)\b[^\n]*\{[^}]*,[^}]*\}/.test(needle)) return true;
+  for (const ch of needle) {
+    const code = ch.codePointAt(0);
+    if (code !== undefined && code > 127) return true;
+  }
+  return false;
+}
+
+/** Collect the NEW-block bodies in the plan that target `filePath`. */
+function newBlocksForPath(plan: PlanFile, filePath: string): readonly string[] {
+  const bodies: string[] = [];
+  for (const pair of extractPlanEditPairs(plan)) {
+    if (pair.filePath === filePath) bodies.push(pair.newText);
+  }
+  return bodies;
+}
+
+/** `fragile-assert` and `assert-needle-unsourced` warnings over contains-family asserts. */
+function fragileAssertViolations(
+  input: PreflightInput,
+  readFile: ((repoRelativePath: string) => string | undefined) | undefined,
+): readonly PreflightViolation[] {
+  const violations: PreflightViolation[] = [];
+  for (const phase of input.plan.phases) {
+    for (const assertion of phase.assertions ?? []) {
+      if (assertion.kind !== "contains" && assertion.kind !== "not-contains") continue;
+      const needle = assertion.needle;
+      if (isFragileNeedle(needle)) {
+        violations.push({
+          rule: "fragile-assert",
+          severity: "warn",
+          phase: phase.number,
+          message: `Phase ${phase.number} ${assertion.kind} needle on "${assertion.path}" is fragile (formatter or regeneration may break it); prefer a short, distinctive single-line token`,
+        });
+      }
+      if (assertion.kind !== "contains" || readFile === undefined) continue;
+      const inNewBlock = newBlocksForPath(input.plan, assertion.path).some((b) =>
+        b.includes(needle),
+      );
+      if (inNewBlock) continue;
+      const onDisk = readFile(assertion.path);
+      if (onDisk === undefined) continue;
+      if (onDisk.includes(needle)) continue;
+      violations.push({
+        rule: "assert-needle-unsourced",
+        severity: "warn",
+        phase: phase.number,
+        message: `Phase ${phase.number} contains needle on "${assertion.path}" appears in no plan NEW block and is absent from the current file; it may never be produced`,
+      });
+    }
+  }
+  return violations;
+}
+
 /**
  * Run the preflight rule set over a parsed plan. Pure; never throws.
  *
@@ -193,6 +270,35 @@ export function runPreflight(input: PreflightInput): PreflightReport {
       message:
         "An anchor block appears to contain an elided region (ellipsis); anchors must be byte-exact",
     });
+  }
+
+  const readFile = input.readFile;
+  if (readFile !== undefined) {
+    const pairs = extractPlanEditPairs(input.plan);
+    const simulation = simulatePlanEdits(pairs, readFile);
+    for (const v of simulation.violations) {
+      violations.push({
+        rule: v.rule,
+        severity: "warn",
+        phase: v.phase,
+        message: `Phase ${v.phase} step ${v.step} anchor on "${v.filePath}" resolved to ${v.occurrences} site(s) in the simulated tree`,
+      });
+    }
+    for (const pair of pairs) {
+      if (pair.oldText.trim().length === 0) continue;
+      const guard = checkEditScope(pair.oldText, pair.newText, pair.filePath);
+      if (guard.ok) continue;
+      violations.push({
+        rule: "plan-conflicts-with-guard",
+        severity: "warn",
+        phase: pair.phase,
+        message: `Phase ${pair.phase} step ${pair.step} edit to "${pair.filePath}" would trip the edit-scope guard [${guard.error.rule}]: ${guard.error.message}`,
+      });
+    }
+  }
+
+  for (const violation of fragileAssertViolations(input, readFile)) {
+    violations.push(violation);
   }
 
   return { violations };
