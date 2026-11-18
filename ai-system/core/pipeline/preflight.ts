@@ -204,6 +204,7 @@ function fragileAssertViolations(
         b.includes(needle),
       );
       if (inNewBlock) continue;
+      if (pathMentionedOutsideAsserts(needle, input.planText)) continue;
       const onDisk = readFile(assertion.path);
       if (onDisk === undefined) continue;
       if (onDisk.includes(needle)) continue;
@@ -286,7 +287,9 @@ export function runPreflight(input: PreflightInput): PreflightReport {
     }
     for (const pair of pairs) {
       if (pair.oldText.trim().length === 0) continue;
-      const guard = checkEditScope(pair.oldText, pair.newText, pair.filePath);
+      const phaseSteps = input.plan.phases.find((p) => p.number === pair.phase)?.steps ?? [];
+      const phaseText = phaseSteps.map((step) => step.body).join("\n\n");
+      const guard = checkEditScope(pair.oldText, pair.newText, pair.filePath, phaseText);
       if (guard.ok) continue;
       violations.push({
         rule: "plan-conflicts-with-guard",
