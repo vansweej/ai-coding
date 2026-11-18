@@ -17,6 +17,8 @@ export const PHASE_FAILURE_REASONS = {
   dispatchError: "dispatchError",
   conversionFailed: "conversionFailed",
   vacuousPass: "vacuousPass",
+  planGuardConflict: "planGuardConflict",
+  proseAfterRed: "proseAfterRed",
 } as const;
 
 /**

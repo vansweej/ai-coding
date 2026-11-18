@@ -239,6 +239,74 @@ describe("createVerifiedImplementStep", () => {
     expect(dispatcher.prompts[1]).toContain("SEARCH");
   });
 
+  it("stops on a repeated plan-guard scope conflict", async () => {
+    const original = "// Type scheme: ∀α.τ\nexport const value = 1;";
+    const conflictingPatch = [
+      "src/index.ts",
+      "<<<<<<< SEARCH",
+      original,
+      "=======",
+      "// Type scheme is documented below\nexport const value = 1;",
+      ">>>>>>> REPLACE",
+    ].join("\n");
+    const dispatcher = sequenceDispatcher([conflictingPatch, conflictingPatch]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    mkdirSync(join(workspace, "src"));
+    writeFileSync(join(workspace, "src/index.ts"), original, "utf8");
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(0)),
+      steps: [
+        {
+          number: 1,
+          title: "Rewrite type scheme comment",
+          body: "Rewrite the comment // Type scheme: ∀α.τ without inventing documentation.",
+        },
+      ],
+      phaseNumber: 3,
+      retryConfig: { maxLocalRetries: 2, maxEscalationRetries: 0 },
+    });
+
+    const result = await step.execute({ event: makeEvent("Rewrite comment"), results: new Map() });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.name).toBe("PhaseHardFailError");
+      expect(result.error.message).toContain("[planGuardConflict]");
+    }
+    expect(dispatcher.prompts).toHaveLength(2);
+  });
+
+  it("stops on prose after a verification red", async () => {
+    const dispatcher = sequenceDispatcher([
+      "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 'bad';\n>>>>>>> REPLACE",
+      "The verification failure needs a broader investigation before I can edit.",
+    ]);
+    const config: OrchestratorConfig = {
+      profile: LOCAL_PROFILE,
+      dispatchers: { "gemma4:26b": dispatcher, "claude-sonnet-4.6": dispatcher },
+    };
+    const step = createVerifiedImplementStep("verified", {
+      config,
+      workspace,
+      languageConfig: makeLanguageConfig(verificationStep(10)),
+      phaseNumber: 3,
+      retryConfig: { maxLocalRetries: 1, maxEscalationRetries: 0 },
+    });
+
+    const result = await step.execute({ event: makeEvent("Add value"), results: new Map() });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.name).toBe("PhaseHardFailError");
+      expect(result.error.message).toContain("[proseAfterRed]");
+    }
+  });
+
   it("recovers in the escalation loop when the fixer returns prose instead of a patch on its first attempt", async () => {
     const dispatcher = sequenceDispatcher([
       "src/index.ts\n<<<<<<< SEARCH\n=======\nexport const value = 'bad';\n>>>>>>> REPLACE",

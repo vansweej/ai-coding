@@ -36,4 +36,16 @@ describe("phaseHardFail", () => {
       );
     }
   });
+
+  it("exposes the deterministic dead-end reasons", () => {
+    expect(PHASE_FAILURE_REASONS.planGuardConflict).toBe("planGuardConflict");
+    expect(PHASE_FAILURE_REASONS.proseAfterRed).toBe("proseAfterRed");
+
+    const result = phaseHardFail(3, PHASE_FAILURE_REASONS.planGuardConflict, "x");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.name).toBe("PhaseHardFailError");
+      expect(result.error.message).toContain("[planGuardConflict]");
+    }
+  });
 });

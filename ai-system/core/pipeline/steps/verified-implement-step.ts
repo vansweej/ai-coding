@@ -1,6 +1,7 @@
 import { execFileSync, execSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { summarizeGateFailure } from "@ai-coding/pipeline";
 import type { PipelineContext, PipelineStep, Result, StepResult } from "@ai-coding/pipeline";
 import type { AIAction, AIRequestEvent } from "@ai-coding/shared";
 
@@ -433,6 +434,7 @@ async function runImplementAttempt(
 async function writeImplementation(
   workspace: string,
   implementation: string,
+  planText?: string,
 ): Promise<Result<void>> {
   // Parse the implementation as aider-style patches. Tolerate a single
   // enclosing code fence (e.g. ```bash ... ```) that some models wrap their
@@ -456,7 +458,7 @@ async function writeImplementation(
   }
 
   // Apply the patches to the workspace
-  const applyResult = await applyPatch(workspace, parseResult.value);
+  const applyResult = await applyPatch(workspace, parseResult.value, { planText });
   if (!applyResult.ok) {
     const error = new Error(
       `Failed to apply patch to "${applyResult.error.filePath}": ${applyResult.error.message}`,
@@ -502,7 +504,8 @@ async function implementAndWrite(
   const implementResult = await runImplementAttempt(ctx, options, prompt, action);
   if (!implementResult.ok) return implementResult;
 
-  const writeResult = await writeImplementation(options.workspace, implementResult.value);
+  const planText = options.steps?.map((step) => step.body).join("\n\n");
+  const writeResult = await writeImplementation(options.workspace, implementResult.value, planText);
   if (!writeResult.ok) return writeResult;
 
   return { ok: true, value: implementResult.value };
@@ -753,6 +756,7 @@ export function createVerifiedImplementStep(
       let stepCursor = 0;
       let bestSoFar: BestSoFar | undefined;
       let previousFingerprint: string | undefined;
+      let previousImplementError: string | undefined;
       let localAttemptsRun = 1 + maxLocalRetries;
 
       /** Record a verification failure and restore a prior better tree on regression. */
@@ -1133,6 +1137,48 @@ export function createVerifiedImplementStep(
               };
             }
           }
+          // Deterministic dead-end: an R2 scope-violation is deterministic for
+          // identical model output. Two consecutive identical messages mean the
+          // plan conflicts with the guard; stop instead of burning retries.
+          if (
+            implementResult.error.name === "PatchApplyError" &&
+            implementResult.error.message.includes("non-ASCII") &&
+            previousImplementError === implementResult.error.message
+          ) {
+            return phaseHardFail(
+              options.phaseNumber ?? 0,
+              PHASE_FAILURE_REASONS.planGuardConflict,
+              implementResult.error.message,
+            );
+          }
+          // Deterministic dead-end: a prose-only reply AFTER a red verification
+          // means the model has no in-scope edit left. Stop immediately and
+          // report the first failure plus whether each failing file lies inside
+          // the files this phase's steps name.
+          if (
+            implementResult.error.name === "PatchProseReplyError" &&
+            lastVerificationFailure !== undefined
+          ) {
+            const failure = lastVerificationFailure.message;
+            const summary = summarizeGateFailure(failure, failure);
+            const declared = options.steps?.map((step) => step.body).join("\n\n") ?? "";
+            const failingPaths = [
+              ...new Set(
+                [...failure.matchAll(/[\w./-]+\.(?:rs|ts|tsx|js|py|hs|jl|cpp|hpp|c|h)\b/g)].map(
+                  (match) => match[0],
+                ),
+              ),
+            ].slice(0, 10);
+            const scopeReport = failingPaths
+              .map((path) => `${path}: ${declared.includes(path) ? "in phase" : "OUTSIDE phase"}`)
+              .join("\n");
+            return phaseHardFail(
+              options.phaseNumber ?? 0,
+              PHASE_FAILURE_REASONS.proseAfterRed,
+              `${summary}\n${scopeReport}`,
+            );
+          }
+          previousImplementError = implementResult.error.message;
           lastError = implementResult.error;
           previousFingerprint = undefined;
         }
