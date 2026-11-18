@@ -298,6 +298,12 @@ Coverage: skip | N% | (omitted for default 90%, Rust only)
 <instruction>
 ```
 
+For failed shell steps, `summarizeGateFailure` extracts a first-failure summary when possible;
+when both stdout and stderr are present, the message also includes a bounded 4,000-character
+stdout tail. Structural `contains` assertions accept collapsed whitespace and report a closest-line
+hint on failure. Grammar v5 adds `not-contains-outside-tests`, which checks only before the first
+trimmed `#[cfg(test)]` line, or the whole file when none is present.
+
 Toolchain resolution per touched file: `route()` maps each file's extension to a toolchain that
 is both registered and present in the workspace's devShell palette (via `devShellPalette`). A
 file whose toolchain isn't available in the devShell, or which has no matching toolchain at all
@@ -898,6 +904,8 @@ The sandboxed doctor (`bun run pipeline doctor --sandboxed`) exercises the same 
 | `structuralAssertion` | A post-verification `Assert:` directive was violated; no commit is made |
 | `dispatchError` | Structured-patch dispatch failed (e.g. truncated tool call); only a hard-fail under `--strict` |
 | `conversionFailed` | `patchOpsToEdits` rejected the structured ops (e.g. empty search anchor); only a hard-fail under `--strict` |
+| `planGuardConflict` | Two consecutive identical R2 non-ASCII edit-scope violation messages |
+| `proseAfterRed` | A prose-only reply after verification remains red on recheck; reports failure and recognized path scope |
 
 ### `--strict` escalation
 

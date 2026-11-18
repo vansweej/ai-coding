@@ -109,6 +109,11 @@ line substituted for an invented placeholder, or an echo of the internal
 `[ai-coding: truncated ...]` retry-context marker. A rejected patch is retried
 with the reason fed back to the model, so correct edits are unaffected.
 
+A non-ASCII comment rewrite is treated as intended when the plan's step bodies quote both the old
+line and every newly introduced same-family comment line verbatim. The rejection message also
+lists allowed alternatives: delete the line plainly, retain a non-ASCII character, or use a
+different comment family.
+
 In the rare case where the guard blocks a legitimate edit and the model cannot
 get past it, disable the entire guard for a run:
 

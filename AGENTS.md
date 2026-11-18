@@ -248,12 +248,19 @@ Supported assertion verbs (all backward-compatible):
 ```
 Assert: contains <path> :: <needle>
 Assert: not-contains <path> :: <needle>
+Assert: not-contains-outside-tests <path> :: <needle>
 Assert: exists <path>
 Assert: not-exists <path>
 Assert: matches <path> :: <regex>
 Assert: toml-keys <path> :: <dotted.table> :: key1,key2,key3
 Assert: test <path>
 ```
+
+`contains` is whitespace-tolerant (whitespace runs are collapsed on both sides) and reports the
+closest line on failure; `not-contains` stays an exact substring check.
+`not-contains-outside-tests` checks only the text before the first line whose trimmed content
+starts with `#[cfg(test)]` (the whole file if none) and is intended for Rust files with in-file
+test modules. `assertGrammarVersion` is 5.
 
 ## Strict Mode, Degraded Exit Code, and `test` Assertion
 
